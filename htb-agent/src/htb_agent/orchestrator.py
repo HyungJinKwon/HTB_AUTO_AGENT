@@ -573,6 +573,19 @@ class Orchestrator:
                     _prov.classify(kind, value, fd.get("source", "")))
             if self.world is not None:
                 self.world.add_flag(kind, value)
+        # [S4] 자격증명 왕복 복원 — 과거엔 _persist 가 st.credentials 를 쓰기만 하고 _restore 가
+        # 되읽지 않아, 재개 세션이 '수확한 자격증명'을 통째로 잃던 SSOT 결손(상태원 비대칭) 교정.
+        # 볼트(재사용·{user}/{pass} 치환)와 월드(컨텍스트·prereq)를 startup 시드(294-296)와
+        # 동일 형태로 함께 채운다 — add/add_cred 가 CLI·파일 자격증명과의 중복을 제거한다.
+        if self.vault is not None and prior.credentials:
+            self.vault.from_list(prior.credentials)
+        if self.world is not None:
+            for d in prior.credentials or []:
+                user = (d or {}).get("username", "")
+                if not user:
+                    continue
+                sec = d.get("password") or d.get("nt_hash") or ""
+                self.world.add_cred(f"{user}:{sec}" if sec else user, d.get("source", ""))
         for m in prior.manual_suggestions or []:
             if m not in report.manual_suggestions:
                 report.manual_suggestions.append(m)
