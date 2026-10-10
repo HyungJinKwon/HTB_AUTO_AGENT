@@ -22,7 +22,10 @@ import re
 import shutil
 import time
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:
+    from .scheduler import StageScheduler
 
 from . import command_fixer, diagnostics
 from . import provenance as _prov
@@ -372,6 +375,8 @@ class Orchestrator:
             # max_sweeps 는 안전 상한(폭주 방지)이며 명시 지정은 하드캡으로 존중한다. 실전 기본은
             # 체인 완주가 가능하도록 CLI 에서 높게(_FIXED_POINT_CAP) 잡는다. 전역 예산·시간도 유한 보장.
             sweep_cap = self.max_sweeps
+            # [S3] 결정적 소비 스테이지의 의존 선언형 스케줄러(런당 1회 구성, _seen 은 스윕 간 유지).
+            self._consume_sched = self._build_consume_scheduler(report, host)
             while sweeps_run < sweep_cap:
                 if self._goal_reached(report) or self._time_up():
                     break
@@ -379,19 +384,12 @@ class Orchestrator:
                 # 지금까지의 출력에서 취약점(CVE/CWE·버전 매칭)을 먼저 반영 — 학습·분석·
                 # 명령 생성이 '확인 취약점'을 보고 판단하도록(이전엔 루프가 끝난 뒤에야 계산)
                 self._run_vuln(report, host, target)
-                # [S1] 의존 순서대로 배치 — 생산자(제품/버전 식별)를 소비자(버전프로브·익스조회)
-                # 보다 먼저 돌린다. 과거엔 web_fingerprint 가 소비자 뒤에 있어 제품이 '한 스윕 늦게'
-                # 반영되던 결정성 버그. 결정적 핑거프린트: vhost 리다이렉트를 따라가 제품/버전 확정.
-                self._web_fingerprint_stage(report, host)
-                # 버전 노출 능동 프로브: 제품은 식별됐는데 버전이 미상이면, 문서화된 제품별
-                # 버전 노출 경로를 무해한 GET 으로 긁어 버전을 집어낸다(제품당 1회). 익스 아님.
-                self._version_probe_stage(report, host)
-                # 3단계 기반: 핑거프린트된 웹앱 제품에 맞는 공개 익스 '조회'(searchsploit)를
-                # 게이트로 올린다(제품당 1회). 조회·무해 — 익스 실행 아님. 결과는 다음 분석에 되먹임.
-                self._exploit_lookup_stage(report, host)
-                # 발판 전 자격 수확: 웹 노출 비밀/백업 파일을 읽기전용 GET 으로 열거(호스트당 1회).
-                # 무해 — 본문에서 자격이 나오면 _harvest_creds 가 world 에 반영 → ①(b) 인증 PoC 폐루프.
-                self._web_secret_stage(report, host)
+                # [S3] 결정적 소비 스테이지(핑거프린트→버전프로브→익스조회→웹비밀)를 의존 선언형
+                # 스케줄러로 '입력이 자란 것만, 생산자→소비자 순서로, 지역 고정점까지' 실행한다.
+                # S1 의 수동 재배치·각 스테이지의 _*_probed 가드가 암묵적으로 하던 스케줄링을
+                # 명시적·테스트 가능한 1급 객체로 승격(본체·멱등 가드는 불변). 무해/생성 전용 경계 유지.
+                self._consume_sched.run_to_fixpoint(
+                    lambda: self._goal_reached(report) or self._time_up())
                 # 자율 지식 획득: 관측된 기술 중 '모르는 것'을 권위 출처에서 자동 학습해
                 # KB 에 즉시 반영한다(이후 분석가·명령생성이 바로 활용). P1 유지.
                 self._acquire_knowledge(report, host, prof)
@@ -433,12 +431,11 @@ class Orchestrator:
                         report.phase_status[key] = ("대기(" + reason + ")" if not met
                                                     else ("진행" if grew else "점검함"))
                     self._run_vuln(report, host, target)   # 다음 단계가 새 취약점을 보도록
-                # [S1] enum 단계가 vhost 를 등록하거나 웹 본문을 받아 제품이 '이번 스윕에'
-                # 식별됐을 수 있다 → 소비자(핑거프린트·버전프로브·익스조회)를 한 번 더 돌려
-                # 같은 스윕에 반영(다음 스윕까지 밀리지 않게). 전부 멱등 — 바뀐 게 없으면 no-op.
-                self._web_fingerprint_stage(report, host)
-                self._version_probe_stage(report, host)
-                self._exploit_lookup_stage(report, host)
+                # [S3] enum 단계가 vhost·웹본문으로 제품을 '이번 스윕에' 키웠으면, 입력이 바뀐
+                # 소비 스테이지만 스케줄러가 생산자→소비자 순서로 다시 돌려 같은 스윕에 반영
+                # (다음 스윕까지 밀리지 않게). _seen 덕에 입력 불변 스테이지는 no-op.
+                self._consume_sched.run_to_fixpoint(
+                    lambda: self._goal_reached(report) or self._time_up())
                 sweeps_run += 1
                 # 무인 자율 진행 투명성(heartbeat): 스윕마다 1줄 요약 — 폭주 감시·발표 시연용
                 if not self.quiet:
@@ -1285,6 +1282,67 @@ class Orchestrator:
                 ids = " ".join(m.cve + m.cwe)
                 self.world.add_vuln(f"{m.name}" + (f" ({ids})" if ids else ""),
                                     source="버전 매칭(VulnKB)")
+    def _build_consume_scheduler(self, report: OrchestrationReport,
+                                 host: NmapHost) -> "StageScheduler":
+        """[S3] 결정적 소비 스테이지의 의존 선언형 스케줄러를 만든다(런당 1회).
+
+        선언 순서 = 데이터 의존 DAG(생산자 → 소비자): 제품/버전 핑거프린트 → 버전 프로브 →
+        익스 조회 → 웹 비밀. ``ready`` 는 전제(월드 상태), ``key`` 는 '소비하는' 상태의 서명이다.
+        키가 바뀐(=입력이 자란) 스테이지만 재실행되고, 한 패스가 무실행이면 고정점에서 멈춘다.
+        스케줄러의 ``_seen`` 은 스윕을 가로질러 유지돼 전역 멱등을 보장한다(기존 ``_*_probed``
+        가드와 동일 의미를 명시적·테스트 가능한 1급 객체로 승격). 스테이지 본체는 불변."""
+        from .scheduler import Stage, StageScheduler
+
+        def _bases() -> list[str]:
+            return self._web_bases(host)
+
+        def _vhosts() -> tuple[str, ...]:
+            tgt = self.world.target if self.world else ""
+            return tuple(sorted(h for h, ip in (self.hosts_map or {}).items() if ip == tgt))
+
+        def _opt_in() -> bool:
+            return bool(self.exploit_exec or self.auto_poc)
+
+        def _prod() -> str:
+            return (self.world.web_product if self.world else "") or ""
+
+        def _ver() -> str:
+            return (self.world.web_version if self.world else "") or ""
+
+        stages = [
+            # 생산자: vhost 로 리다이렉트를 따라가 제품/버전을 결정적으로 식별(제품 미상일 때만).
+            # 새 vhost/베이스가 관측되면(key 변화) 다시 시도. opt-in 전용.
+            Stage(
+                name="web_fingerprint",
+                run=lambda: self._web_fingerprint_stage(report, host),
+                ready=lambda: _opt_in() and not _prod() and bool(_bases()) and bool(_vhosts()),
+                key=lambda: (len(self.hosts_map or {}), tuple(_bases())),
+            ),
+            # 소비자①: 제품은 잡혔으나 버전 미상이면 버전 노출 경로를 무해 GET(제품당 1회).
+            Stage(
+                name="version_probe",
+                run=lambda: self._version_probe_stage(report, host),
+                ready=lambda: bool(_prod()) and not _ver(),
+                key=lambda: (_prod(),),
+            ),
+            # 소비자②: 제품에 맞는 공개 익스 조회(searchsploit). 제품이 바뀌면 재조회.
+            Stage(
+                name="exploit_lookup",
+                run=lambda: self._exploit_lookup_stage(report, host),
+                ready=lambda: bool(_prod()),
+                key=lambda: (_prod(),),
+            ),
+            # 소비자③: 웹 노출 비밀/백업 열거(발판 전 자격 수확). 베이스·vhost·제품 중 하나가
+            # 바뀌면 재열거. opt-in 전용.
+            Stage(
+                name="web_secret",
+                run=lambda: self._web_secret_stage(report, host),
+                ready=lambda: _opt_in() and bool(_bases()),
+                key=lambda: (tuple(_bases()), _vhosts(), _prod()),
+            ),
+        ]
+        return StageScheduler(stages)
+
     def _web_bases(self, host: NmapHost) -> list[str]:
         """관측된 열린 웹 포트에서 'scheme://ip[:port]' 베이스 URL 목록을 만든다.
         표준 포트(80/http, 443/https)는 포트를 생략. TLS 판정은 서비스명(https/ssl)·
