@@ -67,6 +67,10 @@ _PHASE_LABEL = dict(PENTEST_PHASES)
 _MAX_FINDING_OUTPUT = 4000
 # 분석용 원본 출력 상한 — 요약보다 크게(버전/searchsploit 전체 행 보존) 두되 메모리는 bound.
 _MAX_RAW_OUTPUT = 20000
+# [S2] 고정점 반복 안전 상한 — 상태가 계속 자랄 때도 유한 종료를 보장하는 하드 실링이자
+# 자율 모드 CLI 기본 스윕 수(main._run_target). 의존 체인 깊이 ~3보다 넉넉; 실제 종료는
+# 보통 '성장 없음'/예산/시간이 먼저 끊는다. 명시 --max-sweeps 는 하드캡으로 존중된다.
+_FIXED_POINT_CAP = 10
 
 # 리다이렉트 출력(요약)에서 vhost 추출: "→ http://connected.htb/" → connected.htb
 _REDIRECT_HOST_RE = re.compile(r"→\s*https?://([A-Za-z0-9.-]+?\.[A-Za-z]{2,})(?:[:/]|\s|$)")
@@ -363,7 +367,12 @@ class Orchestrator:
         self._analysis_fp: tuple | None = None
         interrupted = False
         try:
-            for sweep in range(self.max_sweeps):
+            # [S2] 고정점 반복: 상태가 자라는 한 계속 돌려 의존 체인(제품→버전→익스조회 등)이
+            # 완주한다. 종료의 1차 기준은 '성장 없음'(_world_fingerprint 불변) — 아래 조기종료.
+            # max_sweeps 는 안전 상한(폭주 방지)이며 명시 지정은 하드캡으로 존중한다. 실전 기본은
+            # 체인 완주가 가능하도록 CLI 에서 높게(_FIXED_POINT_CAP) 잡는다. 전역 예산·시간도 유한 보장.
+            sweep_cap = self.max_sweeps
+            while sweeps_run < sweep_cap:
                 if self._goal_reached(report) or self._time_up():
                     break
                 before_fp = self._world_fingerprint(report)
@@ -437,7 +446,7 @@ class Orchestrator:
                     fl = f"user={'O' if report.user_flag else 'X'} root={'O' if report.root_flag else 'X'}"
                     spent = float(getattr(self.llm_router, "total_cost", 0.0) or 0.0)
                     print("  " + ui.dim(
-                        f"⏱ 스윕 {sweeps_run}/{self.max_sweeps} · 경과 {self._clock() - self._start:.0f}초 · "
+                        f"⏱ 스윕 {sweeps_run}/{sweep_cap} · 경과 {self._clock() - self._start:.0f}초 · "
                         f"enum {len(report.enum_findings)} · LLM {len(report.llm_findings)} · "
                         f"플래그 {fl} · 비용 ${spent:.3f}"))
                 # 이번 스윕에서 상태가 더 자라지 않았으면(새 관측·예산 소진) 조기 종료 — 유한

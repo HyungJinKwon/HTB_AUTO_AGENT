@@ -21,7 +21,7 @@ from . import __version__
 from .approval import interactive_approver
 from .environment import detect_vpn_ips, preflight
 from .knowledge import KnowledgeBase
-from .orchestrator import Orchestrator
+from .orchestrator import _FIXED_POINT_CAP, Orchestrator
 from .profiles import JEOPARDY_CATEGORIES
 from .scope_guard import ScopeGuard, ScopeViolation
 from .tools.recon import auto_approve_in_scope
@@ -523,7 +523,9 @@ def _run_target(args, cfg, knowledge_dir, runner) -> int:
     max_enum = _auto_def(args.max_enum, cfg.max_enum, 24, 6)
     max_llm = _auto_def(args.max_llm, cfg.max_llm, 8, 5)
     max_rounds = _auto_def(args.max_rounds, cfg.max_rounds, 3, 2)
-    max_sweeps = _auto_def(args.max_sweeps, cfg.max_sweeps, 3, 2)
+    # [S2] 자율 모드 스윕 상한은 고정점 완주용으로 넉넉히(의존 체인이 깊어도 성장-정체 시
+    # 조기종료가 1차 종료). 비자율은 보수적 기본 유지.
+    max_sweeps = _auto_def(args.max_sweeps, cfg.max_sweeps, _FIXED_POINT_CAP, 2)
     max_parallel = _auto_def(args.max_parallel, getattr(cfg, "max_parallel", None), 4, 1)
     max_variants = _auto_def(args.variants, cfg.max_variants, 3, 2)
     time_budget = pick(args.time_budget, cfg.time_budget, 0.0) or 0.0
