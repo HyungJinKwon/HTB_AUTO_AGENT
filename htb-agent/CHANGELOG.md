@@ -2,6 +2,22 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.7.6] — 2026-10-10
+
+### 수정(Fixed) — S4-1. 자격증명 상태원 왕복(SSOT 비대칭 교정 · 재개 데이터 유실 버그)
+구조 감사(상태원 중복 지도)가 찾은 실제 결손: 자격증명은 WorldModel·CredentialVault·
+SessionState 3곳에 있는데 **`_persist` 는 `st.credentials` 에 쓰기만 하고 `_restore` 가
+되읽지 않아**, `--resume` 재개 세션이 '수확한 자격증명'을 통째로 잃었다(findings·flags·plan·
+analysis 는 왕복되는데 자격증명만 write-only였던 비대칭).
+- **`CredentialVault.from_list`** 신설 — `to_list` 의 역(직렬화 dict→볼트, `add` 로 중복 제거).
+- **`_restore` 가 `prior.credentials` 를 복원** — 볼트(재사용·`{user}/{pass}` 치환)와 월드
+  (컨텍스트·prereq·권한레벨)를 startup 시드와 동일 형태로 함께 채운다. CLI·파일 자격증명과의
+  중복은 `add`/`add_cred` 가 제거. 재개 세션이 이전 침투의 자격증명을 그대로 이어쓴다.
+- 신규 `test_s4_cred_roundtrip.py` **10건**: `from_list` 왕복·중복제거·입력 내성 · resume 시
+  볼트+월드 복원·비밀/도메인 보존·권한레벨 승격. 전체 **2513 passed, 0 failed** (102 스위트).
+- 비고: 이는 S4(단일 상태원) 로드맵의 **저위험 1차 증분**. god-object 해체·4-컨테이너 통합 등
+  고위험 재설계는 사용자 리뷰용으로 분리.
+
 ## [2.7.5] — 2026-10-10
 
 ### 변경(Changed) — S3. 의존 선언형 스테이지 스케줄러(암묵 스케줄링 → 1급 객체)

@@ -135,3 +135,12 @@ class CredentialVault:
 
     def to_list(self) -> list[dict]:
         return [c.to_dict() for c in self.creds]
+
+    def from_list(self, items: list[dict] | None) -> int:
+        """직렬화된 자격증명(dict 목록, to_list 의 역)을 볼트에 복원한다. add 로 추가해
+        기존(CLI·파일) 자격증명과 중복은 제거된다. 추가된 건수 반환(세션 재개 상태원 복원용)."""
+        before = len(self.creds)
+        for d in items or []:
+            if isinstance(d, dict) and d.get("username"):
+                self.add(Credential.from_dict(d))
+        return len(self.creds) - before
