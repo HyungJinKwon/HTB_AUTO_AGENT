@@ -2,6 +2,21 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.7.3] — 2026-10-10
+
+### 변경(Changed) — S1. 파이프라인 결정성(스테이지 순서·성장 지표)
+구조 감사가 지적한 "호출 순서가 데이터 의존 DAG와 반대 → 교차 사실이 항상 한 스윕 늦음" 문제의
+저위험 교정(재배치·지표 보강, 재설계 아님).
+- **스테이지 재배치**: 생산자 `_web_fingerprint_stage`(제품/버전 식별)를 소비자
+  `_version_probe_stage`·`_exploit_lookup_stage` **앞으로** 이동.
+- **스윕 내 소비 패스 추가**: enum 단계가 vhost 등록·웹 본문 수신으로 제품을 '이번 스윕에'
+  식별하면, 단계 종료 후 핑거프린트·버전프로브·익스조회를 **한 번 더** 돌려 같은 스윕에 반영
+  (다음 스윕까지 밀리지 않음). 전부 멱등 — 변화 없으면 no-op.
+- **성장 지표 보강**: `_world_fingerprint`·`_plan_fingerprint` 에 `web_product`/`web_version`/
+  `len(hosts_map)` 추가 → 웹앱 식별·vhost 등록만 자란 스윕이 '정체'로 오판돼 조기 종료되던
+  버그 교정(그 결과 소비 스테이지가 영영 안 돌던 비결정성 해소).
+- 회귀 테스트 `test_s1_determinism.py`(7건). 실행 경계·명령 생성 로직 불변.
+
 ## [2.7.2] — 2026-10-10
 
 ### 수정(Fixed) — S0. capture≠evaluate 구조 버그 교정 (⭐ 버전매칭 근본 수정)

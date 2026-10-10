@@ -370,16 +370,16 @@ class Orchestrator:
                 # 지금까지의 출력에서 취약점(CVE/CWE·버전 매칭)을 먼저 반영 — 학습·분석·
                 # 명령 생성이 '확인 취약점'을 보고 판단하도록(이전엔 루프가 끝난 뒤에야 계산)
                 self._run_vuln(report, host, target)
+                # [S1] 의존 순서대로 배치 — 생산자(제품/버전 식별)를 소비자(버전프로브·익스조회)
+                # 보다 먼저 돌린다. 과거엔 web_fingerprint 가 소비자 뒤에 있어 제품이 '한 스윕 늦게'
+                # 반영되던 결정성 버그. 결정적 핑거프린트: vhost 리다이렉트를 따라가 제품/버전 확정.
+                self._web_fingerprint_stage(report, host)
                 # 버전 노출 능동 프로브: 제품은 식별됐는데 버전이 미상이면, 문서화된 제품별
                 # 버전 노출 경로를 무해한 GET 으로 긁어 버전을 집어낸다(제품당 1회). 익스 아님.
-                # → 버전이 잡히면 바로 아래 _exploit_lookup_stage 에서 ⭐ 자동 선택이 가능해진다.
                 self._version_probe_stage(report, host)
                 # 3단계 기반: 핑거프린트된 웹앱 제품에 맞는 공개 익스 '조회'(searchsploit)를
                 # 게이트로 올린다(제품당 1회). 조회·무해 — 익스 실행 아님. 결과는 다음 분석에 되먹임.
                 self._exploit_lookup_stage(report, host)
-                # 결정적 핑거프린트: vhost 로 리다이렉트를 따라가 제품/버전을 확실히 식별(제품 미상 &
-                # vhost 등록 시). LLM 편차로 FreePBX 미식별되던 문제 교정 → 아래 단계가 제품을 활용.
-                self._web_fingerprint_stage(report, host)
                 # 발판 전 자격 수확: 웹 노출 비밀/백업 파일을 읽기전용 GET 으로 열거(호스트당 1회).
                 # 무해 — 본문에서 자격이 나오면 _harvest_creds 가 world 에 반영 → ①(b) 인증 PoC 폐루프.
                 self._web_secret_stage(report, host)
@@ -424,6 +424,12 @@ class Orchestrator:
                         report.phase_status[key] = ("대기(" + reason + ")" if not met
                                                     else ("진행" if grew else "점검함"))
                     self._run_vuln(report, host, target)   # 다음 단계가 새 취약점을 보도록
+                # [S1] enum 단계가 vhost 를 등록하거나 웹 본문을 받아 제품이 '이번 스윕에'
+                # 식별됐을 수 있다 → 소비자(핑거프린트·버전프로브·익스조회)를 한 번 더 돌려
+                # 같은 스윕에 반영(다음 스윕까지 밀리지 않게). 전부 멱등 — 바뀐 게 없으면 no-op.
+                self._web_fingerprint_stage(report, host)
+                self._version_probe_stage(report, host)
+                self._exploit_lookup_stage(report, host)
                 sweeps_run += 1
                 # 무인 자율 진행 투명성(heartbeat): 스윕마다 1줄 요약 — 폭주 감시·발표 시연용
                 if not self.quiet:
@@ -668,6 +674,12 @@ class Orchestrator:
             len(w.learned) if w else 0,   # 자율학습 성장도 '상태 성장'으로 인정(다음 스윕 유도)
             len(w.proven_vulns) if w else 0,
             w.access_level if w else "none",
+            # 웹앱 식별·vhost 등록도 '상태 성장'으로 인정 — 이들만 자란 스윕이 '정체'로 오판돼
+            # 조기 종료되면, 그걸 소비하는 다음 스테이지(버전프로브·익스조회)가 영영 안 돌던
+            # 결정성 버그 교정(S1).
+            w.web_product if w else "",
+            w.web_version if w else "",
+            len(self.hosts_map or {}),
             len(report.flags),
             len(report.detected_cve),
             len(report.vuln_matches),
@@ -1730,6 +1742,11 @@ class Orchestrator:
             len(w.learned) if w else 0,
             len(w.proven_vulns) if w else 0,
             w.access_level if w else "none",
+            # [S1] 웹앱 식별·버전 보강·vhost 등록도 '성장'으로 인정 — 이들만 자란 스윕이
+            # '정체'로 오판돼 조기 종료되면 그걸 소비하는 스테이지가 영영 안 돌던 결정성 버그 교정.
+            w.web_product if w else "",
+            w.web_version if w else "",
+            len(self.hosts_map or {}),
         )
 
     def _prepare_crack(self, report: OrchestrationReport) -> None:

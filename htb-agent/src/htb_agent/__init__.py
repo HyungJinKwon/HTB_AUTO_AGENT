@@ -12,7 +12,7 @@ htb-agent — HTB 머신 승인제 자동 풀이 에이전트
 
 from __future__ import annotations
 
-__version__ = "2.7.2"
+__version__ = "2.7.3"
 
 from .creds import CredentialVault
 from .enrich import CveInfo, Enricher
