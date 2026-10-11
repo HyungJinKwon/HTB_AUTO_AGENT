@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from . import recommend as _recommend
 from .enrich import CWE_NAMES, Enricher
 
-SCHEMA_VERSION = "1.6"   # 1.1: blockers·flag_provenance·learn·next_options / 1.2: gate_stats / 1.3: knowledge / 1.4: goal_reached·llm_routing / 1.5: timed_out·elapsed_sec·cost_capped / 1.6: plan(가설 기록)(하위호환)
+SCHEMA_VERSION = "1.7"   # 1.1: blockers·flag_provenance·learn·next_options / 1.2: gate_stats / 1.3: knowledge / 1.4: goal_reached·llm_routing / 1.5: timed_out·elapsed_sec·cost_capped / 1.6: plan(가설 기록) / 1.7: judge_verdict·world.lineage(하위호환)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -131,6 +131,11 @@ def to_dict(report) -> dict:
              "phase": p.phase, "verdict": p.verdict, "label": p.label, "reason": p.reason}
             for p in getattr(report, "flag_provenance", []) or []
         ],
+        # [A6] LLM-심판(조언) — 있을 때만(opt-in). 규칙 판정과 독립된 보조 의견.
+        "judge_verdict": (
+            {"score": _jv.score, "passed": _jv.passed, "rationale": _jv.rationale}
+            if (_jv := getattr(report, "judge_verdict", None)) is not None else None
+        ),
         "learn": {
             "acquired": list(getattr(report, "acquired_knowledge", [])),
             "gaps": list(getattr(report, "knowledge_gaps", [])),

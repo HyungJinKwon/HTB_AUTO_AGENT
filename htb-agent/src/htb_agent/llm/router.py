@@ -278,6 +278,24 @@ class LLMRouter:
                                          resp.cache_creation_tokens)
         return resp.text.strip()
 
+    def judge(self, context: dict, target: str, tier: Tier | None = None) -> str:
+        """[A6] LLM-심판(opt-in·advisory) — 증거가 '공략 달성'을 뒷받침하는지 루브릭 채점.
+        analyze 와 동일한 호출/비용 경로, 전용 심판 프롬프트. 규칙 판정을 덮지 않는다(조언)."""
+        from ..judge import JUDGE_SYSTEM, build_judge_user
+        system = JUDGE_SYSTEM
+        user = build_judge_user(context, target)
+        resp = self.provider.complete(system, user, tier or self.default_tier, max_tokens=512)
+        self.last_stop = resp.stop_reason
+        self.calls += 1
+        self.total_prompt += resp.prompt_tokens
+        self.total_completion += resp.completion_tokens
+        self.total_cache_read += resp.cache_read_tokens
+        self.total_cost += estimate_cost(resp.model, resp.prompt_tokens,
+                                         resp.completion_tokens,
+                                         resp.cache_read_tokens,
+                                         resp.cache_creation_tokens)
+        return resp.text.strip()
+
     @staticmethod
     def _analyst_user_prompt(context: dict, target: str) -> str:
         lines = [f"타겟: {target}"]
@@ -539,6 +557,11 @@ class HybridRouter:
     def analyze(self, context: dict, target: str, tier: Tier | None = None) -> str:
         """분석(B3)은 강력 모델 우선(추론 품질), 실패 시 로컬 폴백."""
         out, _ = self._try("analyze", Tier.STRONG, context, target, tier or Tier.STRONG)
+        return out or ""
+
+    def judge(self, context: dict, target: str, tier: Tier | None = None) -> str:
+        """[A6] 심판도 강력 모델 우선(판정 품질), 실패 시 로컬 폴백. advisory."""
+        out, _ = self._try("judge", Tier.STRONG, context, target, tier or Tier.STRONG)
         return out or ""
 
     def routing_summary(self) -> str:

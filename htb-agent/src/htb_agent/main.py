@@ -205,6 +205,9 @@ def build_parser() -> argparse.ArgumentParser:
     g_mode.add_argument("--exploit-exec", action="store_true", dest="exploit_exec",
                    help="옵트인(기본 OFF): 확보한 평문 자격으로 SSH 접속해 플래그 읽기·권한상승 "
                         "열거를 게이트를 거쳐 자동 실행(권한 확인 대상 전용)")
+    g_mode.add_argument("--judge", action="store_true", dest="judge",
+                   help="옵트인(기본 OFF): 종료 시 LLM-심판이 '공략 달성' 주장이 증거로 "
+                        "뒷받침되는지 별도 채점(조언만 — 규칙 판정·목표 달성을 덮지 않음). LLM 필요")
     g_kb.add_argument("--no-enrich", action="store_true",
                    help="CVE/CWE 자동 수집(NVD/GitHub) 비활성")
     g_kb.add_argument("--learn-gaps", action="store_true", dest="learn_gaps",
@@ -784,6 +787,7 @@ def _run_target(args, cfg, knowledge_dir, runner) -> int:
                                 workspace=workspace,
                                 auto_poc=args.auto_poc,
                                 exploit_exec=args.exploit_exec,
+                                judge=getattr(args, "judge", False),
                                 poc_commands=args.poc_commands or [],
                                 dry_run=args.dry_run,
                                 observer=observer,

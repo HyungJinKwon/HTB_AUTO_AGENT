@@ -153,6 +153,9 @@ class OrchestrationReport:
     flag_provenance: list = field(default_factory=list)
     # 적대적 재검증(skeptic) — 독립 재현 기반 확신도. {(kind,value): verify.Confidence}
     flag_confidence: dict = field(default_factory=dict)
+    # [A6] LLM-심판(opt-in·advisory) — 증거가 '공략 달성'을 뒷받침하는지 조언. judge.JudgeVerdict|None.
+    # 규칙 판정(goal_reached·provenance)을 덮지 않음(보조 의견).
+    judge_verdict: object | None = None
     goal_reached: bool = False        # 신뢰 가능한 플래그로 목표 달성 → 남은 단계 조기 종료
     timed_out: bool = False           # 시간 예산 소진 → 남은 단계 조기 종료(상태 저장)
     cost_capped: bool = False         # LLM 비용 상한 도달 → 이후 규칙 기반으로만 진행
@@ -221,6 +224,7 @@ class Orchestrator:
                  exploit_exec: bool = False,
                  auto_poc: bool = False,
                  poc_commands: "list[str] | None" = None,
+                 judge: bool = False,
                  workspace=None):
         self.guard = guard
         self.runner = runner
@@ -276,6 +280,7 @@ class Orchestrator:
         self.dry_run = dry_run
         self.exploit_exec = exploit_exec
         self.auto_poc = auto_poc
+        self.judge = judge   # [A6] LLM-심판(opt-in·advisory)
         self._exploit_looked_up: set[str] = set()   # 제품별 공개 익스 조회 1회 가드
         self._version_probed: set[str] = set()       # 제품별 버전 노출 프로브 1회 가드
         self._web_secret_probed: set[str] = set()     # 웹 노출 비밀/백업 열거 1회 가드(베이스별)
@@ -526,6 +531,10 @@ class Orchestrator:
         # 보고에 싣고, 단일 출처면 독립 재읽기 명령을 수동 제안으로 남긴다(생성 전용 — 실행 아님).
         self._assess_flags(report)
 
+        # [A6] LLM-심판(opt-in·advisory) — 증거가 '공략 달성'을 뒷받침하는지 별도 LLM 채점.
+        # 규칙 판정(goal_reached·provenance)을 덮지 않고 조언만 싣는다(report.judge_verdict).
+        self._run_judge(report, target)
+
         # ── PHASE 4: REPORT ──
         report.status = "interrupted" if interrupted else "done"
         if report.timed_out:
@@ -645,6 +654,36 @@ class Orchestrator:
     def _assess_flags(self, report: OrchestrationReport) -> None:
         # [S4-3(2)] 로직은 flag_assess.assess_flags 로 분리 — 얇은 위임(행위 보존).
         flag_assess.assess_flags(report)
+
+    def _run_judge(self, report: OrchestrationReport, target: str) -> None:
+        """[A6] LLM-심판(opt-in·advisory) — 증거(플래그·출처 판정·권한·상태·명령)만 보고 '공략
+        달성' 주장이 뒷받침되는지 별도 LLM 채점. 규칙 판정을 덮지 않고 report.judge_verdict 에
+        조언만 싣는다. --judge + LLM 라우터가 있을 때만(기본 비활성·비용 0). 실패는 조용히 생략."""
+        if not self.judge or self.llm_router is None or self._cost_capped(report):
+            return
+        from . import judge as _judge
+        flags = []
+        prov = {(p.kind, p.value): p for p in report.flag_provenance}
+        for f in report.flags:
+            p = prov.get((f.kind, f.value))
+            verdict = getattr(p, "verdict", "?") if p else "미분류"
+            flags.append(f"{f.kind}={f.value} (출처판정: {verdict})")
+        context = {
+            "flags": flags,
+            "access_level": self.world.access_level if self.world else "none",
+            "state": self.world.context_lines() if self.world else [],
+            "commands": [f.command for f in (report.enum_findings + report.llm_findings)
+                         if f.ran][-8:],
+        }
+        try:
+            raw = self.llm_router.judge(context, target)
+            verdict = _judge.parse_judge(raw)
+        except Exception as e:   # noqa: BLE001 — 심판 실패가 본 작업/보고를 막지 않음
+            self.audit.event("judge_error", error=str(e))
+            return
+        if verdict is not None:
+            report.judge_verdict = verdict
+            self.audit.event("judge", score=verdict.score, passed=verdict.passed)
 
     def _cost_capped(self, report: OrchestrationReport) -> bool:
         """LLM 누적 추정 비용이 상한에 도달했으면 True(처음 도달 시 1회 기록). 이후엔 규칙 기반만."""
