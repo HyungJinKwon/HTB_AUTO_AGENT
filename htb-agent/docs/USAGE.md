@@ -56,7 +56,9 @@
 **심링크**하면, venv 를 매번 activate 하지 않아도 어느 디렉터리에서나 `assassin` 이 바로 동작한다.
 
 ```bash
-git clone https://github.com/HyungJinKwon/HTB_AUTO_AGENT.git
+# 새 PC·VM 스냅샷 — 기본(default) 브랜치로 클론 (clone/pull 이 기본 브랜치를 자동 선택)
+git clone https://github.com/HyungJinKwon/HTB_AUTO_AGENT.git ~/HTB_AUTO_AGENT
+# (이미 받아둔 경우 최신화) git -C ~/HTB_AUTO_AGENT pull --ff-only
 cd ~/HTB_AUTO_AGENT/htb-agent
 sudo ./scripts/install_tools.sh            # 보안 도구 일괄 설치
 
@@ -89,6 +91,9 @@ sudo openvpn your-htb.ovpn                   # (HTB) tun0 → 공격자 IP 자�
   방금 만든 링크를 즉시 인식시킨다.
 - **Claude 를 안 쓰면** `pip install -e .`(extra 생략)로 충분하다. 규칙 기반·로컬 Ollama 는 추가 의존성이 없다.
 - venv 를 **삭제**하려면 `rm -rf .venv ~/.local/bin/assassin ~/.local/bin/htb-agent` 면 된다.
+- **브랜치**: 새 PC·VM 스냅샷에서는 **기본(default) 브랜치**를 그대로 쓴다 — `git clone`/`git pull` 이 자동
+  선택하므로 브랜치명을 지정할 필요가 없다. `claude/*` 작업 브랜치는 CI·리뷰 중 임시로 강제동기될 수 있어
+  로컬 실행용으로 체크아웃하지 않는다(최신 릴리스는 항상 기본 브랜치에 병합되어 있다).
 
 설치 카테고리: `recon` `web` `smb` `ad` `creds` `cloud` `pivot` `wordlist` `traffic` `re` `pwn` `forensic` `llm`
 

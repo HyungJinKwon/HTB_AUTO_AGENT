@@ -2,6 +2,17 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.9.2] — 2026-10-11
+
+### 문서(Docs) — 새 환경 설치는 기본(default) 브랜치 기준으로 명확화
+새 PC·VM 스냅샷에서 셋업할 때 **기본(default) 브랜치**로 클론/최신화하도록 설치 문서를 정리한다
+(브랜치명 하드코딩 없이 `git clone`/`git pull` 이 자동 선택 — 리네임 안전).
+- `README.md`·`docs/QUICKSTART.md`·`docs/USAGE.md` 설치부에 `git clone … ~/HTB_AUTO_AGENT` +
+  최신화용 `git -C ~/HTB_AUTO_AGENT pull --ff-only` 추가.
+- 브랜치 주석: `claude/*` 작업 브랜치는 CI·리뷰 중 임시 강제동기될 수 있어 로컬 실행용으로
+  체크아웃하지 말 것(최신 릴리스는 항상 기본 브랜치에 병합) 명시.
+- 코드 변경 없음(문서·버전만).
+
 ## [2.9.1] — 2026-10-11
 
 ### 추가(Added) — A8. 소스-그라운드 드리프트 테스트 (ARTEX 'source-grounded drift tests' 반영)

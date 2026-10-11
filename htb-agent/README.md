@@ -135,6 +135,9 @@
 `assassin` 이 바로 먹히게 하는 것이 가장 깔끔합니다(venv 를 매번 activate 하지 않아도 됨).
 
 ```bash
+# 새 PC·VM 스냅샷 — 저장소 기본(default) 브랜치로 클론 (clone 은 기본 브랜치를 자동 체크아웃)
+git clone https://github.com/HyungJinKwon/HTB_AUTO_AGENT.git ~/HTB_AUTO_AGENT
+# (이미 받아둔 경우 최신화) git -C ~/HTB_AUTO_AGENT pull --ff-only
 cd ~/HTB_AUTO_AGENT/htb-agent
 sudo ./scripts/install_tools.sh            # 보안 도구 전체(BloodHound·S3 등) / 또는: ... recon web smb ad
 
@@ -159,6 +162,8 @@ Python 3.10+ (코어는 표준 라이브러리만, 외부 의존성 없음). `[c
 > **bash 사용자**는 `~/.zshrc` 대신 `~/.bashrc` 로 바꾸세요(Kali 기본 셸은 zsh). `[claude]` 의 대괄호는
 > zsh 에서 glob 으로 해석되므로 반드시 따옴표로 감쌉니다(`".[claude]"`).
 > **설치 없이** 한 번만 돌려 보려면 `cd htb-agent` 에서 `PYTHONPATH=src python3 -m htb_agent ...` 로 실행.
+> **브랜치**: 새 PC·VM 스냅샷에서는 위처럼 **기본(default) 브랜치**를 그대로 쓰세요(`clone`/`pull` 이 자동 선택).
+> `claude/*` 작업 브랜치는 CI·리뷰 중 임시로 강제동기될 수 있으니 로컬 실행용으로 체크아웃하지 마세요.
 
 ## 실행
 
