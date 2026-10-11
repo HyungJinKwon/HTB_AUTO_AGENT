@@ -76,6 +76,11 @@ class SessionState:
     detected_cwe: list[str] = field(default_factory=list)
     credentials: list[dict] = field(default_factory=list)
     flags: list[dict] = field(default_factory=list)
+    # [S5-3] 월드 식별 상태·수집 해시 — 재개 시 S0 원본증거 핑거프린트가 '손실 요약'으로
+    # 퇴행하지 않도록, 식별된 제품/버전과 크래킹 대상 해시를 영속한다(복원은 _restore).
+    web_product: str = ""
+    web_version: str = ""
+    found_hashes: list[str] = field(default_factory=list)
     analysis: str = ""                 # 마지막 분석가 판단(재개 시 계획 이어가기)
     plan: dict | None = None           # 가설 기록(hypotheses.HypothesisLedger.to_dict)
     history: list[dict] = field(default_factory=list)

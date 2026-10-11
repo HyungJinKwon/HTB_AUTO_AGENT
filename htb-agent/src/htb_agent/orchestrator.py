@@ -589,6 +589,15 @@ class Orchestrator:
                     continue
                 sec = d.get("password") or d.get("nt_hash") or ""
                 self.world.add_cred(f"{user}:{sec}" if sec else user, d.get("source", ""))
+        # [S5-3] 월드 식별 상태 복원 — 재개 시 raw_output(비영속)이 없어 핑거프린트가 '손실
+        # 요약'으로 퇴행(S0 교정 무력화)하던 것을, 직전 실행에서 확정한 제품/버전으로 직접
+        # 복원해 막는다. set_web_app 이 제품 고착·버전 보강 규칙을 그대로 적용.
+        if self.world is not None and prior.web_product:
+            self.world.set_web_app(prior.web_product, prior.web_version or "")
+        # 수집 해시 복원 — 재개 run 의 크래킹 준비가 직전 run 의 해시를 그대로 이어쓰게.
+        for hv in prior.found_hashes or []:
+            if hv not in self._found_hashes:
+                self._found_hashes.append(hv)
         for m in prior.manual_suggestions or []:
             if m not in report.manual_suggestions:
                 report.manual_suggestions.append(m)
@@ -726,6 +735,14 @@ class Orchestrator:
             st.detected_cwe = report.detected_cwe
         if self.vault is not None and self.vault.creds:
             st.credentials = self.vault.to_list()
+        # [S5-3] 월드 식별 상태·수집 해시 영속 — 재개 시 핑거프린트/크랙 준비가 퇴행하지 않게.
+        if self.world is not None:
+            if self.world.web_product:
+                st.web_product = self.world.web_product
+            if self.world.web_version:
+                st.web_version = self.world.web_version
+        if getattr(self, "_found_hashes", None):
+            st.found_hashes = list(self._found_hashes)
         if report.flags:
             provmap = {(p.kind, p.value): p for p in report.flag_provenance}
 

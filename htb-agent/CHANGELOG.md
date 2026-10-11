@@ -2,6 +2,17 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.7.15] — 2026-10-11
+
+### 수정(Fixed) — S5-3. 월드 식별 상태·해시 resume 왕복(S0 resume 퇴행 교정)
+재감사가 찾은 resume 퇴행: `_persist` 가 월드 상태를 저장하지 않고 `raw_output` 도 비영속이라,
+`--resume` 시 `_run_vuln` 이 `web_product`/`web_version` 을 **손실 요약**(S0 가 피하려던 바로 그것)
+에서 재파싱해 ⭐ 버전매칭이 1차 실행보다 조용히 퇴행하고, 수집 해시도 사라져 크랙 준비가 degrade.
+- **`SessionState` 에 `web_product`/`web_version`/`found_hashes` 추가**, `_persist` 가 월드·해시에서 저장.
+- **`_restore` 가 복원** — `set_web_app` 으로 제품/버전을 직접 복원(요약 재파싱 의존 제거),
+  해시는 `_found_hashes` 로 이어붙임. S4 자격증명 왕복과 동일 패턴.
+- 신규 `test_s5_world_resume.py` **6건**(저장·복원 각각). 전체 **2576 passed, 0 failed** (110 스위트).
+
 ## [2.7.14] — 2026-10-11
 
 ### 수정(Fixed) — S5-2. 정직성 가드: world(신뢰 상태)에 공략 유래 플래그만 반영
