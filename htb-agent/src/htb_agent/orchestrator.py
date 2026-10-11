@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Callable
 if TYPE_CHECKING:
     from .scheduler import StageScheduler
 
-from . import command_fixer, diagnostics
+from . import command_fixer, diagnostics, preparations
 from . import provenance as _prov
 from .audit import NullAudit
 from .command_validator import ValidationReport, shell_operators, validate
@@ -1720,29 +1720,14 @@ class Orchestrator:
             return ws
         return None
 
+    # [S4-3] 준비 생성기 로직은 preparations 모듈의 자유 함수로 분리(god-object 축소).
+    # 아래는 self 상태 → 명시 인자로 넘기는 얇은 위임 래퍼(행위 보존 — 생성 전용·실행 없음).
     def _prepare_revshells(self, report: OrchestrationReport) -> None:
-        """공격자 IP(VPN tun0 등)가 확보되면 리버스쉘 페이로드를 자동 생성해
-        리포트에 담는다. 생성 전용 — 실행은 하지 않는다(안전 경계 유지).
-        공격자 IP 가 없으면(미탐지) 조용히 생략한다."""
-        attacker_ips = list(self.guard.attacker_ips or [])
-        if not attacker_ips:
-            return
-        lhost = str(attacker_ips[0])
-        lport = self.revshell_port
-        try:
-            from . import revshell
-            report.revshells = revshell.generate(lhost, lport)
-            report.revshell_lhost = lhost
-            report.revshell_lport = lport
-            self.audit.event("revshell_prepared", lhost=lhost, lport=lport,
-                             count=len(report.revshells))
-        except Exception as e:   # noqa: BLE001 — 생성 실패가 전체를 깨지 않도록
-            self.audit.event("revshell_error", error=str(e))
+        preparations.prepare_revshells(
+            report, [str(ip) for ip in (self.guard.attacker_ips or [])],
+            self.revshell_port, self.audit)
 
     def _prepare_cloud(self, report: OrchestrationReport) -> None:
-        """호스트명/도메인이 확보되면 AWS/S3 열거(버킷 후보+점검)를 자동 준비한다.
-        생성 전용 — AWS 엔드포인트는 타겟 범위 밖이라 실행하지 않는다. 버킷명 후보를
-        만들 이름(호스트명/도메인)이 없으면(IP 뿐) 조용히 생략한다."""
         names: list[str] = []
         if self.hosts_map:
             names.extend(self.hosts_map.values())
@@ -1750,67 +1735,15 @@ class Orchestrator:
         if self.guard.bound_host:
             names.append(str(self.guard.bound_host))
         names.append(report.target)
-        try:
-            from . import cloud
-            prep = cloud.generate(names)
-            if not prep.candidates:
-                return
-            report.cloud_candidates = prep.candidates
-            report.cloud_checks = prep.checks
-            self.audit.event("cloud_prepared", keyword=prep.keyword,
-                             candidates=len(prep.candidates),
-                             checks=len(prep.checks))
-        except Exception as e:   # noqa: BLE001 — 준비 실패가 전체를 깨지 않도록
-            self.audit.event("cloud_error", error=str(e))
+        preparations.prepare_cloud(report, names, self.audit)
 
     def _prepare_privesc(self, report: OrchestrationReport, prof: ProfileResult) -> None:
-        """OS 식별 결과로 권한상승 플레이북을 자동 준비한다. 생성 전용 — 획득한
-        대상 셸에서 사용자가 직접 실행한다(에이전트는 셸 없음). OS 미상이면 생략."""
-        os_class = prof.os_class.value if prof else "unknown"
-        if os_class not in ("linux", "windows", "windows_ad"):
-            return
-        attacker_ip = ""
-        if self.guard.attacker_ips:
-            attacker_ip = str(list(self.guard.attacker_ips)[0])
-        # 탐지 CVE(출력 추출) + 버전매칭 CVE 를 합쳐 LPE 후보 승격에 반영
-        cve_pool = list(report.detected_cve)
-        for m in report.vuln_matches:
-            cve_pool.extend(m.cve)
-        try:
-            from . import privesc
-            plan = privesc.build(os_class, attacker_ip, cve_pool)
-            report.privesc_steps = plan.steps
-            report.privesc_cve_candidates = plan.cve_candidates
-            self.audit.event("privesc_prepared", os=os_class,
-                             steps=len(plan.steps),
-                             cve_candidates=len(plan.cve_candidates))
-            # ③ 폐루프 '후보 선정': 획득한 셸에서 이미 실행된 privesc 열거 출력(findings)이
-            # 있으면 파싱해 구체적 상승 벡터를 랭킹한다(생성 전용 — 제안만, 실행 아님).
-            if os_class == "linux":
-                self._privesc_analyze_stage(report)
-        except Exception as e:   # noqa: BLE001 — 준비 실패가 전체를 깨지 않도록
-            self.audit.event("privesc_error", error=str(e))
+        attacker_ip = (str(list(self.guard.attacker_ips)[0])
+                       if self.guard.attacker_ips else "")
+        preparations.prepare_privesc(report, prof, attacker_ip, self.audit)
 
     def _privesc_analyze_stage(self, report: OrchestrationReport) -> None:
-        """③ 폐루프 후보 선정 — findings 에 privesc 열거 출력(sudo -l·SUID·getcap)이 있으면
-        파싱해 구체적 상승 벡터를 랭킹하고 수동 제안으로 surface 한다. 생성 전용(실행 아님).
-        벡터의 '실제 실행 → root 확인 → world 권한레벨 전이 → 재열거'(폐루프 발사)는 사용자
-        리포의 실행 스테이지(target_shell) 몫 — 여기선 후보·계획만 만든다."""
-        corpus = "\n".join(f.output for f in (report.enum_findings + report.llm_findings)
-                           if f.output)
-        if not corpus.strip():
-            return
-        from .privesc_analyze import analyze_enum, render_vectors
-        vectors = analyze_enum(corpus)
-        if not vectors:
-            return
-        report.privesc_vectors = vectors
-        suggestion = render_vectors(vectors)
-        if suggestion not in report.manual_suggestions:
-            report.manual_suggestions.append(
-                "# 권한상승 벡터(열거 출력 자동 분석 — 권한 확인 자산 전용):\n" + suggestion)
-        self.audit.event("privesc_vectors", count=len(vectors),
-                         kinds=[v.kind for v in vectors[:5]])
+        preparations.privesc_analyze(report, self.audit)
 
     def _world_fingerprint(self, report: OrchestrationReport) -> tuple:
         """스윕 간 '상태 성장' 판정용 지문. 관측·크리덴셜·서비스·권한이 늘면 달라진다.
@@ -1833,32 +1766,9 @@ class Orchestrator:
         )
 
     def _prepare_crack(self, report: OrchestrationReport) -> None:
-        """enum/LLM 출력·크리덴셜 볼트에서 해시를 수집해 크래킹 명령을 자동 준비한다.
-        생성 전용 — 크래킹은 사용자 환경에서 실행. 해시가 없으면 조용히 생략."""
-        # 실행 원시출력에서 수집한 해시(요약 전 — _attempt 에서 스캔) + 요약출력 보강
-        hashes: list[str] = list(getattr(self, "_found_hashes", []))
-        for f in report.enum_findings + report.llm_findings:
-            if f.output:
-                hashes.extend(crack_scan(f.output))
-        for p in report.host.ports if report.host else []:
-            for sc in p.scripts.values():
-                hashes.extend(crack_scan(sc))
-        # 크리덴셜 볼트의 NT 해시(PtH)도 크래킹 후보
-        if self.vault is not None:
-            for c in self.vault.creds:
-                nt = getattr(c, "nt_hash", None)
-                if nt:
-                    # PtH NT 해시는 'LM:NT' 형식일 수 있어 NT 부분만 사용
-                    hashes.append(nt.split(":")[-1])
-        if not hashes:
-            return
-        try:
-            from . import crack
-            report.crack_jobs = crack.prepare(hashes)
-            if report.crack_jobs:
-                self.audit.event("crack_prepared", jobs=len(report.crack_jobs))
-        except Exception as e:   # noqa: BLE001 — 준비 실패가 전체를 깨지 않도록
-            self.audit.event("crack_error", error=str(e))
+        # [S4-3] 로직은 preparations.prepare_crack 으로 분리 — 얇은 위임(행위 보존).
+        preparations.prepare_crack(
+            report, list(getattr(self, "_found_hashes", [])), self.vault, self.audit)
 
     def _repetition_warning(self, report: OrchestrationReport, cmd: str) -> str:
         """이 명령이 '이전에 실패한 같은 종류의 시도'와 겹치면 경고 문자열(없으면 "").
