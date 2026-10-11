@@ -181,13 +181,15 @@ class WorldModel:
             self.record_lineage("learned", item, source)
 
     def add_flag(self, kind: str, value: str, source: str = "") -> None:
+        # 접근레벨 상승은 '실제 플래그를 기록한' 경우에만 — value 가드 안으로. 과거엔 가드 밖이라
+        # add_flag("root","") 같은 빈 값 호출이 플래그 없이 access 를 root 로 올릴 수 있었다(잠재 구멍).
         if value and self.flags.get(kind) != value:
             self.flags[kind] = value
             self.record_lineage("flag", value, source)   # [A5] 플래그도 리니지에
-        if kind == "user":
-            self.raise_access("user")
-        elif kind == "root":
-            self.raise_access("root")
+            if kind == "user":
+                self.raise_access("user")
+            elif kind == "root":
+                self.raise_access("root")
 
     def add_vuln(self, entry: str, source: str = "", parent: str = "") -> None:
         entry = (entry or "").strip()
@@ -265,6 +267,7 @@ class WorldModel:
                          for s in self.services],
             "creds": list(self.creds),
             "loot": list(self.loot),
+            "learned": list(self.learned),   # 자율학습 지식 — 컨텍스트·성장판정에 쓰면서 export 엔 빠져있었음(SSOT 불일치)
             "flags": dict(self.flags),
             "proven_vulns": list(self.proven_vulns),
             "evidence": dict(self.evidence),

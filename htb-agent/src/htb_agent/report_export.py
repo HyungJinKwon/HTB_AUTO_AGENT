@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from . import recommend as _recommend
 from .enrich import CWE_NAMES, Enricher
 
-SCHEMA_VERSION = "1.8"   # 1.1: blockers·flag_provenance·learn·next_options / 1.2: gate_stats / 1.3: knowledge / 1.4: goal_reached·llm_routing / 1.5: timed_out·elapsed_sec·cost_capped / 1.6: plan(가설 기록) / 1.7: judge_verdict·world.lineage(하위호환) / 1.8: discovered_cve(제품→CVE 자동발견)
+SCHEMA_VERSION = "1.9"   # 1.1~1.7 생략 / 1.8: discovered_cve / 1.9: world.learned export(SSOT 완전성)
 
 
 # ──────────────────────────────────────────────────────────────────────
