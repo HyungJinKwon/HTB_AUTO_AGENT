@@ -98,5 +98,15 @@
     "suggest": ["searchsploit php-cgi 1823"],
     "severity": "high",
     "note": "쿼리스트링 인자주입(?-d). 영향 PHP<5.3.12 / <5.4.2 (CGI 모드 한정). 출처: NVD"
+  },
+  {
+    "name": "FreePBX endpoint 모듈 비인증 SQLi→RCE",
+    "service": "FreePBX",
+    "version_contains": ["15.0", "16.0", "17.0"],
+    "cve": ["CVE-2025-57819"],
+    "cwe": ["CWE-89", "CWE-288"],
+    "suggest": ["msfconsole -q -x 'search freepbx 2025; exit'", "curl -sk -o /dev/null -w '%{http_code}\\n' https://{t}/admin/ajax.php"],
+    "severity": "critical",
+    "note": "endpoint(Endpoint Manager) 모듈의 /admin/ajax.php 비인증 SQLi + 인증우회 → DB 조작·RCE(cron 삽입). 패치판 endpoint 15.0.66 / 16.0.89 / 17.0.3 — 그 미만 취약(예: 16.0.40.7). CISA KEV 등재·실환경 공격(2025-08~). Metasploit 모듈 존재. 출처: NVD CVE-2025-57819 / FreePBX GHSA-m42g-xg4c-5f3h / CISA KEV"
   }
 ]

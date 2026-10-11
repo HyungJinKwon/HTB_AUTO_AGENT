@@ -2,6 +2,17 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.9.3] — 2026-10-11
+
+### 추가(Added) — 취약점 KB: FreePBX endpoint 비인증 SQLi→RCE (CVE-2025-57819)
+라이브 검증(connected.htb, FreePBX 16.0.40.7)에서 드러난 KB 갭 보강. searchsploit·기존 KB에
+없어 '버전은 정확히 탐지하고도 매칭 PoC 없음'으로 멈추던 FreePBX 16 최신 RCE를 취약점 KB에
+추가 → 다음 실행부터 자동 매칭.
+- `knowledge/vulns/common-services.json`: FreePBX endpoint 모듈 `/admin/ajax.php` 비인증
+  SQLi+인증우회→RCE 항목(영향 endpoint <15.0.66/16.0.89/17.0.3, CISA KEV, Metasploit 모듈).
+- `enrich.py` `CWE_NAMES`: `CWE-288`(Authentication Bypass Using an Alternate Path or Channel) 등재.
+- 코드 로직 변경 없음(KB 데이터 + CWE 카탈로그). 전체 113 스위트 | 2630 passed, 0 failed.
+
 ## [2.9.2] — 2026-10-11
 
 ### 문서(Docs) — 새 환경 설치는 기본(default) 브랜치 기준으로 명확화
