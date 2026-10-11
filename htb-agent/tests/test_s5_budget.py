@@ -59,7 +59,11 @@ consume = [f for f in rep.enum_findings if not f.budgeted]
 kb = [f for f in rep.enum_findings if f.budgeted and not f.skipped]
 check("소비 스테이지 프로브가 실제로 떴다(budgeted=False 존재)", len(consume) > 0)
 check("그럼에도 KB enum(budgeted) 이 굶지 않고 돌았다", len(kb) > 0)
-check("KB 예산 계상은 max_enum(3) 이내", Orchestrator._spent(rep.enum_findings) <= 3)
+# [S5-1b] 예산은 이제 단계별 — 각 단계 KB 계상이 max_enum(3) 이내인지로 본다
+# (전역 합산은 단계별 예산의 합까지 커질 수 있으므로 상한이 아니다).
+for _ph in ("enum", "access", "privesc", "lateral"):
+    check(f"KB 예산 계상({_ph} 단계)은 max_enum(3) 이내",
+          Orchestrator._spent(rep.enum_findings, 0, _ph) <= 3)
 check("소비 프로브는 예산 계상에서 제외됨(비계상 수 > 0)",
       len(consume) > 0 and Orchestrator._spent(rep.enum_findings) < len(
           [f for f in rep.enum_findings if not f.skipped]))

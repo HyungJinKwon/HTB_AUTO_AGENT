@@ -432,13 +432,13 @@ class Orchestrator(FootholdMixin):
                     for _rnd in range(self.max_rounds):
                         added = self._enum_round(
                             report, host, prof, target, seen_cmds,
-                            self.max_enum - self._spent(report.enum_findings, self._enum_base),
+                            self.max_enum - self._spent(report.enum_findings, self._enum_base, key),
                             key)
                         if (use_llm and not self._goal_reached(report)
                                 and not self._cost_capped(report)):
                             added += self._llm_round(
                                 report, host, prof, target, seen_cmds,
-                                self.max_llm - self._spent(report.llm_findings, self._llm_base),
+                                self.max_llm - self._spent(report.llm_findings, self._llm_base, key),
                                 key)
                         if added == 0 or self._goal_reached(report) or self._time_up():
                             break
@@ -650,10 +650,17 @@ class Orchestrator(FootholdMixin):
                              + len(report.llm_findings), flags=len(report.flags))
 
     @staticmethod
-    def _spent(findings: list[EnumFinding], base: int = 0) -> int:
+    def _spent(findings: list[EnumFinding], base: int = 0,
+               phase: str | None = None) -> int:
         """이번 실행에서 KB 열거 예산을 쓴 시도 수 — 도구 미설치(skipped)·예산 비계상
-        (budgeted=False: 결정적 소비 스테이지 프로브)는 제외. [S5-1]"""
-        return sum(1 for f in findings[base:] if not f.skipped and f.budgeted)
+        (budgeted=False: 결정적 소비 스테이지 프로브)는 제외. [S5-1]
+
+        [S5-1b] phase 를 주면 '그 단계에서만' 쓴 시도 수(단계별 공정배분). 과거엔 phase=None
+        로 전역합산이라, 순서상 먼저 도는 enum 이 max_enum 을 독식하면 access/privesc/lateral
+        의 KB 열거 예산이 0 으로 굶었다(boot2root 에서 privesc/lateral 열거가 핵심인데 치명적).
+        이제 각 단계가 독립 예산 max_enum/max_llm 을 받는다(전역 cost_cap 은 여전히 상한)."""
+        return sum(1 for f in findings[base:]
+                   if not f.skipped and f.budgeted and (phase is None or f.phase == phase))
 
     def _tool_ok(self, cmd: str) -> bool:
         """명령의 바이너리가 설치돼 실제 실행 가능한지(예산 소비·시도 집계를 '설치된 도구'로 한정)."""

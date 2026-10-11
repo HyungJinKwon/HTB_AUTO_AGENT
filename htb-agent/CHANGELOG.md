@@ -2,6 +2,21 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.11.1] — 2026-10-11
+
+### 수정(Fixed) — 단계별 열거 예산 공정배분 (max_enum 잠식 HIGH 버그)
+핵심 파이프라인 전수 감사에서 확인된 구조적 결함. `_spent` 가 전역합산이라 KB 열거 예산
+(`max_enum`/`max_llm`)이 **단계 전체에서 공유**됐고, 순서상 먼저 도는 enum 단계가 예산을
+독식하면 access/privesc/lateral 의 열거 예산이 **0 으로 굶었다**. boot2root 는 privesc/
+lateral 열거가 핵심이라 치명적이었다. 이제 **각 단계가 독립 예산**을 받는다(option A 공정
+배분 — 더 철저, 전역 `cost_cap` 은 여전히 달러 상한으로 작동).
+- `orchestrator._spent`: `phase` 필터 추가(주면 그 단계에서만 쓴 시도 수 집계). 호출부
+  두 곳(`_enum_round`·`_llm_round` 예산 산출)에 현재 단계 키 전달. finding 은 이미
+  `phase` 를 보유 → 데이터 변경 없이 집계만 단계 분리.
+- 하위호환: `phase=None`(기본) 은 기존 전역 합산 그대로. `budgeted=False`(소비 스테이지)·
+  `skipped`(미설치) 제외 의미 불변.
+- 신규 `test_phase_budget.py` **9건** + `test_s5_budget.py` 예산 단언을 단계별로 교정.
+
 ## [2.11.0] — 2026-10-11
 
 ### 추가(Added) — Ollama 재시도/백오프 (견고성 — 서킷브레이커 조기 트립 완화)
