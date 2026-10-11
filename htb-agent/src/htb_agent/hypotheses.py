@@ -264,9 +264,18 @@ class HypothesisLedger:
             return "neutral"
         if h.status == "pending":
             h.status = "testing"
-        verdict = None if target_rejected else match_signal(h.expected, output)
-        if target_rejected or not (output or "").strip():
-            verdict = False
+        # 대상 거부(403/404 등)라도 match_signal 을 먼저 본다 — 가설이 '그 거부 자체'를 기대한
+        # 경우(expected="returns 403 Forbidden" 등)엔 일치로 인정해야 한다. 과거엔 target_rejected
+        # 면 match_signal 을 건너뛰고 강제 miss → 기대한 응답을 받고도 오탐 stuck/freeze 됐다.
+        sig = match_signal(h.expected, output)
+        if not (output or "").strip():
+            verdict = False               # 빈 출력 → 판단 불가가 아니라 miss(실행은 됐으나 신호 無)
+        elif sig is True:
+            verdict = True                # 기대 신호가 실제로 보임(거부를 기대했어도 일치)
+        elif target_rejected:
+            verdict = False               # 기대 안 한 대상 거부 → miss
+        else:
+            verdict = sig                 # None=판단불가(neutral) · False=불일치
         if verdict is None:
             return "neutral"
         short = _clip(command, 60)

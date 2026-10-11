@@ -2,6 +2,23 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.10.1] — 2026-10-11
+
+### 수정(Fixed) — 구조 감사에서 확인된 LLM 계층 실버그 3종
+핵심 파이프라인 전수 감사(라우터·프로바이더·가설엔진·비용)에서 확인된 실제 결함 수정.
+- **[HIGH] 서킷브레이커 영구차단 → 반개방 복구**(`llm/router.py`): `HybridRouter.disabled` 가
+  '쓰기 전용'이라 일시 장애(529/타임아웃 2연속)가 **세션 전체 능력상실**로 굳었다(재활성 경로
+  전무). 쿨다운(기본 3콜 건너뜀) 후 1회 재탐색 → 성공 시 차단 해제, 재실패 시 재차단. 성공은
+  언제나 서킷을 해제한다.
+- **[MED] 비용 과소집계(캐시 토큰 이중차감)**(`llm/pricing.py`): `input_tokens` 는 이미 캐시
+  읽기/생성을 제외한 '비캐시' 입력 수인데 여기서 또 빼 비캐시 입력을 0 으로 깎았다 → `total_cost`
+  과소 → `cost_cap` 늦게 발동 → **예산 초과**. `non_cached_in = max(0, prompt_tokens)` 로 교정.
+- **[MED] 기대한 거부(403/404)를 강제 miss**(`hypotheses.py`): `target_rejected` 면 `match_signal`
+  을 건너뛰고 무조건 miss → "403 이면 인증 필요 확인" 같이 **거부 자체를 기대한 가설**이 맞고도
+  오탐 stuck/freeze 됐다. 거부라도 기대 신호가 실제로 보이면 hit, 기대 안 한 거부만 miss.
+- 신규 `test_audit_fixes_llm.py` **12건** + `test_llm_cost.py` 캐시 의미 교정. 전체 **115 스위트
+  | 2659 passed, 0 failed**.
+
 ## [2.10.0] — 2026-10-11
 
 ### 추가(Added) — 제품→CVE 자동발견 (NVD 역질의) · KB 룰 없이도 신종 취약점 수면 위로

@@ -487,6 +487,11 @@ class HybridRouter:
         self._errors = {"local": 0, "strong": 0}
         self.disabled: dict[str, str] = {}      # 차단된 백엔드 → 마지막 오류
         self._last_error: dict[str, str] = {}   # 백엔드 → 가장 최근 오류(차단 전에도 진단용)
+        # [반개방 서킷브레이커] 차단된 백엔드도 쿨다운(이만큼의 호출을 건너뛴 뒤) 1회 재탐색한다.
+        # 과거엔 disabled 가 '쓰기 전용'이라 일시 장애(일시적 529/타임아웃 2회)가 세션 전체의
+        # 능력상실로 굳었다. 이제 쿨다운 경과 시 재시도 → 성공하면 차단 해제, 또 실패하면 재차단.
+        self._cooldown: dict[str, int] = {}     # 차단된 백엔드 → 남은 건너뛰기 횟수
+        self._breaker_cooldown = 3              # 재탐색까지 건너뛸 호출 수
 
     @property
     def total_cost(self) -> float:
@@ -520,7 +525,10 @@ class HybridRouter:
                 continue
             name = self._name(router)
             if name in self.disabled:
-                continue
+                if self._cooldown.get(name, 0) > 0:
+                    self._cooldown[name] -= 1
+                    continue                 # 아직 쿨다운 중 → 건너뜀
+                # 쿨다운 경과 → 반개방: 아래 try 로 1회 재탐색(성공 시 해제, 실패 시 재차단)
             tried += 1
             try:
                 out = getattr(router, method)(*args)
@@ -532,9 +540,12 @@ class HybridRouter:
                 self._last_error[name] = f"{type(e).__name__}: {_err_text(e)}"
                 if self._errors[name] >= self.max_consecutive_errors:
                     self.disabled[name] = self._last_error[name]
+                    self._cooldown[name] = self._breaker_cooldown   # 재탐색까지 쿨다운
                 continue
             self._errors[name] = 0
             self._last_error.pop(name, None)   # 성공하면 과거 오류 표시 제거(오해 방지)
+            self.disabled.pop(name, None)      # 성공 → 서킷 해제(반개방 복구)
+            self._cooldown.pop(name, None)
             if out:
                 self.stats[name] += 1
                 if tried > 1:
