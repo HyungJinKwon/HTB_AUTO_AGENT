@@ -36,11 +36,26 @@ flowchart TD
 이전 관측을 다음 제안에 반영한다. 전역 상한(`max_enum`·`max_llm`) + 라운드
 상한(`max_rounds`) + "새 명령 없으면 조기 종료"로 **반드시 유한**하다.
 
-**반복·재진입 스윕(A1)**: 전 단계 1회 통과를 1스윕으로 보고, 한 스윕 뒤 **월드
+**반복·재진입 스윕(A1·S2 고정점)**: 전 단계 1회 통과를 1스윕으로 보고, 한 스윕 뒤 **월드
 모델 상태가 성장**하면(새 관측·크리덴셜·서비스·권한레벨로 이전 단계가 다시 유효해지면)
-다음 스윕을 돈다(`max_sweeps`, 기본 2). 실제 모의해킹의 비선형성(예: 권한상승에서 얻은
-단서가 열거를 다시 열어줌)을 반영한다. 명령 중복제거(`seen_cmds`)·전역 예산·**상태 정체
-시 조기 종료**(`_world_fingerprint` 가 그대로면 중단)로 여전히 **유한**하다.
+다음 스윕을 돈다. 실제 모의해킹의 비선형성(예: 권한상승에서 얻은 단서가 열거를 다시 열어줌)을
+반영한다. **[S2] 고정점 반복**: 종료의 1차 기준은 '성장 없음'(`_world_fingerprint` 불변 → 조기
+종료)이고, `max_sweeps` 는 폭주 방지용 **안전 상한(하드캡)** 으로 둔다 — 자율 모드 기본은 깊은
+의존 체인(제품→버전→익스조회)이 완주하도록 `_FIXED_POINT_CAP`(10)으로 높이되, 명시
+`--max-sweeps` 는 하드캡으로 존중한다. 명령 중복제거(`seen_cmds`)·전역 예산·시간 예산으로
+여전히 **유한**하다.
+
+**[S3] 의존 선언형 스테이지 스케줄러(`scheduler.py`)**: 결정적 소비 스테이지(제품/버전
+핑거프린트 → 버전 프로브 → 익스 조회 → 웹 비밀)는 호출부 하드코딩 순서가 아니라, 각 스테이지가
+선언한 `ready`(전제)·`key`(소비 상태 서명)로 스케줄된다 — 생산자→소비자 순서로, 입력이 바뀐
+스테이지만, 지역 고정점까지. 과거 스테이지 내부에 흩어져 있던 순서·재실행 규칙을 1급 객체로
+올려 순서 취약성(S1 이 수동 교정하던 문제)과 종료 추론을 구조적으로 해결한다.
+
+**[S4] 상태원(SSOT) 단일 쓰기 경로**: 같은 사실이 여러 컨테이너(world/report/state/vault)에
+중복 저장되는 구조에서, 플래그는 `_record_flag`(report.flags+provenance+world.flags 동시),
+자격증명은 시드/수확/재개가 vault+world 를 함께 갱신하는 단일 경로로 모은다 — 한쪽만 갱신해
+생기는 상태원 분기(예: 발판 플래그가 report 에 안 잡혀 goal_reached 가 못 보던 결함)를 차단.
+`tests/test_s4_ssot_invariants.py` 가 컨테이너 간 일관성을 불변식으로 고정한다.
 
 **판단 흐름(근거가 생기는 즉시 반영)**: 각 단계가 끝날 때마다 출력에서 취약점(CVE/CWE·버전
 매칭)을 다시 계산해 월드 모델의 '확인 취약점'에 넣고(`_run_vuln`), 다음 단계의 LLM 명령 생성
@@ -145,7 +160,10 @@ PowerShell `IEX`·`DownloadString`·`-EncodedCommand`, 명령 치환(`$(…)`·�
 | **식별** | `target_profiler.py` | Linux vs Windows-AD, 증거기반 확신도 |
 | **지능** | `knowledge.py` + `knowledge/` | 단계별 규칙·노트·취약점(사용자 학습으로 성장) · **관련도 기반 노트 랭킹**(relevant_notes, 경량 RAG — 서비스/OS/단계/CVE 키워드 겹침) |
 | | `world.py` | 월드 모델 — 구조화 상태(hosts/services/creds/loot/flags/vulns/access_level) 단일 상태원. 파이프라인·LLM 컨텍스트·리포트의 출처. 각 사실에 '어느 명령에서 나왔나'(evidence)를 달아 '왜 아는지'를 보여줌(교육) |
-| | `orchestrator.py` | 단계 순서 상태머신(유한) + 월드 모델 갱신. 열거는 서비스별 round-robin 으로 예산 분배(탐색 폭) |
+| | `orchestrator.py` | 단계 순서 상태머신(유한) + 월드 모델 갱신. 열거는 서비스별 round-robin 으로 예산 분배(탐색 폭). 비실행 로직은 아래 `scheduler`·`preparations`·`flag_assess` 로 분리(god-object 축소) |
+| | `scheduler.py` | **[S3] 의존 선언형 스테이지 스케줄러** — `Stage(ready·key·run)` + `run_to_fixpoint()`. 결정적 소비 스테이지를 생산자→소비자 순서로, 입력이 바뀐 것만, 지역 고정점까지 실행(순수 로직) |
+| | `preparations.py` | **[S3] 준비 생성기**(생성 전용) — 리버스쉘·클라우드·권한상승 플레이북·privesc 벡터 분석·해시 크래킹을 self 의존 없는 자유 함수로. orchestrator 는 얇은 위임 |
+| | `flag_assess.py` | **[S3] 플래그 출처 분류·확신도**(분석 전용) — `classify_flag`(provenance)·`flag_in_external_notes`·`assess_flags`(confidence). self.workspace/kb 를 명시 인자로 |
 | | `report_view.py` | 결과 터미널 렌더링(요약·한눈에보기·다음행동) — orchestrator 에서 출력을 분리(상태/판정과 렌더링 분리). `OrchestrationReport.summary()/glance()` 가 위임 |
 | | `variants.py` | 도구별 옵션 조합 변형(경우의 수) 생성 |
 | | `variant_stats.py` | 실행 결과 기반 변형 학습(성공률로 변형 순서 재정렬, 세션 넘어 영속) |
@@ -157,6 +175,8 @@ PowerShell `IEX`·`DownloadString`·`-EncodedCommand`, 명령 치환(`$(…)`·�
 | | `web_search.py` | **인터넷 검색 학습**(--web-learn): 미해석 공백을 웹 검색으로 학습→KB 반영. **HTB 라이트업 가드**(공식·제3자 전부 차단, 사용자 ingest 만 예외) · 일반 기법/문서 허용 · **교차검증**(신뢰등급 A/B 또는 독립 출처 상호확인, 보안 관련성 게이트) · 검색 차단 시 Wikipedia API 폴백 · 신뢰불가 데이터(노트 저장만) |
 | | `diagnostics.py` | **실패 진단**(사람 보고용): 404/403/401/429·연결거부·타임아웃·DNS·도구부재를 분류해 '대상 응답' vs '환경/도구/네트워크'로 구분. 환경 실패는 경로 포기 근거 아님(오판 방지). 리포트 BLOCKERS 섹션. 자동 재공격 아님 |
 | | `provenance.py` | **플래그 출처 검증**(ctf-abacus류): 플래그를 만든 명령을 실행 트레이스로 분류 — 공략 유래 vs 로컬/지식/불명. 암기·검색·추측과 실제 공략을 구분해 사람에게 보고(점수 변경 없음) |
+| | `verify.py` | **적대적 재검증(skeptic)**: 포착된 플래그의 '신뢰 수준'을 독립 재현 관점에서 재채점(reproduced/single-source/untrusted/inconclusive). provenance(출처)와 별개 축인 '확신도'. 단일 출처면 다른 방법 재읽기 명령을 수동 제안(생성 전용) |
+| | `defense.py` | **공격↔방어 미러**: 실제 공략·식별한 취약점(CWE/CVE·웹앱)마다 블루팀 탐지(SIEM/Snort/Wireshark)·완화를 짝지어 생성 → 라이트업의 블루팀 섹션. 근거 있는 항목만(지어내지 않음) |
 | | `hypotheses.py` | **가설 기록(계획 원장)** — 분석가 가설의 병합 갱신(처음부터 다시 쓰지 않음)·지금 할 일 선택·기대 신호 규칙 대조·연속 불일치 N회 막힘 → 재계획 신호·저장/복원·가설 보드. 방향 잡기 전용(판정 관여 없음) |
 | | `repetition.py` | **반복·정체 감지**(AutoPentester류 Repetition Identifier): 실행 트레이스에서 같은 서명 명령·같은 실패 범주 반복·정체를 감지해 리포트 REPETITION 섹션으로 사람에게 보고. 다음 명령 자동 변경 없음(효율·깊이우선함정 완화) |
 | | `recommend.py` | **다음 선택지 제안**(휴먼인더루프): 막힌 지점·정체·대기 단계를 근거와 함께 선택지로 정리해 리포트 NEXT OPTIONS 섹션으로 제시. 사람이 골라 승인하면 3관문 거쳐 실행 — 에이전트가 자동 선택·실행하지 않음(새 기법 생성 없이 진단힌트·KB 제안 정리) |
@@ -173,6 +193,15 @@ PowerShell `IEX`·`DownloadString`·`-EncodedCommand`, 명령 치환(`$(…)`·�
 | | `cloud.py` | AWS/S3 열거 자동 준비(--cloud + 호스트명/도메인 확보 시 버킷후보·비인증점검 생성, 생성 전용·AWS 는 범위 밖) |
 | | `privesc.py` | 권한상승 플레이북 자동 준비(--privesc + OS 식별 시 열거·점검·LPE후보 생성, 생성 전용·대상 셸 실행) |
 | | `crack.py` | 해시 크래킹 자동 준비(--crack + 출력/볼트에서 해시 수집·식별→john/hashcat 명령 생성, 생성 전용) |
+| **발판·익스(옵트인)** | `web_secrets.py` | 웹 노출 비밀/백업 파일 '읽기 전용' 열거 — 발판 전 HTTP 자격 수확 재료(vhost 인식, `--exploit-exec`/`--auto-poc` 전용) |
+| | `exploit_fetch.py` | PoC 정적 분석·실행 '계획 생성'(② 기반, 생성 전용) — ⭐ 버전매칭 PoC 받기·실행계획 문자열 |
+| | `exploit_run.py` | 공개 PoC 실행 채널(3단계, 옵트인) — 고른 '한 줄 PoC 명령'을 기존 러너로 실행, 출력에서 자격 캡처. **익스 코드는 담지 않음** |
+| | `session_verify.py` | 발판 성립 검증(생성 전용) — '진짜 셸이 떴는지'를 출력으로 판정 |
+| | `shell_session.py` | 발판 셸 세션 추상화(B) — 채널 무관 공통 인터페이스(run/alive) |
+| | `shell_transport.py` | 발판 transport(리버스셸 소켓 / 웹RCE HTTP) — **사용자 커밋·RCE 실행 표면**(requests 선택 의존, 미설치 시 안전 degrade) |
+| | `cred_sources.py` | 발판 후 자격 수확(D) — 설정/DB 파일 위치 + 제품별 키 파싱 + 측면이동 후보 |
+| | `flag_read.py` | 플래그 읽기를 발판 셸 세션으로(E) — 채널(SSH·리버스셸·웹RCE) 무관 수집 |
+| | `privesc_analyze.py` | 권한상승 열거 출력 분석 → 벡터 랭킹 → 상승 계획 생성(③ 기반, 생성 전용) |
 | **운영** | `state.py` | 세션 상태 영속(중단/재개) |
 | | `creds.py` | 크리덴셜 볼트(수동제안 → 실행 승격) |
 | | `creds_harvest.py` | 실행 출력에서 평문 자격 자동 수확(고신뢰 패턴·셸-안전 값만 볼트 투입, 월드 반영→A1 재진입 활성화) |
