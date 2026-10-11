@@ -2,6 +2,24 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.13.0] — 2026-10-11
+
+### 추가(Added) — T1-b. 가설 기대값(EV) 점수화 (redcat2 confidence×impact÷cost 이식)
+라인레벨 감사에서 확인된 부분 갭. 가설 선택이 상/중/하 서수 + 고정 막힘 임계(2회)뿐이라,
+'맞으면 공략이 크게 전진하지만 확인이 싼' 고가치 가설과 저가치 가설을 같은 무게로 다뤘다.
+redcat2 교리의 **confidence×impact÷cost** 기대값을 승인제 구조에 맞춰 **결정적(규칙 기반)**
+으로 이식한다.
+- `Hypothesis` 에 `impact`·`cost`(상/중/하) 필드 + `ev` 프로퍼티:
+  `(신뢰도priority × 영향impact ÷ 비용cost) × 최근결과보정(misses 감쇠)`.
+- `focus()` 를 EV 내림차순(동률 ID)으로 — 완전히 막히기 전에 misses 가 쌓인 가설을 자동
+  후순위로 밀어 신선한 각도를 먼저 쓴다.
+- `budget()` 가변 증거예산: 영향 큰·비용 낮은 가설엔 더 많은 시도, 반대는 빨리 포기(고정 2회 →
+  가설별). `stuck()` 이 이를 사용.
+- 분석가 프롬프트·`apply_update`·`from_dict`·`context_lines` 가 impact·cost 를 주고받음.
+- **하위호환**: 전부 '중'·misses=0 이면 EV∝priority·budget==replan_after 라 기존 순서·임계와
+  동일(실행·판정 로직과 무관, 방향성만). 신규 `test_hypothesis_ev.py` **20건**. 전체
+  **119 스위트 | 2716 passed, 0 failed**.
+
 ## [2.12.0] — 2026-10-11
 
 ### 수정(Fixed) — 문서 정직성 교정 (논문·ARTEX 장점 반영도 전수 라인레벨 감사)
