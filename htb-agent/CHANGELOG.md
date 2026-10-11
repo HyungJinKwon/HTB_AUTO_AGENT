@@ -2,6 +2,17 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.7.10] — 2026-10-11
+
+### 변경(Changed) — S4-3. god-object 해체(2): 플래그 출처 분류·확신도 클러스터를 flag_assess 로 분리
+god-object 축소 2단계. 비실행 **플래그 provenance/confidence** 클러스터를 self 의존 없는
+자유 함수로 `flag_assess` 모듈에 분리.
+- **`flag_assess` 모듈 신설**: `flag_in_external_notes`(kb)·`classify_flag`(workspace·kb)·
+  `assess_flags` — 전부 분류·판정 전용(실행 없음). self.workspace/self.kb 를 명시 인자로.
+- **오케스트레이터 `_classify_flag`·`_flag_in_external_notes`·`_assess_flags` 는 얇은 위임**
+  으로 축소(행위 보존 — `test_autonomous_exec` 가 쓰는 `_classify_flag` 시그니처 유지).
+- 신규 `test_flag_assess.py` **7건**. orchestrator.py 2197→2098줄. 전체 **2549 passed, 0 failed**.
+
 ## [2.7.9] — 2026-10-11
 
 ### 변경(Changed) — S4-3. god-object 해체(1): 준비 생성기 클러스터를 preparations 모듈로 분리
