@@ -2,6 +2,19 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.7.13] — 2026-10-11
+
+### 수정(Fixed) — S5-1. 소비 스테이지 예산 분리(max_enum 잠식 HIGH 버그)
+전면 재감사(파이프라인 흐름)가 찾은 HIGH 결함: 결정적 소비 스테이지(핑거프린트·버전프로브·
+익스조회·웹비밀)가 `report.enum_findings` 에 쌓이는데 `_spent` 가 이를 **KB 열거 예산
+(max_enum)에 계상**해, 옵트인 모드(--exploit-exec/--auto-poc)에서 소비 프로브가 예산(기본 6)을
+선점하면 `_enum_round` 가 **전 단계·전 라운드에서 한 번도 안 돌던** 버그(LLM 예산은 별도라 가려짐).
+- **`EnumFinding.budgeted` 플래그 신설** — 소비 스테이지의 `_attempt(..., budgeted=False)` finding 은
+  `_spent` 에서 제외(이미 스케줄러의 제품/호스트별 멱등 가드로 유한). `max_enum` 은 KB 열거만 bound.
+- `_gate`/`_attempt` 에 `budgeted` 인자 전달. 4개 소비 스테이지 호출만 False.
+- 신규 `test_s5_budget.py` **5건**(단위 `_spent` + 전체 run 에서 소비 프로브가 KB enum 을 안 굶김).
+  전체 **2560 passed, 0 failed** (108 스위트).
+
 ## [2.7.12] — 2026-10-11
 
 ### 문서(Docs) — ARCHITECTURE.md 를 S0~S4 구조에 맞춰 동기화 · 행위 변화 없음

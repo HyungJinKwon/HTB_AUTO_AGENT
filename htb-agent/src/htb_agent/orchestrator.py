@@ -87,6 +87,11 @@ class EnumFinding:
     output: str = ""        # 표시·저장용 요약(손실 가능) — summarize_tool_output 결과
     phase: str = "enum"
     skipped: bool = False   # 도구 미설치로 시도조차 안 함 — 예산(max_enum/max_llm)을 쓰지 않는다
+    # [S5-1] KB 열거 예산(max_enum)에 계상할지. 결정적 소비 스테이지(핑거프린트·버전프로브·
+    # 익스조회·웹비밀)는 스케줄러의 제품/호스트별 멱등 가드로 이미 유한하므로 False 로 두어
+    # KB enum 예산을 잠식하지 않게 한다(과거엔 이들이 max_enum 을 선점해 _enum_round 가 영영
+    # 안 돌던 HIGH 버그). 도구 미설치(skipped)와는 독립.
+    budgeted: bool = True
     # 분석 전용 원본 출력(요약 전). 핑거프린트·searchsploit 매칭은 '요약'이 아니라 이 원본을
     # 봐야 한다 — 요약기(parse_http 등)의 엄격 정규식·상위 N개 캡으로 버전/매칭이 소실되던
     # 구조적 버그(capture≠evaluate) 교정용. 영속화하지 않음(세션 내 분석 한정).
@@ -599,8 +604,9 @@ class Orchestrator:
 
     @staticmethod
     def _spent(findings: list[EnumFinding], base: int = 0) -> int:
-        """이번 실행에서 예산을 쓴 시도 수 — 도구 미설치로 건너뛴 명령은 제외."""
-        return sum(1 for f in findings[base:] if not f.skipped)
+        """이번 실행에서 KB 열거 예산을 쓴 시도 수 — 도구 미설치(skipped)·예산 비계상
+        (budgeted=False: 결정적 소비 스테이지 프로브)는 제외. [S5-1]"""
+        return sum(1 for f in findings[base:] if not f.skipped and f.budgeted)
 
     def _tool_ok(self, cmd: str) -> bool:
         """명령의 바이너리가 설치돼 실제 실행 가능한지(예산 소비·시도 집계를 '설치된 도구'로 한정)."""
@@ -1395,7 +1401,7 @@ class Orchestrator:
             for cmd in probes_for(prod, base):
                 if self._goal_reached(report) or self._time_up():
                     break
-                self._attempt(report, report.enum_findings, cmd, phase=phase)
+                self._attempt(report, report.enum_findings, cmd, phase=phase, budgeted=False)
         # 프로브 출력에서 버전 즉시 추출(다음 _run_vuln 을 기다리지 않고 이번 스윕에 반영).
         self._run_vuln(report, host, self.world.target)
 
@@ -1427,7 +1433,7 @@ class Orchestrator:
                 if self._goal_reached(report) or self._time_up():
                     break
                 cmd = f'curl -s -L -k --max-time 10 -H "Host: {vh}" {bases[0]}/{p}'
-                self._attempt(report, report.enum_findings, cmd, phase=phase)
+                self._attempt(report, report.enum_findings, cmd, phase=phase, budgeted=False)
         # 새 관측을 즉시 반영 → 이번 스윕의 뒤 단계(web_secret·lookup)가 제품을 바로 활용.
         self._run_vuln(report, host, tgt)
 
@@ -1459,7 +1465,7 @@ class Orchestrator:
         for cmd in secret_read_commands(bases, self.world.web_product or "", vhosts=vhosts):
             if self._goal_reached(report) or self._time_up():
                 break
-            self._attempt(report, report.enum_findings, cmd, phase=phase)
+            self._attempt(report, report.enum_findings, cmd, phase=phase, budgeted=False)
 
     def _exploit_lookup_stage(self, report: OrchestrationReport,
                               host: NmapHost | None = None, phase: str = "access") -> None:
@@ -1480,7 +1486,7 @@ class Orchestrator:
         for cmd in cmds:
             if self._goal_reached(report) or self._time_up():
                 break
-            self._attempt(report, report.enum_findings, cmd, phase=phase)
+            self._attempt(report, report.enum_findings, cmd, phase=phase, budgeted=False)
         note = note_for(prod)
         report.manual_suggestions.append(
             f"# {prod} 공개 익스 후보 — searchsploit 결과에서 '대상 버전'에 맞는 PoC 를 "
@@ -1809,10 +1815,11 @@ class Orchestrator:
         return cmd, sres, vrep
 
     def _gate(self, report: OrchestrationReport, findings: list[EnumFinding],
-              cmd: str, phase: str) -> EnumFinding | None:
+              cmd: str, phase: str, budgeted: bool = True) -> EnumFinding | None:
         """3관문(도구·검증·범위·승인)을 순차 수행(공유상태 변경은 단일 스레드).
-        통과하면 '실행 대상' finding 반환, 아니면 사유를 기록하고 None."""
-        finding = EnumFinding(command=cmd, phase=phase)
+        통과하면 '실행 대상' finding 반환, 아니면 사유를 기록하고 None.
+        budgeted=False 면 이 finding 은 KB 열거 예산(max_enum)에 계상하지 않는다([S5-1])."""
+        finding = EnumFinding(command=cmd, phase=phase, budgeted=budgeted)
         findings.append(finding)
         self.audit.event("proposed", cmd=cmd, phase=phase)
         gs = report.gate_stats
@@ -2058,9 +2065,10 @@ class Orchestrator:
             return RunOutput(cmd, error=f"러너 예외: {type(e).__name__}: {e}", returncode=-1)
 
     def _attempt(self, report: OrchestrationReport, findings: list[EnumFinding],
-                 cmd: str, phase: str = "enum") -> None:
-        """순차 실행: 게이트 → (통과 시) 실행 → 결과 처리."""
-        finding = self._gate(report, findings, cmd, phase)
+                 cmd: str, phase: str = "enum", budgeted: bool = True) -> None:
+        """순차 실행: 게이트 → (통과 시) 실행 → 결과 처리.
+        budgeted=False 면 KB 열거 예산(max_enum)에 계상하지 않는다([S5-1] 소비 스테이지용)."""
+        finding = self._gate(report, findings, cmd, phase, budgeted=budgeted)
         if finding is None:
             return
         if self.dry_run:   # 계획 미리보기 — 게이트까지 통과했으나 실행하지 않음
