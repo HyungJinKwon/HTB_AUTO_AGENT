@@ -2,6 +2,22 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.7.9] — 2026-10-11
+
+### 변경(Changed) — S4-3. god-object 해체(1): 준비 생성기 클러스터를 preparations 모듈로 분리
+Orchestrator(~2200줄·65 메서드) god-object 축소의 첫 단계. 응집도 높은 **비실행 '준비
+생성기' 클러스터**(리버스쉘·클라우드·권한상승 플레이북·privesc 벡터 분석·해시 크래킹)를
+self 상태 의존 없는 **자유 함수**로 `preparations` 모듈에 떼어냈다.
+- **`preparations` 모듈 신설**: `prepare_revshells`·`prepare_cloud`·`prepare_privesc`·
+  `privesc_analyze`·`prepare_crack` — 전부 '명시 인자 → report 변이' 생성 전용(실행·발사 없음).
+- **오케스트레이터 메서드는 얇은 위임 래퍼로** 축소(행위 보존). 로직이 클래스 밖으로 나가
+  god-object 표면이 줄고, 각 준비 함수를 run() 없이 **단위로 검증** 가능.
+- 신규 `test_preparations.py` **9건**(IP 유무·OS 게이팅·sudo -l 벡터·해시 수집). 기존 2533건
+  불변 → 외부 행위 보존. 전체 **2542 passed, 0 failed** (105 스위트).
+- 비고: 실행 배선 클러스터(`_foothold_stage`·`_acquire_session`·`_exploit_exec_stage`)는
+  발사 로직이라 **이번에도 제외**(사용자 커밋 영역). 이후 god-object 해체는 영속/분석 등 다른
+  비실행 클러스터로 이어감.
+
 ## [2.7.8] — 2026-10-11
 
 ### 수정(Fixed) — S4-2. 플래그 상태원 단일 쓰기 경로(_record_flag) · 발판 플래그 누락 교정
