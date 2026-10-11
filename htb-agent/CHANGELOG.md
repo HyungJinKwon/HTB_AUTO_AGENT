@@ -2,6 +2,23 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.10.0] — 2026-10-11
+
+### 추가(Added) — 제품→CVE 자동발견 (NVD 역질의) · KB 룰 없이도 신종 취약점 수면 위로
+라이브 검증(connected.htb / FreePBX 16.0.40.7)이 드러낸 근본 갭 해결. 기존 CVE 수집은
+**'이미 아는 CVE ID' 만** NVD 에서 조회(`enrich_cve`/`?cveId=`) — 제품→CVE 역방향이 없어, KB
+룰이 없는 제품은 버전을 정확히 탐지하고도 "매칭 PoC 없음"으로 묻혔다. 이제 **탐지된 제품/버전으로
+NVD 를 역질의**해 자동으로 CVE 를 발견한다. 발견은 자동, 실행은 아님(제안으로만 노출 — 생성 경계).
+- **`enrich.discover_by_product(product, version)`**: NVD `keywordSearch` → **CPE 적용범위 필터**
+  (`versionStart/End Including/Excluding` 파싱 — 과매칭 배제) → CVSS 내림차순·최신순 상위 N.
+  버전범위 판정 헬퍼 `_version_applies`/`_vtuple`(경계 포함/제외 정확 처리).
+- **오케스트레이터 결선**: `_discovery_targets`(web_product + 서비스 배너, 버전 있는 제품만·최대 4,
+  중복 제거) → 발견 CVE 를 `report.discovered_cve` 에 싣고 enrich 파이프라인에 합류 → 리포트 노출.
+- **리포트**: 터미널 VULN 패널에 '🔎 자동발견 CVE' 행 + CVE 레퍼런스에 🔎 배지. JSON schema 1.8
+  (`discovered_cve`).
+- 신규 `test_cve_discovery.py` **16건**(역탐색·버전필터·랭킹·PoC·가드·음성). 전체 **114 스위트 |
+  2646 passed, 0 failed**.
+
 ## [2.9.3] — 2026-10-11
 
 ### 추가(Added) — 취약점 KB: FreePBX endpoint 비인증 SQLi→RCE (CVE-2025-57819)

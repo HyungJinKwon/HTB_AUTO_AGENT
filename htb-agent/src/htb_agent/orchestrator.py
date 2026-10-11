@@ -125,6 +125,7 @@ class OrchestrationReport:
     llm_findings: list[EnumFinding] = field(default_factory=list)
     manual_suggestions: list[str] = field(default_factory=list)
     detected_cve: list[str] = field(default_factory=list)
+    discovered_cve: list[str] = field(default_factory=list)  # 제품→CVE 자동발견(NVD 역질의)
     detected_cwe: list[str] = field(default_factory=list)
     vuln_matches: list[VulnMatch] = field(default_factory=list)
     flags: list[FlagHit] = field(default_factory=list)
@@ -491,6 +492,21 @@ class Orchestrator(FootholdMixin):
             all_cves = list(report.detected_cve)
             for m in report.vuln_matches:
                 all_cves += m.cve
+            # [제품→CVE 자동발견] 탐지된 제품/버전으로 NVD 를 역질의해, KB 룰이 없는 신종
+            # CVE 도 자동으로 수면 위로 올린다(기존엔 '이미 아는 CVE ID' 만 조회 → 룰 없는
+            # 제품은 버전을 정확히 탐지하고도 '매칭 없음'으로 묻혔다). 발견은 자동, 실행은
+            # 아니다 — 발견 CVE 는 아래 enrich 를 거쳐 리포트에 '제안'으로만 노출(생성 경계).
+            try:
+                for prod, ver in self._discovery_targets():
+                    for info in self.enricher.discover_by_product(prod, ver):
+                        if info.id not in report.discovered_cve:
+                            report.discovered_cve.append(info.id)
+                        if info.id not in all_cves:
+                            all_cves.append(info.id)
+                if report.discovered_cve:
+                    self.audit.event("cve_discovered", cves=report.discovered_cve)
+            except Exception as e:   # noqa: BLE001 — 발견 실패는 진행 방해 금지
+                self.audit.event("discover_error", error=str(e))
             if all_cves:
                 try:
                     report.enriched = self.enricher.enrich(all_cves, report.detected_cwe)
@@ -1299,6 +1315,32 @@ class Orchestrator(FootholdMixin):
                 from . import ui
                 print("  " + ui.mark_warn(f"{hid} 기대 신호 {h.misses}회 연속 불일치 — 분석가에게 재계획 요청"))
         return f"{hid} 신호 일치〔추정〕" if res == "hit" else f"{hid} 신호 불일치"
+
+    def _discovery_targets(self) -> list[tuple[str, str]]:
+        """제품→CVE 자동발견 대상 (제품, 버전) 목록 — 웹앱 + 관측 서비스에서 수집(중복 제거·상한).
+
+        월드모델의 web_product/web_version(앱 계층 — 신종 CVE 가 몰리는 곳)과 서비스 배너의
+        product/version 을 모아, 제품명 기준 중복을 제거하고 최대 4개로 제한한다(NVD 질의 폭주
+        방지). 버전 없는 제품은 제외(과매칭 방지 — 버전 필터가 핵심)."""
+        if self.world is None:
+            return []
+        out: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        pairs: list[tuple[str, str]] = []
+        if self.world.web_product:
+            pairs.append((self.world.web_product, self.world.web_version or ""))
+        for s in self.world.services:
+            if getattr(s, "product", ""):
+                pairs.append((s.product, getattr(s, "version", "") or ""))
+        for prod, ver in pairs:
+            key = prod.strip().lower()
+            if not key or not ver.strip() or key in seen:
+                continue   # 버전 없으면 건너뜀(버전 필터 없이는 과매칭) · 제품 중복 제거
+            seen.add(key)
+            out.append((prod.strip(), ver.strip()))
+            if len(out) >= 4:
+                break
+        return out
 
     def _run_vuln(self, report: OrchestrationReport, host: NmapHost, target: str) -> None:
         """관측 코퍼스(배너·스크립트·enum/LLM 출력)에서 CVE/CWE·버전 매칭을 탐지해 리포트·월드에

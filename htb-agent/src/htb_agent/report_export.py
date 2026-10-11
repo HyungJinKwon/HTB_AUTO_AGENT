@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from . import recommend as _recommend
 from .enrich import CWE_NAMES, Enricher
 
-SCHEMA_VERSION = "1.7"   # 1.1: blockers·flag_provenance·learn·next_options / 1.2: gate_stats / 1.3: knowledge / 1.4: goal_reached·llm_routing / 1.5: timed_out·elapsed_sec·cost_capped / 1.6: plan(가설 기록) / 1.7: judge_verdict·world.lineage(하위호환)
+SCHEMA_VERSION = "1.8"   # 1.1: blockers·flag_provenance·learn·next_options / 1.2: gate_stats / 1.3: knowledge / 1.4: goal_reached·llm_routing / 1.5: timed_out·elapsed_sec·cost_capped / 1.6: plan(가설 기록) / 1.7: judge_verdict·world.lineage(하위호환) / 1.8: discovered_cve(제품→CVE 자동발견)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -88,6 +88,7 @@ def to_dict(report) -> dict:
         "enum_findings": [_finding_dict(f) for f in report.enum_findings],
         "llm_findings": [_finding_dict(f) for f in report.llm_findings],
         "detected_cve": list(report.detected_cve),
+        "discovered_cve": list(report.discovered_cve),
         "detected_cwe": list(report.detected_cwe),
         "vuln_matches": [_vuln_dict(m) for m in report.vuln_matches],
         "enriched": [_cve_dict(e) for e in report.enriched],
