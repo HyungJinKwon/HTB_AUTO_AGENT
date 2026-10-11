@@ -2,6 +2,18 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.7.12] — 2026-10-11
+
+### 문서(Docs) — ARCHITECTURE.md 를 S0~S4 구조에 맞춰 동기화 · 행위 변화 없음
+구조 개선(S2 고정점 루프·S3 스케줄러/모듈 분리·S4 SSOT 단일 쓰기)과, 그간 누적돼
+문서에 빠져 있던 14개 모듈을 아키텍처 문서에 반영한다(코드 변경 없음).
+- **§2 파이프라인**: S2(고정점 반복·`max_sweeps` 안전상한)·S3(의존 선언형 스케줄러)·
+  S4(상태원 단일 쓰기 경로) 설명 추가.
+- **§4 모듈 지도**: `scheduler`·`preparations`·`flag_assess`(이번 분리) + `verify`·`defense`·
+  `web_secrets`·`exploit_fetch`·`exploit_run`·`session_verify`·`shell_session`·`shell_transport`·
+  `cred_sources`·`flag_read`·`privesc_analyze`(발판·익스 옵트인 클러스터) 행 추가.
+- `test_docs_consistency` 포함 전체 **2555 passed, 0 failed**.
+
 ## [2.7.11] — 2026-10-11
 
 ### 추가(Added) — S4-4. 상태원(SSOT) 일관성 불변식 가드 · 행위 변화 없음
