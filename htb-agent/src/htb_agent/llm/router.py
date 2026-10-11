@@ -118,7 +118,7 @@ _SYSTEM_ANALYST = """\
 계획: 1) … 2) … 3) … (가설을 병렬로 검증하는 순서 — 싸고 정보량 큰 것부터)
 공격경로: (초기침투→권한상승으로 이어질 유력 경로)
 다음집중: (지금 가장 가치 높은 열거/검증 대상)
-가설기록: {"hypotheses":[{"id":"H1","text":"(가설 한 줄)","priority":"상|중|하","status":"pending|testing|confirmed|rejected","check":"(가장 싼 확인)","expected":"(확인되면 출력에 보일 신호 — 경로·상태코드·문자열 등 구체적으로)","fallback":"(기각 시 대안)"}]}   ← 한 줄 JSON
+가설기록: {"hypotheses":[{"id":"H1","text":"(가설 한 줄)","priority":"상|중|하","impact":"상|중|하","cost":"상|중|하","status":"pending|testing|confirmed|rejected","check":"(가장 싼 확인)","expected":"(확인되면 출력에 보일 신호 — 경로·상태코드·문자열 등 구체적으로)","fallback":"(기각 시 대안)"}]}   ← 한 줄 JSON (impact=맞으면 공략 전진도, cost=확인 노력·리스크; 생략 시 '중')
 확신도: (상/중/하 + 한 줄 근거)"""
 
 

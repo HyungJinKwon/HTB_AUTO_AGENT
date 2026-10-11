@@ -35,6 +35,11 @@ _STATUS_ALIASES = {
 _PRIORITY_ORDER = {"상": 0, "중": 1, "하": 2}
 _PRIORITY_ALIASES = {"상": "상", "high": "상", "중": "중", "medium": "중", "mid": "중",
                      "하": "하", "low": "하"}
+# [T1-b] 기대값(EV) 점수화 — redcat2 교리의 confidence×impact÷cost 를 승인제 구조에 맞춰
+# 결정적(규칙 기반)으로 이식. priority=신뢰도/중요도 대용, impact=진전 기여, cost=노력/리스크.
+# 가중치는 상/중/하 3단계(전부 '중'이면 EV==priority 서수라 하위호환 — 기존 동작 불변).
+_WEIGHT = {"상": 3, "중": 2, "하": 1}          # 클수록 좋음(신뢰도·영향)
+_COST_WEIGHT = {"상": 3, "중": 2, "하": 1}      # 클수록 비쌈(분모)
 
 MAX_ACTIVE = 6        # 동시에 들고 가는 가설 상한(대기·검증중·확인)
 _TEXT_MAX = 160
@@ -70,6 +75,8 @@ class Hypothesis:
     check: str = ""        # 가장 싼 확인 방법
     expected: str = ""     # 기대 신호(확인되면 출력에 보일 것)
     fallback: str = ""     # 기각 시 넘어갈 대안
+    impact: str = "중"     # [T1-b] 진전 기여(상/중/하) — 맞으면 공략이 얼마나 전진하나
+    cost: str = "중"       # [T1-b] 노력·리스크(상/중/하) — 확인에 드는 비용(분모)
     tried: list[str] = field(default_factory=list)      # 이 가설로 시도한 명령
     evidence: list[str] = field(default_factory=list)   # "명령 → 신호 일치/불일치" 한 줄씩
     hits: int = 0
@@ -82,6 +89,17 @@ class Hypothesis:
     @property
     def mark(self) -> str:
         return STATUS.get(self.status, ("?", "?"))[1]
+
+    @property
+    def ev(self) -> float:
+        """기대값 점수 = (신뢰도 × 영향 ÷ 비용) × 최근결과 보정. 클수록 먼저 쫓는다.
+        전부 '중'이면 base=priority 가중치와 비례해 하위호환(기존 우선순위 정렬과 동일 순서).
+        연속 불일치(misses)가 쌓일수록 감쇠 — 완전히 막히기 전에 신선한 각도를 먼저 쓰게."""
+        conf = _WEIGHT.get(self.priority, 2)
+        imp = _WEIGHT.get(self.impact, 2)
+        cost = _COST_WEIGHT.get(self.cost, 2)
+        base = conf * imp / cost
+        return base / (1 + 0.5 * max(0, self.misses))
 
 
 # ── 기대 신호 대조(규칙 기반, 보수적) ─────────────────────────────────
@@ -154,15 +172,24 @@ class HypothesisLedger:
     def __bool__(self) -> bool:
         return bool(self.items)
 
+    def budget(self, h: Hypothesis) -> int:
+        """[T1-b] 가설별 가변 증거예산(막힘 판정 임계). 영향 큰·비용 낮은 가설엔 더 많은 시도를,
+        영향 작은·비용 높은 가설엔 더 적은 시도를 준다. 전부 '중'이면 replan_after 와 같아
+        하위호환(기존 고정 임계와 동일). 최소 1."""
+        imp = _WEIGHT.get(h.impact, 2)
+        cost = _COST_WEIGHT.get(h.cost, 2)
+        return max(1, round(self.replan_after * imp / cost))
+
     def stuck(self) -> list[Hypothesis]:
         return [h for h in self.items
-                if h.status in ("pending", "testing") and h.misses >= self.replan_after]
+                if h.status in ("pending", "testing") and h.misses >= self.budget(h)]
 
     def focus(self) -> Hypothesis | None:
-        """'지금 할 일' 1개: 막히지 않은 대기·검증중 가설을 우선순위 순으로, 없으면 확인된 가설
-        (심화 — 다음 단계로 이어가기), 그것도 없으면 None. 기각·막힘 가설은 고르지 않는다."""
+        """'지금 할 일' 1개: 막히지 않은 대기·검증중 가설을 기대값(EV) 높은 순으로, 없으면 확인된
+        가설(심화 — 다음 단계로 이어가기), 그것도 없으면 None. 기각·막힘 가설은 고르지 않는다.
+        EV 동률이면 ID 오름차순(결정적). 전부 '중'·misses=0 이면 priority 정렬과 동일 순서."""
         def key(h: Hypothesis):
-            return (_PRIORITY_ORDER.get(h.priority, 1), int(h.id[1:]) if h.id[1:].isdigit() else 99)
+            return (-h.ev, int(h.id[1:]) if h.id[1:].isdigit() else 99)
         stuck = {h.id for h in self.stuck()}
         open_ = [h for h in self.items if h.status in ("testing", "pending") and h.id not in stuck]
         if open_:
@@ -199,6 +226,8 @@ class HypothesisLedger:
                 continue
             status = _norm_status(it.get("status"))
             prio = _norm_priority(it.get("priority"))
+            impact = _norm_priority(it.get("impact"))   # 상/중/하 (priority 와 동일 어휘)
+            cost = _norm_priority(it.get("cost"))
             check = _clip(it.get("check") or "")
             expected = _clip(it.get("expected") or it.get("expected_signal") or "")
             fallback = _clip(it.get("fallback") or "")
@@ -211,7 +240,8 @@ class HypothesisLedger:
                     continue
                 self.items.append(Hypothesis(id=hid, text=text, priority=prio or "중",
                                              status=status or "pending", check=check,
-                                             expected=expected, fallback=fallback))
+                                             expected=expected, fallback=fallback,
+                                             impact=impact or "중", cost=cost or "중"))
                 applied += 1
                 continue
             reopened = False
@@ -219,6 +249,10 @@ class HypothesisLedger:
                 h.text = text
             if prio:
                 h.priority = prio
+            if impact:
+                h.impact = impact
+            if cost:
+                h.cost = cost
             if check and check != h.check:
                 h.check, reopened = check, True
             if expected and expected != h.expected:
@@ -313,7 +347,8 @@ class HypothesisLedger:
         stuck = {h.id for h in self.stuck()}
         out = []
         for h in self.items:
-            ln = f"{h.id} [{h.priority}] {h.label}{' · 막힘' if h.id in stuck else ''}: {h.text}"
+            ln = (f"{h.id} [{h.priority}·영향{h.impact}·비용{h.cost}] {h.label}"
+                  f"{' · 막힘' if h.id in stuck else ''}: {h.text}")
             if h.check:
                 ln += f" | 확인: {h.check}"
             if h.expected:
@@ -360,6 +395,8 @@ class HypothesisLedger:
                 status=_norm_status(it.get("status")) or "pending",
                 check=_clip(it.get("check")), expected=_clip(it.get("expected")),
                 fallback=_clip(it.get("fallback")),
+                impact=_norm_priority(it.get("impact")) or "중",
+                cost=_norm_priority(it.get("cost")) or "중",
                 tried=[str(c) for c in (it.get("tried") or [])][-20:],
                 evidence=[str(e) for e in (it.get("evidence") or [])][-4:],
                 hits=int(it.get("hits") or 0), misses=int(it.get("misses") or 0)))
