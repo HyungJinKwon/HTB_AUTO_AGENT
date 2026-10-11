@@ -424,8 +424,10 @@ class Orchestrator(FootholdMixin):
                     # [S5-4] 진행 판정은 '실제로 실행된'(비skipped) finding 기준 — 도구 미설치
                     # (skipped)만 생긴 단계를 '진행'으로 오표기하지 않게.
                     def _ran_total() -> int:
+                        # LLM finding 도 enum 과 동일하게 skipped(도구 미설치) 제외 — 과거엔
+                        # len(llm_findings) 라 '설치 안 된 도구만 제안한 단계'도 '진행'으로 오표기.
                         return (sum(1 for f in report.enum_findings if not f.skipped)
-                                + len(report.llm_findings))
+                                + sum(1 for f in report.llm_findings if not f.skipped))
                     phase_before = _ran_total()
                     for _rnd in range(self.max_rounds):
                         added = self._enum_round(
@@ -625,6 +627,11 @@ class Orchestrator(FootholdMixin):
         # 복원해 막는다. set_web_app 이 제품 고착·버전 보강 규칙을 그대로 적용.
         if self.world is not None and prior.web_product:
             self.world.set_web_app(prior.web_product, prior.web_version or "")
+        # 수집물(loot) 복원 — 재개 시 world.loot 가 비면 _prereq_met("lateral") 의 bool(loot)
+        # 전제가 met→unmet 으로 퇴행(1차 실행에선 돌던 lateral 이 재개 후 조용히 생략)했다.
+        if self.world is not None:
+            for item in prior.loot or []:
+                self.world.add_loot(item, "재개 복원")
         # 수집 해시 복원 — 재개 run 의 크래킹 준비가 직전 run 의 해시를 그대로 이어쓰게.
         for hv in prior.found_hashes or []:
             if hv not in self._found_hashes:
@@ -726,8 +733,10 @@ class Orchestrator(FootholdMixin):
         return out
 
     def _time_up(self) -> bool:
-        """해커톤 시간 예산 마감 도달 여부(예산 0=무제한이면 항상 False)."""
-        return self._deadline is not None and self._clock() >= self._deadline
+        """해커톤 시간 예산 마감 도달 여부(예산 0=무제한이면 항상 False).
+        _deadline 은 run() 에서 설정되므로, run() 전(단위테스트 등 직접 호출)엔 getattr 로 안전."""
+        deadline = getattr(self, "_deadline", None)
+        return deadline is not None and self._clock() >= deadline
 
     def _refresh_analysis(self, report: OrchestrationReport, prof: ProfileResult,
                           host: NmapHost, target: str) -> None:
@@ -802,6 +811,8 @@ class Orchestrator(FootholdMixin):
                 st.web_product = self.world.web_product
             if self.world.web_version:
                 st.web_version = self.world.web_version
+            if self.world.loot:
+                st.loot = list(self.world.loot)   # 재개 시 lateral 전제(bool(loot)) 보존
         if getattr(self, "_found_hashes", None):
             st.found_hashes = list(self._found_hashes)
         if report.flags:
@@ -886,7 +897,7 @@ class Orchestrator(FootholdMixin):
         if self.max_parallel <= 1:
             # 순차(기본): 게이트→실행→처리→변형학습 기록
             for base_cmd, vcmd in to_run:
-                if self._goal_reached(report):   # 목표 달성 — 남은 후보는 실행하지 않음
+                if self._goal_reached(report) or self._time_up():   # 목표달성/시간소진 — 남은 후보 중단
                     break
                 before = len(report.enum_findings)
                 self._attempt(report, report.enum_findings, vcmd, phase)
@@ -1165,14 +1176,14 @@ class Orchestrator(FootholdMixin):
                 self._attempt_batch(report, report.llm_findings, [c for c, _ in plain], phase)
             else:
                 for c, _m in plain:
-                    if self._goal_reached(report):
+                    if self._goal_reached(report) or self._time_up():
                         break
                     self._attempt(report, report.llm_findings, c, phase)
             for (_c, m), f in zip(plain, report.llm_findings[n0:]):
                 self._tag_llm_finding(report, f, m, focus)
         # 파일 액션: 순차 — 작성→실행→태깅(파일을 못 쓰면 그 파일을 쓰는 명령도 돌리지 않음)
         for cmd, m in files:
-            if self._goal_reached(report):
+            if self._goal_reached(report) or self._time_up():
                 break
             written = self._write_file_action(report, cmd, m["file"])
             if written is None:
@@ -2029,7 +2040,10 @@ class Orchestrator(FootholdMixin):
         report.flags 는 '관측된 모든 플래그'를 담고, world 는 '신뢰되는 상태'만 담는다(goal_reached
         와 동일 기준 verdict=="exploit-derived"). report 는 전부 기록하므로 사람에겐 다 보인다.
         """
-        if hit.value in {f.value for f in report.flags}:
+        # 중복 판정은 (종류, 값) 기준 — 과거엔 값만 봐, user/root 플래그가 우연히 같은 값이면
+        # 둘째 종류가 report·world 양쪽에서 누락돼 goal_reached(user+root 필요)가 영영 불충족될 수
+        # 있었다(실무상 user.txt≠root.txt라 희박하나 dedup 키는 (kind,value)가 옳다).
+        if (hit.kind, hit.value) in {(f.kind, f.value) for f in report.flags}:
             return False
         report.flags.append(hit)
         if prov is not None:
@@ -2089,6 +2103,8 @@ class Orchestrator(FootholdMixin):
         """병렬 실행: 게이트를 '순차로' 통과시킨 뒤, 통과한 명령의 runner.run 만
         스레드풀로 동시 실행하고, 결과 처리는 다시 '제출 순서대로 단일 스레드'로
         수행한다 → 공유상태 경쟁 없음·결정적 순서 보존. 게이트 통과 finding 목록 반환."""
+        if self._time_up():   # 시간 예산 소진 — 배치를 띄우지 않음(스레드는 중간 중단 불가)
+            return []
         gated: list[EnumFinding] = []
         for cmd in cmds:
             f = self._gate(report, findings, cmd, phase)

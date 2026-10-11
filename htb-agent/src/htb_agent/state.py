@@ -81,6 +81,7 @@ class SessionState:
     web_product: str = ""
     web_version: str = ""
     found_hashes: list[str] = field(default_factory=list)
+    loot: list[str] = field(default_factory=list)   # world.loot(수집물) — 재개 시 lateral 전제 보존
     analysis: str = ""                 # 마지막 분석가 판단(재개 시 계획 이어가기)
     plan: dict | None = None           # 가설 기록(hypotheses.HypothesisLedger.to_dict)
     history: list[dict] = field(default_factory=list)

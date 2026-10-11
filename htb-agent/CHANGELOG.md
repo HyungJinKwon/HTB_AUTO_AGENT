@@ -2,6 +2,27 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.10.2] — 2026-10-11
+
+### 수정(Fixed) — 구조 감사 확인 오케스트레이터/상태 실버그 6종
+핵심 파이프라인 전수 감사(오케스트레이션 루프·예산·상태모델·resume)에서 확인된 결함 수정.
+- **[MED] time budget 내부루프 미강제**(`orchestrator.py`): `_time_up()` 이 단계 수준에서만
+  점검돼, `_enum_round`/`_llm_round` 실행 루프와 병렬 `_attempt_batch` 는 목표만 보고 시간은
+  안 봤다 → 느린 명령(최대 180s) 연쇄로 `--time-budget` 을 수십 분 초과. 세 루프에 `_time_up()`
+  중단 + 배치는 시간 소진 시 미실행.
+- **[MED] resume 가 world.loot 유실**(`state.py`·`orchestrator.py`): `loot` 가 영속·복원되지
+  않아, 1차 실행에서 돌던 lateral 이 재개 후 `_prereq_met("lateral")`(bool(loot)) 퇴행으로 조용히
+  생략. SessionState 에 `loot` 추가 + `_persist`/`_restore` 왕복.
+- **[MED] world.to_dict 가 learned 누락**(`world.py`): 자율학습 지식이 컨텍스트·성장판정엔 쓰면서
+  export 엔 빠져 SSOT 불일치. `to_dict` 에 `learned` 추가(JSON schema 1.9).
+- **[LOW] add_flag access 상승이 value 가드 밖**(`world.py`): `add_flag("root","")` 가 플래그
+  없이 access 를 올릴 수 있던 잠재 구멍 → 상승을 value 기록 안으로.
+- **[LOW] _record_flag dedup 이 value 만**(`orchestrator.py`): `(kind,value)` 로 교정 — user·root
+  가 우연히 같은 값이어도 둘 다 보존.
+- **[LOW] _ran_total 이 skipped LLM finding 을 진행으로 집계**(`orchestrator.py`): enum 과 동일하게
+  skipped 제외.
+- 신규 `test_audit_fixes_core.py` **15건**. 전체 **116 스위트 | 2674 passed, 0 failed**.
+
 ## [2.10.1] — 2026-10-11
 
 ### 수정(Fixed) — 구조 감사에서 확인된 LLM 계층 실버그 3종
