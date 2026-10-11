@@ -196,6 +196,11 @@ def render_summary(report) -> str:
             for (kind, _val), c in conf.items():
                 cmark = ui.ok if c.level == "reproduced" else ui.warn
                 lines.append("    " + cmark(f"[{c.label}] ") + f"{kind} flag")
+        # [A6] LLM-심판(조언) — 규칙 판정을 덮지 않는 보조 의견(opt-in --judge 일 때만 존재)
+        jv = getattr(report, "judge_verdict", None)
+        if jv is not None:
+            jmark = ui.ok if getattr(jv, "passed", False) else ui.warn
+            lines.append("  " + jmark(jv.label()))
     from . import recommend as _recommend
     _recs = _recommend.propose(report, repetition=_rr)   # 반복 분석 1회만
     if _recs.has_items:

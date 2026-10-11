@@ -2,6 +2,21 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.9.0] — 2026-10-11
+
+### 추가(Added) — A6. LLM-심판 게이트(opt-in·advisory) — ARTEX 'LLM-judge' 정직성-보존 이식
+장점 반영 감사에서 '미반영'이던 ARTEX LLM-judge 아이디어를 **정직성 경계를 지켜** 이식한다.
+`--judge` + LLM 라우터가 있을 때만(기본 OFF·비용 0), 종료 시 증거(획득 플래그·출처 판정·권한·
+상태·실행 명령)만 보고 '공략으로 목표 달성' 주장이 뒷받침되는지 **별도 LLM 호출로 루브릭 채점**.
+- **`judge` 모듈 신설**: `JudgeVerdict`(score·passed·rationale) + 프롬프트 빌더 + 견고한 JSON 파서
+  (범위 클램프·비JSON → None 폴백).
+- **라우터 `judge()` 메서드**(LLMRouter·HybridRouter) — analyze 와 동일 비용 경로, 강력 모델 우선.
+- **오케스트레이터 결선**: `_run_judge` 가 `_assess_flags` 뒤에서 조언을 `report.judge_verdict` 에
+  싣는다. **규칙 판정을 절대 덮지 않음** — 심판이 pass 해도 미신뢰 플래그가 goal 로 승격되지 않고,
+  fail 해도 공략 유래 플래그가 격하되지 않는다(skeptic 한 겹 추가).
+- 리포트 표시(터미널 '🧪 심판(조언)') + JSON 내보내기(schema 1.7, `judge_verdict`). CLI `--judge`.
+- 신규 `test_judge.py` **11건**(파싱·라우터 경로·opt-in·규칙 불변·정직성). 전체 **2604 passed**.
+
 ## [2.8.0] — 2026-10-11
 
 ### 추가(Added) — A5. 타입드 리니지(출처) 그래프 — 평면 evidence 승격 (ARTEX 참고 장점 반영)

@@ -67,7 +67,7 @@ from htb_agent.orchestrator import GATE_KEYS  # noqa: E402
 check("JSON gate_stats 키 전부", set(d3["gate_stats"]) == set(GATE_KEYS))
 check("JSON gate_stats 값(데모: 강등1·범위밖1)",
       d3["gate_stats"]["denied_review"] == 1 and d3["gate_stats"]["denied_scope"] == 1)
-check("schema 1.6", rx.SCHEMA_VERSION == "1.6")
+check("schema 1.7", rx.SCHEMA_VERSION == "1.7")
 h3 = rx.to_html(rep3, "DemoBox")
 check("한눈에 보기 섹션", "<h2>한눈에 보기</h2>" in h3)
 check("요약이 포트 섹션보다 앞", h3.index("한눈에 보기") < h3.index("포트 &amp; 서비스"))
