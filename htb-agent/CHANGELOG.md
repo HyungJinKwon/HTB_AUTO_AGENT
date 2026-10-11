@@ -2,6 +2,22 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.12.0] — 2026-10-11
+
+### 수정(Fixed) — 문서 정직성 교정 (논문·ARTEX 장점 반영도 전수 라인레벨 감사)
+업로드 자료(논문 5편 + ARTEX·redcat2·BoxPwnr) 전수를 소스와 **라인레벨 대조**한 결과,
+반영도 자체는 높았으나 **참조 문서의 과장·과소·오귀속 표현 6건**을 확인해 교정한다(§3 정직성).
+코드 로직 변경 없음 — 문서·버전만.
+- **A6 성격 정정**: `judge.py` 는 ARTEX 'LLM-judge' 를 **충실 이식**한 것이 아니라, ARTEX 의
+  실제 `llm_judge`(룰 미매칭 도구콜의 운영안전 심판 ALLOW/ASK/DENY)와 **목적이 다른** 결과검증
+  루브릭으로 **재목적화**한 클린룸 파생임을 명시(ARCHITECTURE §9 A6).
+- **A5·A6 ADR 승격**: 과거 ADR 아닌 변경이력에만 있던 두 결정을 `ARCHITECTURE.md §9` 에 ADR 로 기재.
+- **RESEARCH.md 과장 정정**: (a) `--sandbox` 셸을 'PTY-유사'→'명령 단위 one-shot(세션 비보존)'
+  으로, (b) `command_fixer.py` 를 'Results Verifier 전면'→'타겟 복구만(출력구동 재생성 미구현)'
+  으로, (c) 'RAG'·요약을 '키워드/서명·트렁케이트(벡터·청크병합 아님)'로 한정.
+- **과소기재 보완**: Anomaly-Agent 의 외부 위협인텔(KRM) 대응으로 `enrich.py`(NVD/CVE/CWE) 추가 기재.
+- 코드/테스트 변경 없음. 전체 **118 스위트 | 2695 passed, 0 failed** (불변).
+
 ## [2.11.1] — 2026-10-11
 
 ### 수정(Fixed) — 단계별 열거 예산 공정배분 (max_enum 잠식 HIGH 버그)
