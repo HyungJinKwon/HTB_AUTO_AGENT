@@ -268,6 +268,7 @@ class HypothesisLedger:
         # 경우(expected="returns 403 Forbidden" 등)엔 일치로 인정해야 한다. 과거엔 target_rejected
         # 면 match_signal 을 건너뛰고 강제 miss → 기대한 응답을 받고도 오탐 stuck/freeze 됐다.
         sig = match_signal(h.expected, output)
+        verdict: bool | None
         if not (output or "").strip():
             verdict = False               # 빈 출력 → 판단 불가가 아니라 miss(실행은 됐으나 신호 無)
         elif sig is True:
