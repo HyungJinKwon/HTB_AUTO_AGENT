@@ -2,6 +2,28 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.9.1] — 2026-10-11
+
+### 추가(Added) — A8. 소스-그라운드 드리프트 테스트 (ARTEX 'source-grounded drift tests' 반영)
+장점 반영 감사에서 '부분'이던 A8 을 전용 스위트로 승격. **출하 KB 전수**(`knowledge/rules/*.json`·
+`knowledge/vulns/*.json`)를 코드가 실제로 쓰는 계약에 접지시켜 '침묵 드리프트'를 테스트 타임
+실패로 올린다. 동기: 룰/취약점 로더는 잘못된 스키마를 **stderr 경고로만** 흘리거나(알 수 없는
+phase/os) **아예 침묵 드롭**(`_load_vuln_dir`: name/service 없으면, `_load_rule_dir`: ports 비정수면)
+해서, `phase:"foothold"` 같은 오타가 들어가도 런타임이 조용히 degrade 할 뿐 CI 는 초록으로 남았다.
+- **`test_kb_grounding.py` 신설 26건**: 룰 phase ⊆ `PENTEST_PHASES`·when.os ⊆ `_VALID_OS`·
+  when.ports 정수(침묵 드롭 방지)·죽은 룰 없음(빈 suggest 면 note 필수); 취약점 severity 열거·
+  CVE/CWE 형식·**정직성 접지(운영 취약점 노트 '출처' 인용, §3/§4 경계의 구조적 가드)**;
+  로더 전수 적재(객체 수 == 적재 수)·실제 API 무예외 적재; **음성 테스트**로 가드 민감도 입증.
+- 코드·KB 변경 없음(테스트·문서만). 전체 **113 스위트 | 2630 passed, 0 failed**.
+
+### 문서(Docs) — A3·A4 설계 결정(ADR) 명문화
+ARTEX 장점 감사의 '부분 반영' 두 축을 **현 구조로 이미 실현됐고 전면 재작성은 순효과 마이너스**로
+판단, 그 근거를 `docs/ARCHITECTURE.md`에 설계 결정으로 남긴다(추측성 재작성 회피 — 6b 와 동류).
+- **A3 이벤트 구동 루프**: `StageScheduler` 의 `key()`(입력 서명) dirty-추적이 곧 이벤트 전파다.
+  별도 pub/sub 버스는 간접층만 늘릴 뿐 동일 고정점 동작 → 미채택.
+- **A4 플래너/워커 블랙보드**: `WorldModel`=공유 블랙보드, `Orchestrator`=플래너(스케줄·게이팅·
+  분석), 스테이지/라운드=워커로 이미 성립. 명시적 클래스 분리는 '이름 바꾸기' 수준 → 미채택.
+
 ## [2.9.0] — 2026-10-11
 
 ### 추가(Added) — A6. LLM-심판 게이트(opt-in·advisory) — ARTEX 'LLM-judge' 정직성-보존 이식
