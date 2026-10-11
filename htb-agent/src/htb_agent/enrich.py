@@ -48,6 +48,7 @@ CWE_NAMES: dict[str, str] = {
     "CWE-276": "Incorrect Default Permissions",
     "CWE-284": "Improper Access Control",
     "CWE-287": "Improper Authentication",
+    "CWE-288": "Authentication Bypass Using an Alternate Path or Channel",
     "CWE-295": "Improper Certificate Validation",
     "CWE-306": "Missing Authentication",
     "CWE-312": "Cleartext Storage of Sensitive Information",
