@@ -2,6 +2,20 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.8.0] — 2026-10-11
+
+### 추가(Added) — A5. 타입드 리니지(출처) 그래프 — 평면 evidence 승격 (ARTEX 참고 장점 반영)
+장점 반영 감사에서 유일하게 '미반영'으로 꼽힌 ARTEX 아이디어(타입드 리니지 그래프)를 구현한다.
+기존 `world.evidence`(사실→출처문자열 평면 dict)를 **병행 타입드 그래프**로 승격(하위호환 유지).
+- **`LineageNode`**(종류·출처·부모·콘텐츠해시) + `WorldModel.lineage`(값→노드). `add_cred/
+  add_loot/add_vuln/add_learned/add_flag` 가 종류별 노드를 기록(평면 evidence 도 그대로 유지).
+- **다중 홉 유래 `chain(value)`** — 부모 엣지를 따라 자식→부모 재구성(사이클 방어). 설정파일
+  loot → 그 파일에서 캔 cred 같은 **사실→사실 엣지**를 표현.
+- **콘텐츠 해시(A7 보강)** — 노드에 근거 원문 sha256 필드(있을 때). 동일 증거 식별·안정 참조 토대.
+- **소비처 결선**: `to_dict` 가 lineage 를 내보내 리포트 JSON 에 포함(report_export), `_with_src`
+  가 부모 사슬('← 부모')까지 표시(LLM 컨텍스트·교육). 실행·판단 로직과 무관(표현·내보내기).
+- 신규 `test_lineage.py` **17건**. 전체 **2593 passed, 0 failed** (111 스위트).
+
 ## [2.7.16] — 2026-10-11
 
 ### 정리(Changed) — S5-4. 사장 메서드 제거 · 진행도 계상 정확화 · to_dict 완전성

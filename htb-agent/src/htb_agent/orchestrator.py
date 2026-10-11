@@ -2064,7 +2064,8 @@ class Orchestrator:
             report.flag_provenance.append(prov)
         # world(신뢰 상태)에는 공략 유래 플래그만 — 미신뢰 플래그로 권한레벨이 오염되지 않게.
         if self.world is not None and prov is not None and prov.verdict == "exploit-derived":
-            self.world.add_flag(hit.kind, hit.value)
+            # [A5] 플래그 리니지에 출처 명령을 실어 둔다(유래 추적·writeup 설명).
+            self.world.add_flag(hit.kind, hit.value, source=getattr(prov, "command", "") or "")
         return True
 
     def _flag_in_external_notes(self, value: str) -> bool:
