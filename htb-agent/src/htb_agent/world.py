@@ -198,6 +198,8 @@ class WorldModel:
             "os_confidence": self.os_confidence,
             "is_dc": self.is_dc,
             "access_level": self.access_level,
+            "web_product": self.web_product,   # [S5-4] 리포트 내보내기·완전성용
+            "web_version": self.web_version,
             "services": [{"port": s.port, "proto": s.proto, "name": s.name,
                           "product": s.product, "version": s.version}
                          for s in self.services],

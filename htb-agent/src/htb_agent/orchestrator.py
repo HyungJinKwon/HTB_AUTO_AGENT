@@ -414,7 +414,12 @@ class Orchestrator:
                                and not self._cost_capped(report))
                     if use_llm:
                         self._refresh_analysis(report, prof, host, target)
-                    phase_before = len(report.enum_findings) + len(report.llm_findings)
+                    # [S5-4] 진행 판정은 '실제로 실행된'(비skipped) finding 기준 — 도구 미설치
+                    # (skipped)만 생긴 단계를 '진행'으로 오표기하지 않게.
+                    def _ran_total() -> int:
+                        return (sum(1 for f in report.enum_findings if not f.skipped)
+                                + len(report.llm_findings))
+                    phase_before = _ran_total()
                     for _rnd in range(self.max_rounds):
                         added = self._enum_round(
                             report, host, prof, target, seen_cmds,
@@ -428,7 +433,7 @@ class Orchestrator:
                                 key)
                         if added == 0 or self._goal_reached(report) or self._time_up():
                             break
-                    grew = len(report.enum_findings) + len(report.llm_findings) > phase_before
+                    grew = _ran_total() > phase_before
                     if grew and key not in phases_run:
                         phases_run.append(key)
                     # 한 번이라도 '진행'한 단계는 이후 스윕에서 새 명령이 없어도 '진행' 유지
@@ -837,7 +842,10 @@ class Orchestrator:
                                         [v for _, v in to_run], phase)
             for f in gated:
                 self._record_variant_outcome(base_by_cmd.get(f.command, f.command), f)
-        return len(to_run)
+        # [S5-4] '실제로 시도한' 명령 수만 진행도로 센다(slots = 도구 설치된 runnable 수).
+        # 과거엔 len(to_run) 이라 도구 미설치(skipped) 후보도 진행으로 세어, 라운드 조기종료
+        # (added==0) 를 한 라운드 늦추고 단계를 'skipped-only 인데 진행'으로 표시했다.
+        return slots
 
     def _record_variant_outcome(self, base_cmd: str, finding: EnumFinding) -> None:
         """실행된 변형의 결과(성공/실패)를 학습 통계에 기록. base 명령(fragment 없음)은
@@ -1753,8 +1761,8 @@ class Orchestrator:
                        if self.guard.attacker_ips else "")
         preparations.prepare_privesc(report, prof, attacker_ip, self.audit)
 
-    def _privesc_analyze_stage(self, report: OrchestrationReport) -> None:
-        preparations.privesc_analyze(report, self.audit)
+    # [S5-4] 사장 메서드 _privesc_analyze_stage 제거 — 호출부 없음. privesc 벡터 분석은
+    # preparations.prepare_privesc 안에서 preparations.privesc_analyze 로 직접 수행된다.
 
     def _world_fingerprint(self, report: OrchestrationReport) -> tuple:
         """스윕 간 '상태 성장' 판정용 지문. 관측·크리덴셜·서비스·권한이 늘면 달라진다.

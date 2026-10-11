@@ -2,6 +2,22 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.7.16] — 2026-10-11
+
+### 정리(Changed) — S5-4. 사장 메서드 제거 · 진행도 계상 정확화 · to_dict 완전성
+재감사의 LOW 정리 항목.
+- **사장 메서드 `_privesc_analyze_stage` 제거** — 호출부 없음(privesc 벡터 분석은
+  `preparations.prepare_privesc` 안에서 `privesc_analyze` 로 직접 수행).
+- **`_enum_round` 진행도 계상 정확화** — 반환값을 `len(to_run)` → `slots`(도구 설치된 runnable
+  수)로. 도구 미설치(skipped) 후보가 '진행'으로 세어져 라운드 조기종료를 한 라운드 늦추고
+  단계를 'skipped-only인데 진행'으로 표시하던 accounting 오류 교정. phase 진행 판정(`grew`)도
+  '실제 실행된(비skipped)' finding 기준으로.
+- **`WorldModel.to_dict` 에 `web_product`/`web_version` 추가** — 리포트 JSON 내보내기 완전성
+  (report_export 가 이미 world.to_dict 사용). `WorldModel.to_dict` 는 사장 아님(report_export·
+  test_world 가 사용) — 재감사 보고의 '미사용' 판단을 정정.
+- 전체 **2576 passed, 0 failed** (110 스위트). 행위 영향: skipped-only 단계 표기·라운드 종료
+  시점만 정정, 정상 경로 불변.
+
 ## [2.7.15] — 2026-10-11
 
 ### 수정(Fixed) — S5-3. 월드 식별 상태·해시 resume 왕복(S0 resume 퇴행 교정)
