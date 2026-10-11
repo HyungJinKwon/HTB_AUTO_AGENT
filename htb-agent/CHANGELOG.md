@@ -2,6 +2,20 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.7.14] — 2026-10-11
+
+### 수정(Fixed) — S5-2. 정직성 가드: world(신뢰 상태)에 공략 유래 플래그만 반영
+재감사가 찾은 정직성 가드 역전: `_record_flag` 가 **모든** 스캔 플래그를 `world.add_flag`
+(→ `raise_access`)로 무조건 올려, 로컬 출력의 미끼·예시·라이트업 유래 플래그가
+`world.access_level` 을 user/root 로 올리고 `_prereq_met` 를 충족시켜(투기적 LLM 라운드 오발)
+`context_lines`·`_world_fingerprint` 를 오염시켰다. `goal_reached` 는 verdict 로 보호됐지만
+world 상태는 그렇지 않아, 정직성을 가장 지켜야 할 곳에서 report↔world 가 갈렸다.
+- **world 쓰기를 `verdict=="exploit-derived"` 로 게이트** — `goal_reached` 와 동일 기준. `report.flags`
+  는 '관측된 모든 플래그'를 그대로 담고(사람 확인용), world 는 '신뢰 상태'만 담는다.
+- 발판/포착/재개 경로의 공략 유래 플래그는 기존대로 정상 반영(권한 승격·goal 인식 유지).
+- 신규 `test_s5_flag_trust.py` **10건**: 미신뢰(local-derived/looked-up) → report만·world 권한
+  불변 / exploit-derived → 정상 승격 / 혼합 시 미신뢰 root 로 권한 오염 없음. 전체 **2570 passed**.
+
 ## [2.7.13] — 2026-10-11
 
 ### 수정(Fixed) — S5-1. 소비 스테이지 예산 분리(max_enum 잠식 HIGH 버그)

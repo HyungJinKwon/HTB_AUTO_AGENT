@@ -2024,13 +2024,21 @@ class Orchestrator:
         '만' 불러 flag_read 로 얻은 플래그가 report.flags 에 안 잡혔다(→ user/root_flag·
         goal_reached 가 못 봄). 이 단일 경로로 모아 그 상태원 분기를 구조적으로 차단한다.
         prov 가 있으면 함께 기록(없으면 provenance 미부여). 실행/발사 로직과 무관 — 상태 반영만.
+
+        [S5-2] 정직성 가드: world(권한레벨·신뢰 상태)에는 **공략 유래(exploit-derived) 플래그만**
+        반영한다. 과거엔 모든 스캔 플래그를 world.add_flag → raise_access 로 무조건 올려, 로컬
+        출력의 미끼/예시/라이트업 유래 플래그가 world.access_level 을 user/root 로 올리고
+        _prereq_met 를 충족시켜(투기적 LLM 라운드 오발) context/fingerprint 를 오염시켰다.
+        report.flags 는 '관측된 모든 플래그'를 담고, world 는 '신뢰되는 상태'만 담는다(goal_reached
+        와 동일 기준 verdict=="exploit-derived"). report 는 전부 기록하므로 사람에겐 다 보인다.
         """
         if hit.value in {f.value for f in report.flags}:
             return False
         report.flags.append(hit)
         if prov is not None:
             report.flag_provenance.append(prov)
-        if self.world is not None:
+        # world(신뢰 상태)에는 공략 유래 플래그만 — 미신뢰 플래그로 권한레벨이 오염되지 않게.
+        if self.world is not None and prov is not None and prov.verdict == "exploit-derived":
             self.world.add_flag(hit.kind, hit.value)
         return True
 
