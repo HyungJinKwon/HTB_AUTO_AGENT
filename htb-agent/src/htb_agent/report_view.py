@@ -212,11 +212,15 @@ def render_summary(report) -> str:
             if r.ref:
                 lines.append("      " + ui.dim("참고: " + r.ref[:72]))
         lines.append("  " + ui.dim("→ 번호를 골라 해당 명령/각도를 승인하면 3관문을 거쳐 실행됩니다."))
-    if report.detected_cve or report.detected_cwe or report.vuln_matches:
+    if report.detected_cve or report.detected_cwe or report.vuln_matches or report.discovered_cve:
         lines.append("\n" + ui.heading(
             "VULN  (탐지된 취약점 — 수동 검증/익스플로잇 필요)", "🛑"))
         if report.detected_cve:
             lines.append(ui.kv("탐지 CVE", ui.warn(", ".join(report.detected_cve)), 9))
+        if report.discovered_cve:
+            # 제품→CVE 역질의(NVD)로 자동 발견한 것 — KB 룰 없이도 신종 취약점을 수면 위로.
+            lines.append(ui.kv("🔎 자동발견 CVE",
+                               ui.warn(", ".join(report.discovered_cve)) + ui.dim(" (제품·버전 기반 NVD 역질의 — 버전대조 확인)"), 9))
         if report.detected_cwe:
             lines.append(ui.kv("탐지 CWE", ui.warn(", ".join(report.detected_cwe)), 9))
         for m in report.vuln_matches:
@@ -232,7 +236,8 @@ def render_summary(report) -> str:
         lines.append("\n" + ui.heading("CVE 레퍼런스 (자동 수집 — NVD/GitHub)", "📚"))
         for e in report.enriched:
             sev = f"[{e.severity} {e.cvss}] " if e.severity else ""
-            lines.append("  " + ui.warn(sev) + ui.bold(e.id)
+            badge = ui.accent2("🔎 ") if e.id in report.discovered_cve else ""
+            lines.append("  " + badge + ui.warn(sev) + ui.bold(e.id)
                          + (ui.dim("  " + ", ".join(e.cwe)) if e.cwe else ""))
             if e.description:
                 lines.append(ui.dim("     " + e.description[:160]))

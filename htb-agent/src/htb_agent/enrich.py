@@ -28,6 +28,64 @@ from typing import Callable
 
 _CVE_RE = re.compile(r"CVE-\d{4}-\d{4,7}", re.I)
 
+
+def _vtuple(v: str) -> tuple[int, ...]:
+    """'16.0.40.7' → (16,0,40,7). 숫자 토큰만 취해 버전 비교에 쓴다(비숫자 접미 무시)."""
+    return tuple(int(n) for n in re.findall(r"\d+", v or ""))
+
+
+def _ver_le(a: str, b: str) -> bool:
+    """a <= b (튜플 패딩 비교). 빈 값은 비교 불가로 False 취급은 호출부가 처리."""
+    ta, tb = _vtuple(a), _vtuple(b)
+    n = max(len(ta), len(tb))
+    return ta + (0,) * (n - len(ta)) <= tb + (0,) * (n - len(tb))
+
+
+def _version_applies(cve: dict, product: str, version: str) -> bool:
+    """탐지 version 이 이 CVE 의 CPE 적용범위에 드는가(과매칭 배제용).
+
+    cve.configurations[].nodes[].cpeMatch[] 중 vulnerable 하고 제품명이 일치하는 항목에 대해
+    버전범위(versionStart/End Including/Excluding)·명시버전을 검사한다. 판단할 CPE 가 하나도
+    없으면(구성 미기재 등) True 를 돌려 보수적으로 포함한다(키워드로 이미 제품은 걸렸으므로)."""
+    pl = product.strip().lower()
+    saw_relevant = False
+    for conf in cve.get("configurations", []) or []:
+        for node in conf.get("nodes", []) or []:
+            for m in node.get("cpeMatch", []) or []:
+                if not m.get("vulnerable"):
+                    continue
+                crit = str(m.get("criteria", ""))        # cpe:2.3:a:vendor:product:ver:...
+                parts = crit.split(":")
+                cpe_prod = parts[4].lower() if len(parts) > 4 else ""
+                if not cpe_prod or (pl not in cpe_prod and cpe_prod not in pl):
+                    continue
+                saw_relevant = True
+                lo_i = m.get("versionStartIncluding")
+                lo_x = m.get("versionStartExcluding")
+                hi_i = m.get("versionEndIncluding")
+                hi_x = m.get("versionEndExcluding")
+                cpe_ver = parts[5] if len(parts) > 5 else "*"
+                if lo_i is None and lo_x is None and hi_i is None and hi_x is None:
+                    # 범위 없음 → 명시버전 접두 일치면 적용(와일드카드는 제품 전체 → 적용)
+                    if cpe_ver in ("*", "-", ""):
+                        return True
+                    tv, tc = _vtuple(version), _vtuple(cpe_ver)
+                    if tv[:len(tc)] == tc:
+                        return True
+                    continue
+                ok = True
+                if lo_i is not None and not _ver_le(lo_i, version):
+                    ok = False
+                if lo_x is not None and not (_ver_le(lo_x, version) and _vtuple(lo_x) != _vtuple(version)):
+                    ok = False
+                if hi_i is not None and not _ver_le(version, hi_i):
+                    ok = False
+                if hi_x is not None and not (_ver_le(version, hi_x) and _vtuple(version) != _vtuple(hi_x)):
+                    ok = False
+                if ok:
+                    return True
+    return not saw_relevant   # 관련 CPE 를 봤는데 어느 범위에도 안 들면 배제, 없었으면 포함
+
 # 대표 CWE 이름(오프라인 기본 — 네트워크 없이도 분류 가능). 필요 시 확장.
 CWE_NAMES: dict[str, str] = {
     "CWE-20": "Improper Input Validation",
@@ -149,27 +207,76 @@ class Enricher:
         if not raw:
             return None
         try:
-            data = json.loads(raw)
-            vulns = data.get("vulnerabilities") or []
+            vulns = (json.loads(raw).get("vulnerabilities") or [])
             if not vulns:
                 return None
-            cve = vulns[0]["cve"]
-            desc = ""
-            for d in cve.get("descriptions", []):
-                if d.get("lang") == "en":
-                    desc = d.get("value", "")
-                    break
-            cvss, sev = self._parse_cvss(cve.get("metrics", {}))
-            cwes = []
-            for w in cve.get("weaknesses", []):
-                for d in w.get("description", []):
-                    if d.get("value", "").startswith("CWE-"):
-                        cwes.append(d["value"])
-            refs = [r.get("url", "") for r in cve.get("references", []) if r.get("url")]
-            return CveInfo(id=cve_id, description=desc, cvss=cvss, severity=sev,
-                           cwe=sorted(set(cwes)), references=refs[:8], source="nvd")
+            return self._parse_cve_obj(vulns[0]["cve"], fallback_id=cve_id)
         except (json.JSONDecodeError, KeyError, TypeError, IndexError):
             return None
+
+    def _parse_cve_obj(self, cve: dict, fallback_id: str = "") -> CveInfo | None:
+        """NVD vulnerabilities[].cve 객체 → CveInfo (단건 조회·제품탐색 공용)."""
+        cid = str(cve.get("id") or fallback_id).upper()
+        if not _CVE_RE.fullmatch(cid):
+            return None
+        desc = ""
+        for d in cve.get("descriptions", []):
+            if d.get("lang") == "en":
+                desc = d.get("value", "")
+                break
+        cvss, sev = self._parse_cvss(cve.get("metrics", {}))
+        cwes = []
+        for w in cve.get("weaknesses", []):
+            for d in w.get("description", []):
+                if d.get("value", "").startswith("CWE-"):
+                    cwes.append(d["value"])
+        refs = [r.get("url", "") for r in cve.get("references", []) if r.get("url")]
+        return CveInfo(id=cid, description=desc, cvss=cvss, severity=sev,
+                       cwe=sorted(set(cwes)), references=refs[:8], source="nvd")
+
+    # ── 제품 → CVE 역탐색 (NVD keywordSearch + CPE 버전범위 필터) ────────
+    def discover_by_product(self, product: str, version: str = "",
+                            max_results: int = 5) -> list[CveInfo]:
+        """탐지된 제품(+버전)으로 NVD 를 역질의해 '아직 모르는' CVE 를 자동 발견한다.
+
+        기존 enrich_cve 는 '이미 아는 CVE ID' 만 조회했다(제품→CVE 역방향 없음) — 그래서 KB
+        룰이 없는 신종 취약점은 버전을 정확히 탐지하고도 수면 위로 못 올라왔다. 이 메서드가 그
+        갭을 닫는다: keywordSearch 로 제품 관련 CVE 를 받아, 버전이 주어지면 CPE 적용범위로
+        필터(과매칭 방지), CVSS 내림차순·최신순으로 상위 N 개만 돌려준다. 발견은 자동이되 실행은
+        아니다 — 반환된 CVE 는 상위 호출부가 '제안'으로만 노출한다(생성 경계 유지)."""
+        if not self.enabled or not product.strip():
+            return []
+        from urllib.parse import quote
+        raw = self.fetch("https://services.nvd.nist.gov/rest/json/cves/2.0"
+                         f"?keywordSearch={quote(product.strip())}&resultsPerPage=50")
+        if not raw:
+            return []
+        try:
+            vulns = json.loads(raw).get("vulnerabilities") or []
+        except (json.JSONDecodeError, TypeError):
+            return []
+        scored: list[tuple[float, str, CveInfo]] = []
+        for v in vulns:
+            cve = v.get("cve") or {}
+            if version and not _version_applies(cve, product, version):
+                continue   # 버전이 CPE 적용범위 밖 → 과매칭 배제
+            info = self._parse_cve_obj(cve)
+            if info is None:
+                continue
+            try:
+                score = float(info.cvss)
+            except (TypeError, ValueError):
+                score = 0.0
+            published = str(cve.get("published") or "")   # 최신 우선 2차키
+            scored.append((score, published, info))
+        scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
+        out: list[CveInfo] = []
+        for _score, _pub, info in scored[:max_results]:
+            if self.want_poc and not info.poc_repos:
+                info.poc_repos = self._fetch_github_poc(info.id)
+            self._save_cache(info)
+            out.append(info)
+        return out
 
     @staticmethod
     def _parse_cvss(metrics: dict) -> tuple[str, str]:

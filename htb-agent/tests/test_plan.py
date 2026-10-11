@@ -167,7 +167,7 @@ from htb_agent import replay as RP  # noqa: E402
 from htb_agent import report_export as RX  # noqa: E402
 from htb_agent import writeup as WU  # noqa: E402
 d = RX.to_dict(rep)
-check("JSON schema 1.7 + plan", d["schema_version"] == "1.7" and d["plan"]["items"][0]["id"] == "H1")
+check("JSON schema 1.8 + plan", d["schema_version"] == "1.8" and d["plan"]["items"][0]["id"] == "H1")
 check("JSON 직렬화 가능", json.loads(RX.to_json(rep))["plan"]["revision"] >= 2)
 html = RX.to_html(rep, "Box")
 check("HTML 가설 보드(표·지금 표시)", "<th>기대 신호</th>" in html and "← 지금" in html)
