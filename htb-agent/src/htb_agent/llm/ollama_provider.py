@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import os
+import random
+import time
 import urllib.error
 import urllib.request
 
@@ -27,6 +29,13 @@ class OllamaProvider(LLMProvider):
             self.models = {t: env_model for t in self.models}
         if models:
             self.models = {**self.models, **models}
+        # [재시도/백오프] Ollama 는 재시도가 없어 일시 네트워크 블립(연결거부·타임아웃) 1회가
+        # 하드 오류로 집계됐다(→ 서킷브레이커 조기 트립). 전이성 오류만 지터드 지수백오프로
+        # 소수 재시도(상한으로 예산 보호). sleep 은 주입 가능(테스트는 no-op).
+        self._retries = 2                 # 추가 재시도 횟수(총 1+2회)
+        self._backoff_base = 0.4          # 초
+        self._backoff_cap = 4.0           # 재시도 간 최대 대기(예산 보호)
+        self._sleep = time.sleep
 
     def available(self) -> tuple[bool, str]:
         try:
@@ -67,6 +76,27 @@ class OllamaProvider(LLMProvider):
         }).encode()
         req = urllib.request.Request(self.host + "/api/generate", data=payload,
                                      headers={"Content-Type": "application/json"})
+        last: Exception | None = None
+        for attempt in range(self._retries + 1):
+            try:
+                return self._once(req, model)
+            except urllib.error.HTTPError as e:
+                if 400 <= e.code < 500:
+                    raise                 # 클라이언트 오류(모델 부재 등) — 재시도 무의미
+                last = e
+            except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
+                last = e                  # 연결거부·타임아웃·소켓·깨진 JSON = 전이성 → 재시도
+            if attempt < self._retries:
+                self._sleep(self._backoff(attempt))
+                continue
+            raise last                    # 재시도 소진 — 마지막 오류를 올린다(라우터가 폴백/집계)
+        raise last if last else RuntimeError("ollama: unreachable")  # pragma: no cover
+
+    def _once(self, req: "urllib.request.Request", model: str) -> LLMResponse:
         with urllib.request.urlopen(req, timeout=180) as r:
             data = json.loads(r.read())
         return LLMResponse(data.get("response", ""), model)
+
+    def _backoff(self, attempt: int) -> float:
+        """지터드 지수백오프(상한). attempt 0,1,… → base*2^n + 소량 지터, cap 으로 제한."""
+        return min(self._backoff_cap, self._backoff_base * (2 ** attempt)) + random.uniform(0, 0.2)

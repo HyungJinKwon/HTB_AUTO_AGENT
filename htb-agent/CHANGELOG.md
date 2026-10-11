@@ -2,6 +2,19 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.11.0] — 2026-10-11
+
+### 추가(Added) — Ollama 재시도/백오프 (견고성 — 서킷브레이커 조기 트립 완화)
+개선 감사(BoxPwnr 참고)에서 확인된 견고성 공백. Ollama 백엔드는 재시도가 전무해 일시
+네트워크 블립(연결거부·타임아웃) 1회가 하드 오류로 집계됐고, 2연속이면 서킷브레이커가
+트립됐다. 이제 **전이성 오류만** 지터드 지수백오프로 소수 재시도(상한으로 예산 보호).
+- `ollama_provider`: `complete` 를 `_once`(단발)+재시도 루프로 분리. 전이성(URLError·
+  TimeoutError·OSError·깨진 JSON·5xx)만 재시도, **4xx 클라이언트 오류는 즉시 전파**(재시도
+  무의미). 백오프 `base*2^n + 지터`, cap 으로 제한. `_sleep` 주입 가능(테스트 no-op).
+- Claude 는 anthropic SDK 가 이미 재시도(max_retries) → 이중재시도 방지 위해 손대지 않음.
+  2.10.1 서킷브레이커 반개방 복구와 짝: 재시도로 트립 자체를 줄이고, 트립돼도 복구된다.
+- 신규 `test_ollama_retry.py` **9건**. 전체 **117 스위트 | 2683 passed, 0 failed**.
+
 ## [2.10.2] — 2026-10-11
 
 ### 수정(Fixed) — 구조 감사 확인 오케스트레이터/상태 실버그 6종
