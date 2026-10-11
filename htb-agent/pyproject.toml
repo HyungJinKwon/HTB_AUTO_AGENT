@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "htb-agent"
-version = "2.7.7"   # src/htb_agent/__init__.py 의 __version__ 과 일치시킬 것
+version = "2.7.8"   # src/htb_agent/__init__.py 의 __version__ 과 일치시킬 것
 description = "HTB 머신 승인제 풀이 에이전트 (권한 확인 자산 한정, 레드팀 학습용)"
 license = { text = "MIT" }
 readme = "README.md"

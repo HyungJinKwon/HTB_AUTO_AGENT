@@ -2,6 +2,23 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.7.8] — 2026-10-11
+
+### 수정(Fixed) — S4-2. 플래그 상태원 단일 쓰기 경로(_record_flag) · 발판 플래그 누락 교정
+구조 감사(상태원 중복 지도)가 플래그를 3곳(`OrchestrationReport.flags`·`WorldModel.flags`·
+`SessionState.flags`)에 두고 포착·재개·발판이 제각기 이중쓰기함을 지적했다. 특히 **발판
+경로(`_foothold_stage`)는 `world.add_flag` 만 불러**, 발판 세션으로 읽은 user/root 플래그가
+`report.flags` 에 안 잡혀 `report.user_flag`/`root_flag`·`goal_reached`(= `report.flag_provenance`
+의 exploit-derived 만 인정)가 **그 플래그를 영영 못 보던** 상태원 분기 결함이 있었다.
+- **`_record_flag` 신설** — `report.flags`(중복제거) + `flag_provenance` + `world.flags` 를
+  단일 경로로 함께 갱신. 포착(`_process`)·재개(`_restore`)·발판(`_foothold_stage`)의 산재
+  이중쓰기를 전부 이 경로로 수렴.
+- **발판 플래그 교정** — 발판 세션 직독 플래그를 `exploit-derived` provenance 와 함께
+  `report.flags` 에 반영 → 이제 보고·goal_reached 가 정상 인식. **발판 세션 획득·전송(RCE 실행)
+  로직은 한 줄도 바꾸지 않음** — '이미 읽은' 플래그의 상태 반영 경로만 교정.
+- 신규 `test_s4_flag_ssot.py` **12건**: 동시 갱신·중복무시·prov 유무·발판 유래 user+root →
+  goal_reached. 전체 **2533 passed, 0 failed** (104 스위트).
+
 ## [2.7.7] — 2026-10-10
 
 ### 추가(Added) — S0~S3 통합 E2E 회귀(connected.htb/FreePBX 체인) · 행위 변화 없음

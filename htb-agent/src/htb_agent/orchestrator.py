@@ -560,19 +560,17 @@ class Orchestrator:
             value, kind = (fd or {}).get("value", ""), fd.get("kind", "")
             if not value or value in {f.value for f in report.flags}:
                 continue
-            report.flags.append(FlagHit(value, kind, fd.get("source", "")))
             if fd.get("verdict"):
                 # 첫 실행에서 정한 출처 판정을 그대로 복원한다. 재계산하면 in_external
                 # (라이트업·학습 유래)·오프라인 첨부 보정이 사라져, 정직성 표시가 조용히
                 # 바뀌고(goal 상태가 뒤집혀) provenance 기능이 resume 에서 무력화된다(MED-2).
-                report.flag_provenance.append(_prov.FlagProvenance(
+                prov = _prov.FlagProvenance(
                     kind, value, fd.get("prov_command", ""), fd.get("phase", ""),
-                    fd["verdict"], fd.get("reason", "")))
+                    fd["verdict"], fd.get("reason", ""))
             else:   # 구버전 상태(verdict 미저장) 호환 — 보수적 재계산
-                report.flag_provenance.append(
-                    _prov.classify(kind, value, fd.get("source", "")))
-            if self.world is not None:
-                self.world.add_flag(kind, value)
+                prov = _prov.classify(kind, value, fd.get("source", ""))
+            # [S4-2] 단일 경로(report.flags + flag_provenance + world.flags) 기록
+            self._record_flag(report, FlagHit(value, kind, fd.get("source", "")), prov)
         # [S4] 자격증명 왕복 복원 — 과거엔 _persist 가 st.credentials 를 쓰기만 하고 _restore 가
         # 되읽지 않아, 재개 세션이 '수확한 자격증명'을 통째로 잃던 SSOT 결손(상태원 비대칭) 교정.
         # 볼트(재사용·{user}/{pass} 치환)와 월드(컨텍스트·prereq)를 startup 시드(294-296)와
@@ -1685,9 +1683,14 @@ class Orchestrator:
             out = session.run(cmd)
             for u, p, _label in cred_sources.parse_config_creds(out):
                 self.world.add_cred(f"{u}:{p}", source="설정파일")
-        # 플래그 수집(채널 무관)
+        # 플래그 수집(채널 무관) — [S4-2] 단일 경로로 report.flags 에도 반영한다. 과거엔
+        # world.add_flag '만' 불러 발판으로 읽은 플래그가 report.user/root_flag·goal_reached
+        # 에 안 잡혔다(상태원 분기). 발판 세션 직독이므로 provenance=exploit-derived.
+        # (발판 세션 획득·전송 로직은 불변 — 여기선 '이미 읽은' 플래그의 상태 반영만 바꾼다.)
         for kind, val in flag_read.read_flags(session, flag_kind=self.flag_kind).items():
-            self.world.add_flag(kind, val)
+            prov = _prov.FlagProvenance(kind, val, "<발판 세션 직독>", "foothold",
+                                        "exploit-derived", "발판 세션에서 직접 읽음")
+            self._record_flag(report, FlagHit(val, kind, "발판"), prov)
 
     def _acquire_session(self, report, host):
         """발판 세션 획득 + 성립 검증. --exploit-exec/--auto-poc 전용(RCE 실행 표면).
@@ -2030,19 +2033,17 @@ class Orchestrator:
         # 플래그 스캔 — 출력에서 플래그 획득(플랫폼별 종류/접두 적용)
         for hit in scan_flags(cmd, out.stdout, flag_kind=self.flag_kind,
                               prefixes=self.flag_prefixes):
-            if hit.value not in {f.value for f in report.flags}:
-                report.flags.append(hit)
-                # 출처 검증(실행 트레이스 기반) — 이 플래그를 만든 명령을 분류해 기록.
-                prov = self._classify_flag(report, hit, cmd, finding.phase)
-                report.flag_provenance.append(prov)
-                note_mark = f"🚩 {hit.kind} flag"
-                if prov.verdict != "exploit-derived":
-                    note_mark += f"({prov.label})"
-                finding.note = (finding.note + " " if finding.note else "") + note_mark
-                self.audit.event("flag_found", kind=hit.kind, value=hit.value, cmd=cmd,
-                                 provenance=prov.verdict)
-                if self.world is not None:
-                    self.world.add_flag(hit.kind, hit.value)
+            if hit.value in {f.value for f in report.flags}:
+                continue
+            # 출처 검증(실행 트레이스 기반) — 이 플래그를 만든 명령을 분류해 기록.
+            prov = self._classify_flag(report, hit, cmd, finding.phase)
+            self._record_flag(report, hit, prov)   # [S4-2] 단일 경로(report+world) 기록
+            note_mark = f"🚩 {hit.kind} flag"
+            if prov.verdict != "exploit-derived":
+                note_mark += f"({prov.label})"
+            finding.note = (finding.note + " " if finding.note else "") + note_mark
+            self.audit.event("flag_found", kind=hit.kind, value=hit.value, cmd=cmd,
+                             provenance=prov.verdict)
         # 해시 스캔 — 원시출력(요약 전)에서 크래킹 대상 해시 수집(크래킹 자동 준비용)
         for hv in crack_scan(out.stdout):
             if hv not in self._found_hashes:
@@ -2130,6 +2131,25 @@ class Orchestrator:
             prov.verdict = "exploit-derived"
             prov.reason = "첨부파일 분석 출력에서 추출(오프라인 문제)"
         return prov
+
+    def _record_flag(self, report: OrchestrationReport, hit, prov=None) -> bool:
+        """[S4-2] 플래그를 상태원에 '단일 경로'로 기록한다 — report.flags(+flag_provenance)와
+        world.flags 를 한 번에 갱신. 중복(값 기준)이면 아무것도 안 하고 False.
+
+        과거엔 포착(_process)·재개(_restore)·발판(_foothold_stage)이 제각기
+        report.flags.append + world.add_flag 를 따로 호출했고, 발판 경로는 world.add_flag
+        '만' 불러 flag_read 로 얻은 플래그가 report.flags 에 안 잡혔다(→ user/root_flag·
+        goal_reached 가 못 봄). 이 단일 경로로 모아 그 상태원 분기를 구조적으로 차단한다.
+        prov 가 있으면 함께 기록(없으면 provenance 미부여). 실행/발사 로직과 무관 — 상태 반영만.
+        """
+        if hit.value in {f.value for f in report.flags}:
+            return False
+        report.flags.append(hit)
+        if prov is not None:
+            report.flag_provenance.append(prov)
+        if self.world is not None:
+            self.world.add_flag(hit.kind, hit.value)
+        return True
 
     def _flag_in_external_notes(self, value: str) -> bool:
         """플래그 값이 웹학습·ingest 등 '외부에서 가져온' 노트 본문에 그대로 있는가(looked-up 판정).
