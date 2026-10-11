@@ -2,6 +2,20 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.7.11] — 2026-10-11
+
+### 추가(Added) — S4-4. 상태원(SSOT) 일관성 불변식 가드 · 행위 변화 없음
+같은 사실이 여러 컨테이너(WorldModel·OrchestrationReport·SessionState·CredentialVault)에
+중복 저장되는 구조에서, **쓰기 단일 경로**(S4-1 자격증명·S4-2 플래그)가 실제로 컨테이너 간
+일관성을 지키는지 전체 `run()` 후 교차 검증하는 불변식 테스트를 추가한다. S4-2 의 '발판
+플래그가 world 에만 기록' 같은 한쪽-만-갱신 회귀를 구조적으로 잡는 가드.
+- 신규 `test_s4_ssot_invariants.py` **6건**: 서비스(world.services==host.open_ports)·자격증명
+  (vault ⊆ world.creds)·플래그(report.flags ↔ world.flags 양방향)·발판 플래그 goal 반영 +
+  **음성 대조**(world-only 기록이 불변식을 깨는지 — 가드 민감도 입증).
+- 읽기 소스 완전 일원화는 소비자(LLM 컨텍스트/리포트/영속)가 서로 달라 고위험·저이득이라
+  **의도적으로 하지 않음** — 단일 쓰기 경로 + 이 불변식으로 분기를 차단하는 방식 채택.
+- 테스트 전용(src 변경 없음). 전체 **2555 passed, 0 failed** (107 스위트).
+
 ## [2.7.10] — 2026-10-11
 
 ### 변경(Changed) — S4-3. god-object 해체(2): 플래그 출처 분류·확신도 클러스터를 flag_assess 로 분리
