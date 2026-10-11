@@ -7,6 +7,9 @@
 최신 Kali·Ubuntu 는 PEP 668 로 시스템 `pip install` 이 막히므로 **venv + 심링크**로 설치합니다.
 
 ```bash
+# 새 PC·VM 스냅샷 — 기본(default) 브랜치로 클론 (clone/pull 이 기본 브랜치 자동 선택)
+git clone https://github.com/HyungJinKwon/HTB_AUTO_AGENT.git ~/HTB_AUTO_AGENT
+# (이미 받아둔 경우 최신화) git -C ~/HTB_AUTO_AGENT pull --ff-only
 cd ~/HTB_AUTO_AGENT/htb-agent
 sudo ./scripts/install_tools.sh     # 보안 도구 일괄 설치(Kali/Ubuntu)
 
@@ -26,6 +29,7 @@ assassin --setup-llm                # (선택) Claude·로컬 LLM 연결 마법�
 ```
 
 > bash 면 `~/.zshrc` → `~/.bashrc`. 규칙 기반·Ollama 만 쓰면 `pip install -e .` 로도 됩니다.
+> 새 환경에선 **기본(default) 브랜치**를 그대로 쓰세요 — `claude/*` 작업 브랜치는 체크아웃 불필요.
 
 ## 2. 상황별 한 줄
 
