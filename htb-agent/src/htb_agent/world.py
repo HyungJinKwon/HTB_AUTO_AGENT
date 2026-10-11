@@ -50,6 +50,23 @@ class ServiceEntry:
 
 
 @dataclass
+class LineageNode:
+    """[A5] 리니지(출처) 그래프의 타입드 노드 — 사실 하나가 '어떻게 알려졌는가'를 구조화한다.
+    평면 evidence(사실→출처문자열)를 승격: 종류(kind)·출처 명령(source)·파생 부모 사실(parent)·
+    콘텐츠 해시(content_hash, A7)를 담아 다중 홉 유래(부모 사실→자식 사실)를 표현한다.
+    실행·판단 로직과 무관 — 표현·설명·내보내기용(교육·writeup·검증 보강의 토대)."""
+    kind: str                # cred | loot | vuln | flag | service | learned
+    value: str
+    source: str = ""         # 이 사실을 낳은 명령/행위(평면 evidence 와 동일 값)
+    parent: str = ""         # 파생 부모 '사실 값'(있으면 그래프 엣지 — 예: 설정파일 loot → cred)
+    content_hash: str = ""   # [A7] 근거 원문의 sha256(있을 때만) — 동일 증거 식별·안정 참조
+
+    def to_dict(self) -> dict:
+        return {"kind": self.kind, "value": self.value, "source": self.source,
+                "parent": self.parent, "content_hash": self.content_hash}
+
+
+@dataclass
 class WorldModel:
     target: str
     hostname: str = ""
@@ -62,7 +79,10 @@ class WorldModel:
     learned: list[str] = field(default_factory=list)       # 자율학습 지식(수집물 아님 — 측면이동 수단으로 치지 않음)
     flags: dict[str, str] = field(default_factory=dict)    # kind(user/root/..) -> value
     proven_vulns: list[str] = field(default_factory=list)  # CVE/CWE(+근거)
-    evidence: dict = field(default_factory=dict)           # 사실(크리덴셜/수집물/취약점) → 출처(어느 명령에서 나왔나)
+    evidence: dict = field(default_factory=dict)           # 사실 → 출처문자열(평면·하위호환 유지)
+    # [A5] 타입드 리니지 그래프 — 사실 값 → LineageNode(종류·출처·부모·콘텐츠해시). 평면 evidence
+    # 와 병행(하위호환). 다중 홉 유래는 chain() 으로 부모 엣지를 따라 재구성한다.
+    lineage: dict = field(default_factory=dict)            # value -> LineageNode
     access_level: str = "none"
     web_product: str = ""   # 관측된 웹앱 제품키(예: freepbx) — searchsploit {product} 치환
     web_version: str = ""   # 관측된 웹앱 버전(예: 15.0) — searchsploit {version} 치환
@@ -103,20 +123,53 @@ class WorldModel:
                 return
         self.services.append(ServiceEntry(port, proto, name, product, version))
 
-    def add_cred(self, cred: str, source: str = "") -> None:
+    def record_lineage(self, kind: str, value: str, source: str = "",
+                       parent: str = "", content_hash: str = "") -> None:
+        """[A5] 사실의 타입드 리니지 노드를 기록(+평면 evidence 하위호환 유지). 첫 출처를
+        보존(setdefault 의미) — 이후 더 자세한 정보(부모·해시)는 비어 있던 필드만 보강."""
+        value = (value or "").strip()
+        if not value:
+            return
+        if source:
+            self.evidence.setdefault(value, source)   # 교육: 이 사실을 '어떻게 알았는지'(평면)
+        node = self.lineage.get(value)
+        if node is None:
+            self.lineage[value] = LineageNode(kind=kind, value=value, source=source,
+                                              parent=parent, content_hash=content_hash)
+        else:   # 기존 노드는 비어 있던 필드만 보강(최초 출처·종류 고정)
+            if parent and not node.parent:
+                node.parent = parent
+            if content_hash and not node.content_hash:
+                node.content_hash = content_hash
+
+    def chain(self, value: str) -> list["LineageNode"]:
+        """[A5] 사실의 유래 사슬 — 부모 엣지를 따라 value→parent→… 노드 목록(사이클 방어)."""
+        out: list[LineageNode] = []
+        seen: set[str] = set()
+        cur = (value or "").strip()
+        while cur and cur in self.lineage and cur not in seen:
+            seen.add(cur)
+            node = self.lineage[cur]
+            out.append(node)
+            cur = node.parent
+        return out
+
+    def add_cred(self, cred: str, source: str = "", parent: str = "",
+                 content_hash: str = "") -> None:
         cred = (cred or "").strip()
         if cred and cred not in self.creds:
             self.creds.append(cred)
             self.raise_access("credentialed")
-        if cred and source:
-            self.evidence.setdefault(cred, source)   # 교육: 이 사실을 '어떻게 알았는지'
+        if cred:
+            self.record_lineage("cred", cred, source, parent, content_hash)
 
-    def add_loot(self, item: str, source: str = "") -> None:
+    def add_loot(self, item: str, source: str = "", parent: str = "",
+                 content_hash: str = "") -> None:
         item = (item or "").strip()
         if item and item not in self.loot:
             self.loot.append(item)
-        if item and source:
-            self.evidence.setdefault(item, source)
+        if item:
+            self.record_lineage("loot", item, source, parent, content_hash)
 
     def add_learned(self, item: str, source: str = "") -> None:
         """자율학습으로 얻은 지식. loot 과 분리한다 — 학습 토픽은 '측면이동 수단'이
@@ -124,23 +177,24 @@ class WorldModel:
         item = (item or "").strip()
         if item and item not in self.learned:
             self.learned.append(item)
-        if item and source:
-            self.evidence.setdefault(item, source)
+        if item:
+            self.record_lineage("learned", item, source)
 
-    def add_flag(self, kind: str, value: str) -> None:
+    def add_flag(self, kind: str, value: str, source: str = "") -> None:
         if value and self.flags.get(kind) != value:
             self.flags[kind] = value
+            self.record_lineage("flag", value, source)   # [A5] 플래그도 리니지에
         if kind == "user":
             self.raise_access("user")
         elif kind == "root":
             self.raise_access("root")
 
-    def add_vuln(self, entry: str, source: str = "") -> None:
+    def add_vuln(self, entry: str, source: str = "", parent: str = "") -> None:
         entry = (entry or "").strip()
         if entry and entry not in self.proven_vulns:
             self.proven_vulns.append(entry)
-        if entry and source:
-            self.evidence.setdefault(entry, source)
+        if entry:
+            self.record_lineage("vuln", entry, source, parent)
 
     def raise_access(self, level: str) -> None:
         """현재보다 높은 권한 레벨일 때만 올린다(되돌아가지 않음)."""
@@ -172,9 +226,15 @@ class WorldModel:
         return out
 
     def _with_src(self, fact: str) -> str:
-        """사실에 출처가 있으면 '사실 (출처: ...)' 로 — '왜 아는지'를 보여준다(교육)."""
+        """사실에 출처가 있으면 '사실 (출처: ...)' 로 — '왜 아는지'를 보여준다(교육).
+        [A5] 리니지에 부모 사실이 있으면 유래 사슬('← 부모')까지 덧붙여 다중 홉 유래를 보인다."""
         src = self.evidence.get(fact)
-        return f"{fact} (출처: {src})" if src else fact
+        if not src:
+            return fact
+        node = self.lineage.get(fact)
+        if node and node.parent:
+            return f"{fact} (출처: {src} ← {node.parent})"
+        return f"{fact} (출처: {src})"
 
     def summary(self) -> str:
         from . import ui
@@ -208,4 +268,6 @@ class WorldModel:
             "flags": dict(self.flags),
             "proven_vulns": list(self.proven_vulns),
             "evidence": dict(self.evidence),
+            # [A5] 타입드 리니지 그래프 — 사실별 종류·출처·부모·콘텐츠해시(리포트 내보내기용).
+            "lineage": {v: n.to_dict() for v, n in self.lineage.items()},
         }
