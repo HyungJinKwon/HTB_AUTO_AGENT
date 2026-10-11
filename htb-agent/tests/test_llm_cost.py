@@ -17,10 +17,16 @@ print("=== 가격 추정 ===")
 check("opus 5.5 기본", abs(estimate_cost("claude-opus-5-5", 1_000_000, 1_000_000) - 24.0) < 1e-6)
 # Sonnet 5.5: in $2 out $10 → 0.5M in + 0.2M out = 1.0 + 2.0 = 3.0
 check("sonnet 5.5", abs(estimate_cost("claude-sonnet-5-5", 500_000, 200_000) - 3.0) < 1e-6)
-# 캐시 읽기는 저렴($0.20) → 비용 감소
-full = estimate_cost("claude-opus-5-5", 1_000_000, 0)
-cached = estimate_cost("claude-opus-5-5", 1_000_000, 0, cache_read_tokens=900_000)
+# 캐시 읽기는 저렴 → 같은 총입력이라도 캐시로 읽으면 비용 감소.
+# (input_tokens 는 '비캐시' 입력 수 — 캐시읽기/생성과 서로소. 캐시로 읽은 만큼 비캐시 입력이 줄어듦.
+#  과거 테스트는 prompt_tokens 에 총입력을 넣고 캐시를 또 빼는 '이중차감' 버그 의미를 인코딩했었음.)
+full = estimate_cost("claude-opus-5-5", 1_000_000, 0)                                # 전량 비캐시 입력
+cached = estimate_cost("claude-opus-5-5", 100_000, 0, cache_read_tokens=900_000)     # 90%를 캐시로
 check("캐시 읽기로 비용 감소", cached < full)
+# 회귀 가드(F2): 캐시 토큰이 비캐시 입력(prompt_tokens)을 0 으로 깎지 않는다(이중차감 금지)
+only_uncached = estimate_cost("claude-opus-5-5", 200_000, 0)
+with_cache = estimate_cost("claude-opus-5-5", 200_000, 0, cache_read_tokens=5_000_000)
+check("비캐시 입력은 캐시량과 무관하게 과금됨(이중차감 없음)", with_cache > only_uncached)
 check("미등록 모델(로컬)은 0", estimate_cost("llama3.1:8b", 1_000_000, 1_000_000) == 0.0)
 # Haiku 5.5(CHEAP 티어): in $0.10 out $0.50 → 1M in + 1M out = 0.1 + 0.5 = 0.6
 check("haiku 5.5 등록됨", abs(estimate_cost("claude-haiku-5-5", 1_000_000, 1_000_000) - 0.6) < 1e-6)

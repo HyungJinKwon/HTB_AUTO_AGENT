@@ -31,7 +31,10 @@ def estimate_cost(model: str, prompt_tokens: int, completion_tokens: int,
     if not price:
         return 0.0
     pin, pout, pcache = price
-    non_cached_in = max(0, prompt_tokens - cache_read_tokens - cache_creation_tokens)
+    # Anthropic usage.input_tokens 는 이미 캐시 읽기·생성 토큰을 '제외한' 비캐시 입력 수다
+    # (세 값은 서로소). 과거엔 여기서 캐시값을 또 빼 비캐시 입력을 0 으로 깎아 비용을 과소집계 →
+    # cost_cap 이 늦게 발동해 예산을 초과했다. prompt_tokens 를 그대로 비캐시 입력으로 쓴다.
+    non_cached_in = max(0, prompt_tokens)
     cost = (non_cached_in * pin
             + cache_read_tokens * pcache
             + cache_creation_tokens * pin * CACHE_WRITE_MULT
