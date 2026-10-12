@@ -131,3 +131,27 @@ def prepare_crack(report: "OrchestrationReport", found_hashes: list[str],
             audit.event("crack_prepared", jobs=len(report.crack_jobs))
     except Exception as e:   # noqa: BLE001 — 준비 실패가 전체를 깨지 않도록
         audit.event("crack_error", error=str(e))
+
+
+def prepare_lateral(report: "OrchestrationReport", target: str,
+                    creds: list[tuple[str, str]], nt_hashes: list[tuple[str, str]],
+                    audit) -> None:
+    """수확한 크리덴셜(user:pass)·NT 해시를 '열린 다른 서비스'에 재사용·PtH 하는 측면 이동
+    후보를 자동 준비한다. 생성 전용 — 사용자가 권한 확인 자산에서 직접 실행(에이전트 발사 없음).
+    크리덴셜/해시가 없거나 재사용할 열린 서비스가 없으면 조용히 생략."""
+    if not target or (not creds and not nt_hashes):
+        return
+    open_ports = report.host.open_ports if report.host else []
+    try:
+        from . import lateral
+        cands = lateral.generate(target, creds, nt_hashes, open_ports)
+        if not cands:
+            return
+        report.lateral_candidates = cands
+        suggestion = lateral.render_markdown(cands)
+        if suggestion not in report.manual_suggestions:
+            report.manual_suggestions.append(suggestion)
+        audit.event("lateral_prepared", candidates=len(cands),
+                    techniques=sorted({c.technique for c in cands}))
+    except Exception as e:   # noqa: BLE001 — 준비 실패가 전체를 깨지 않도록
+        audit.event("lateral_error", error=str(e))
