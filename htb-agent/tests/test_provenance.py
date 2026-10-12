@@ -23,6 +23,14 @@ check("sudo nmap → exploit-derived(래퍼 건너뜀)", p.verdict == "exploit-d
 p = pv.classify("user", "HTB{z}", "proxychains curl http://t/flag")
 check("proxychains curl → exploit-derived", p.verdict == "exploit-derived")
 
+print("\n=== classify: 래퍼 값-옵션 뒤 실도구 정확 인식(감사 B-MED2) ===")
+# sudo -u 는 값(user)을 받는다 — 'www-data' 를 바이너리로 오인하면 미지도구→exploit-derived 로
+# 로컬 읽기가 '검증'으로 과장됐었다. 이제 cat 을 집어 local-derived 로 정직 분류.
+p = pv.classify("user", "HTB{x}", "sudo -u www-data cat /root/root.txt")
+check("sudo -u www-data cat → local-derived(검증 아님)", p.verdict == "local-derived")
+p = pv.classify("user", "HTB{x}", "nice -n 10 nmap -p- t")
+check("nice -n 10 nmap → exploit-derived(값옵션 뒤 nmap)", p.verdict == "exploit-derived")
+
 print("\n=== classify: 알 수 없는 도구 → exploit-derived(의도된 설계·감사 D-#6 검토) ===")
 # 공세형 에이전트는 커스텀 익스·sshpass 래핑·발판 셸 등 목록 밖 도구로 대상에서 플래그를
 # 읽는 경우가 흔하다 — 실제 공략 유래로 본다. 로컬 조회(cat 등)·입력값·외부자료만 제외.

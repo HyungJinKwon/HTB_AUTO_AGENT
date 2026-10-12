@@ -2,6 +2,42 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.27.0] — 2026-10-12
+
+### 수정(Fixed) — 병합본 전체 적대적 재검토 후속(2.23~2.26 변경 교차검증)
+2개 독립 리뷰 에이전트가 이번 세션 병합분(2.23.0~2.26.0) 전체를 READ-ONLY 재검토. 안전 경계·
+핵심 로직은 모두 정상 확인, 아래 확정 결함만 테스트 선작성으로 수정(HIGH 0 · MED 4 · LOW 2).
+
+- **[MED] 발판 웹 probe 런타임 예외 미흡수**: `_acquire_web_rce` 가 `ws.run()`(HTTP 요청) 의
+  런타임 실패(연결거부·타임아웃·TLS)를 감싸지 않아, 예외가 `_foothold_stage` 밖으로 새면 **리버스셸
+  폴백과 이후 생성 전용 준비 스테이지(revshell/lateral/crack/privesc·평가·심판)가 통째로 생략**됐다
+  (오케스트레이터 F3 가 흡수하나 산출물 손실). 요청 실패를 '발판 미확보'로 degrade → None 반환해
+  폴백·준비 스테이지로 진행.
+- **[MED] 측면 이동 NT 해시 오분류**: `_prepare_lateral` 이 `user:HASH`(꺾쇠 없는 실제 저장 형식)를
+  `parse_cred` 로 평문 취급해 **NT 해시를 `-p`(평문 비밀번호)로 스프레이하는 가짜 후보**를 만들었다.
+  해시 모양(정확히 32 hex)이면 PtH(`-H`)로만 라우팅하도록 수정(평문/해시 분리).
+- **[MED] 래퍼 값-옵션 바이너리 오인**: `binary_of(skip_wrappers=True)` 가 값 받는 래퍼 옵션의 값을
+  바이너리로 오인(`sudo -u www-data cat` → `www-data`, `nice -n 10 nmap` → `10`). 결과로 provenance 가
+  `sudo -u user cat flag`(로컬 읽기)를 exploit-derived 로 **과장**(정직성 신호 훼손). 래퍼별 값-옵션
+  표(`_WRAPPER_VALUE_OPTS`)로 값 토큰까지 정확히 건너뛰도록 수정(sudo `-n` boolean vs nice `-n` 값 구분).
+- **[MED] 발판 세션 I/O 예외 미흡수**: `_foothold_stage` 자격수확/플래그읽기 루프와 리버스셸 성립
+  검증 `session.run()` 이 OSError 가드 밖이라, 세션이 중간에 끊기면 준비 스테이지가 생략되고(리버스셸)
+  세션이 누수됐다. 세션 I/O 를 OSError 로 흡수(발판 중단·세션 close)하고 이후 스테이지는 계속.
+- **[LOW] `_has_token` 대소문자 충돌**: curl `-K`(설정파일)가 `-k`(--insecure)로 오인돼 자가서명 TLS
+  교정을 삼키던 것 → 단축 플래그 **대소문자 구분**(nmap `-Pn`/`-pn` 은 호출부가 두 형태 모두 전달).
+- **[LOW] 후처리 예외 후 'done' 과장**: F3 블록이 후처리 예외를 흡수한 뒤 상태를 'done' 으로 표기하던
+  것 → 리포트 메시지에 ⚠ 후처리 일부 오류 명시(정직성 §3, 코어·저장은 정상).
+
+### 테스트(Tests)
+- 신규 `test_wrapper_binary.py`(14, 래퍼 값-옵션). 보강: provenance(sudo -u 로컬 분류)·results_verify
+  (-K/-k)·lateral(NT 해시 PtH 전용 라우팅·평문만 재사용)·foothold_revshell(웹 probe 예외→폴백·검증
+  OSError→close). 전체 **133 스위트 | 2950 passed, 0 failed**.
+
+### 검토 — 정상 확인(수정 불필요)
+- 안전 경계(생성 전용·3관문·토큰 비노출·opt-in 게이트)·`select_approver` 우선순위·gate_judge fail-safe·
+  detections 이스케이프·F3 try 구조·F4/F5·`_record_signal` budget·오프라인 재개 dedup·lateral 영속
+  일관성 — 전부 정상(두 리뷰어 교차확인).
+
 ## [2.26.0] — 2026-10-12
 
 ### 추가(Added) — 측면 이동(lateral) 후보 자동 준비 (생성 전용)

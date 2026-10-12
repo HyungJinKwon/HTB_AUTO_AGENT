@@ -97,16 +97,22 @@ g.bind_target(T)
 orc = Orchestrator(g, FakeRunner(lambda c: RunOutput(c, "")), KnowledgeBase(rules=[], notes=[]),
                    auto_approve_in_scope, is_tool_available=lambda b: True, quiet=True)
 orc.world = WorldModel(target=T)
+NTH = "b" * 32
 orc.world.add_cred("svc:secret")                 # 평문 → cred-reuse
-orc.world.add_cred("administrator:<" + "b" * 32 + ">")   # user:<NThash> → PtH
+orc.world.add_cred(f"administrator:{NTH}")       # user:HASH(꺾쇠 없음 — 실제 저장 형식) → PtH
 rep3 = OrchestrationReport(target=T)
 rep3.host = SimpleNamespace(open_ports=[445, 5985])   # open_ports 만 참조됨
 orc._prepare_lateral(rep3)
 techs = {c.technique for c in rep3.lateral_candidates}
 check("평문 크리덴셜 → cred-reuse 후보", "cred-reuse" in techs)
-check("user:<NT해시> → pass-the-hash 후보", "pass-the-hash" in techs)
-check("PtH 후보가 올바른 NT 해시 사용", any(("b" * 32) in c.command
+check("user:HASH(꺾쇠 없음) → pass-the-hash 후보", "pass-the-hash" in techs)
+check("PtH 후보가 올바른 NT 해시 사용", any(NTH in c.command
       for c in rep3.lateral_candidates if c.technique == "pass-the-hash"))
+# 감사 B-MED1: NT 해시를 평문 비밀번호(-p)로 스프레이하는 가짜 후보가 없어야 함
+reuse_cmds = [c.command for c in rep3.lateral_candidates if c.technique == "cred-reuse"]
+check("NT 해시가 -p(평문)로 스프레이되지 않음",
+      not any(f"-p {NTH}" in cmd for cmd in reuse_cmds))
+check("cred-reuse 는 평문(svc)만", all("svc" in cmd for cmd in reuse_cmds))
 
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

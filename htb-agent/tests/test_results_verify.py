@@ -123,5 +123,11 @@ ri = results_verify.corrective_command("curl -sSL http://10.129.1.5/",
     RO("c", "HTTP/1.1 301 Moved Permanently\nLocation: https://x/"))
 check("-sSL 에 -L 포함 인식 → 중복 교정 안 함", ri is None)
 
+print("\n=== 단축플래그 대소문자 구분: -K(설정파일) ≠ -k(--insecure) (감사 B-LOW4) ===")
+# curl -K(대문자, 설정파일)는 -k(소문자, TLS 검증생략)와 다르다 → 자가서명 교정을 삼키면 안 됨.
+rk = results_verify.corrective_command("curl -K my.cfg https://10.129.1.5/",
+    RO("c", stderr="curl: (60) SSL certificate problem: self signed certificate"))
+check("-K 는 -k 로 오인 안 함 → -k 교정 적용", rk and rk[0] == "curl -k -K my.cfg https://10.129.1.5/")
+
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
