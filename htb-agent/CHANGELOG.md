@@ -2,6 +2,28 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.28.0] — 2026-10-12
+
+### 변경(Changed) — 최적화·안정화·가독성 검토 후속
+전체 코드베이스를 최적화·안정화·가독성·초보자 친화 관점으로 검토. 대부분 이미 양호(핫패스·
+방어 가드·초보자 가이드 `_start_guide`/`_scope_hint`·렌더링 구조). 측정 가능한 실질 개선만 반영
+(anti-gold-plating — 무의미한 churn 배제).
+
+- **[최적화] TF-IDF 색인 호출마다 재구성 제거**: `knowledge.relevant_notes` 의 경량 RAG 가 매
+  호출 `TfidfIndex(...)` 를 새로 만들어 전 노트 코퍼스를 토크나이즈·df/idf/norm 재계산했다.
+  RAG 는 **단계×라운드×스윕마다** 호출되므로 같은 노트 집합에 대한 반복 재구성이 누적됐다.
+  `_tfidf_index()` 캐시 추가 — `_lowered_notes` 와 동일한 '노트 id 튜플' 시그니처로 키잉해
+  노트 추가·교체 시 자동 무효화(항상 최신·결정적), 그 외엔 색인 재사용.
+- `test_knowledge.py` 에 색인 캐시 재사용·무효화 회귀 3건 추가. 전체 **133 스위트 | 2953 passed, 0 failed**.
+
+### 검토 — 정상 확인(변경 불필요)
+- 초보자 친화: `_start_guide`(번호 첫 실행 안내·autonomous/manual/sandbox/CTF/resume)·`_scope_hint`
+  (바인딩 실패 시 바로 고칠 명령)·`test_beginner.py` 가 이미 충실.
+- 안정화: 후처리 F3 가드·세션 I/O OSError 흡수·라우터 fail-safe·예산/시간 상한 등 방어 가드 양호.
+- 가독성: god-object 는 믹스인(foothold/preparations/flag_assess)로 분해됨. report_export/view/
+  writeup 의 준비-필드 렌더링은 출력 매체가 달라(JSON·터미널·Markdown) 통합 이득 대비 churn 이
+  커 보류. run() 분해도 동일 — 현 구조가 단계 주석으로 가독 가능해 강제 분할 안 함.
+
 ## [2.27.0] — 2026-10-12
 
 ### 수정(Fixed) — 병합본 전체 적대적 재검토 후속(2.23~2.26 변경 교차검증)
