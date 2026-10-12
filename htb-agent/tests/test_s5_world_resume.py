@@ -65,5 +65,43 @@ with tempfile.TemporaryDirectory() as d:
           o2.world is not None and o2.world.web_version == "16.0.40.7")
     check("재개: 수집 해시 복원", any("$1$abc$" in h for h in o2._found_hashes))
 
+print("\n=== 2.31: hosts_map/learned/access_level resume 왕복 ===")
+# 자동 등록 vhost·학습 토픽·권한레벨이 재개 시 비영속으로 퇴행하던 결손(MED-1/LOW-1/LOW-2) 교정 고정.
+with tempfile.TemporaryDirectory() as d:
+    store = StateStore(d)
+    o3 = Orchestrator(guard(), FakeRunner(lambda c: RunOutput(c, stdout=XML) if c.startswith("nmap")
+                                          else RunOutput(c, stdout="")),
+                      KnowledgeBase.load(), auto_approve_in_scope,
+                      state_store=store, is_tool_available=ALL, quiet=True)
+    rep3 = o3.run()
+    # 엔진 외부 경로로 확정된 상태 모사: 자동 vhost 등록 + 학습 + 권한상승
+    o3.hosts_map = {"blog.target.htb": T}
+    o3._vhost_seen.add("blog.target.htb")
+    o3.world.add_learned("freepbx-rce")
+    o3.world.raise_access("root")
+    o3._persist(rep3, store.load(T))
+    saved3 = store.load(T)
+    check("state.hosts_map 저장", saved3.hosts_map.get("blog.target.htb") == T)
+    check("state.learned 저장", "freepbx-rce" in saved3.learned)
+    check("state.access_level 저장", saved3.access_level == "root")
+
+with tempfile.TemporaryDirectory() as d:
+    store = StateStore(d)
+    from htb_agent.state import host_to_dict as _h2d
+    from htb_agent.observation.parsers import parse_nmap_xml as _pnx
+    host3 = _pnx(XML).first_host()
+    st3 = SessionState(target=T, host=_h2d(host3), recon_status="success",
+                       hosts_map={"blog.target.htb": T}, learned=["freepbx-rce"],
+                       access_level="root")
+    store.save(st3)
+    o4 = Orchestrator(guard(), FakeRunner(lambda c: RunOutput(c, stdout="")),
+                      KnowledgeBase.load(), auto_approve_in_scope,
+                      state_store=store, resume=True, is_tool_available=ALL, quiet=True)
+    o4.run()
+    check("재개: hosts_map 복원(vhost 스코프)", (o4.hosts_map or {}).get("blog.target.htb") == T)
+    check("재개: _vhost_seen 복원(재등록 억제)", "blog.target.htb" in o4._vhost_seen)
+    check("재개: world.learned 복원", o4.world is not None and "freepbx-rce" in o4.world.learned)
+    check("재개: world.access_level 복원", o4.world is not None and o4.world.access_level == "root")
+
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

@@ -82,6 +82,9 @@ class SessionState:
     web_version: str = ""
     found_hashes: list[str] = field(default_factory=list)
     loot: list[str] = field(default_factory=list)   # world.loot(수집물) — 재개 시 lateral 전제 보존
+    hosts_map: dict = field(default_factory=dict)   # 자동 등록 vhost(이름→IP) — 재개 시 스코프 복원
+    learned: list[str] = field(default_factory=list)  # world.learned(학습 토픽) — SSOT 완결·재학습 방지
+    access_level: str = ""             # world.access_level — 재개 시 권한레벨 복원(직접 상승분 보존)
     analysis: str = ""                 # 마지막 분석가 판단(재개 시 계획 이어가기)
     plan: dict | None = None           # 가설 기록(hypotheses.HypothesisLedger.to_dict)
     history: list[dict] = field(default_factory=list)

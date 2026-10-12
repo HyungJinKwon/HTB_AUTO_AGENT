@@ -4,7 +4,7 @@
 graft knowledge
 graft bench
 include README.md
-include USAGE.md
+include docs/USAGE.md
 include CHANGELOG.md
 global-exclude __pycache__/*
 global-exclude *.py[cod]

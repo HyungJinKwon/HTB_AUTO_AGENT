@@ -338,12 +338,12 @@ def _html_privesc(report) -> str:
         f"<li><b>{_esc(s.category)}</b>: <code>{_esc(s.command)}</code>"
         + (f" <span class='muted'>{_esc(s.note)}</span>" if s.note else "")
         + "</li>" for s in steps)
-    html = "<p class='muted'>대상 셸에서 직접 실행 · 생성만</p><ul>" + rows + "</ul>"
+    out = "<p class='muted'>대상 셸에서 직접 실행 · 생성만</p><ul>" + rows + "</ul>"
     cands = getattr(report, "privesc_cve_candidates", [])
     if cands:
-        html += ("<p><b>LPE CVE 후보:</b></p><ul>"
-                 + "".join(f"<li>{_esc(c)}</li>" for c in cands) + "</ul>")
-    return html
+        out += ("<p><b>LPE CVE 후보:</b></p><ul>"
+                + "".join(f"<li>{_esc(c)}</li>" for c in cands) + "</ul>")
+    return out
 
 
 def _html_crack(report) -> str:

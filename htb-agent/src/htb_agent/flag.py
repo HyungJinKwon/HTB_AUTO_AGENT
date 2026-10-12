@@ -22,6 +22,13 @@ _FLAG_HEX = re.compile(r"\b[a-fA-F0-9]{32}\b")
 # TAG{...} 형식 (HTB{...}, FLAG{...}, CTF{...} 등)
 _FLAG_FMT = re.compile(r"\b[A-Za-z0-9_]{2,10}\{[^}\r\n]{1,200}\}")
 
+# 잘 알려진 플래그 TAG(소문자). `TAG{...}` 를 플래그로 '신뢰'하는 기준 — 이 집합 또는 호출부가
+# 지정한 prefixes 에 속하거나, 플래그 파일을 읽는 맥락일 때만. (CSS `header{display:none}`·코드
+# `obj{...}` 같은 임의 `word{...}` 를 exploit-derived 가짜 플래그로 기록하던 과매칭 방지 — 정직성 §3)
+_KNOWN_FLAG_TAGS = frozenset({
+    "htb", "flag", "ctf", "key", "dh", "dreamhack", "picoctf", "thm", "nf", "pctf",
+})
+
 # 플래그 파일을 읽는 명령으로 보이는 단서
 _FLAG_FILE_HINTS = ("user.txt", "root.txt", "flag.txt", "proof.txt", "local.txt")
 
@@ -85,12 +92,18 @@ def scan(command: str, output: str, flag_kind: str = "boot2root",
     seen: set[str] = set()
     fmt_hits = extract_flags(output, require_fmt=True)
     # 접두 지정 시 매칭 접두를 앞세움(정렬 안정)
+    pref_l = tuple(p.lower() for p in prefixes)
     if prefixes:
-        pref_l = tuple(p.lower() for p in prefixes)
         fmt_hits = ([v for v in fmt_hits if v.split("{", 1)[0].lower() in pref_l]
                     + [v for v in fmt_hits if v.split("{", 1)[0].lower() not in pref_l])
-    # TAG{...} 형식은 항상 플래그로 간주
+    # `TAG{...}` 는 TAG 가 (알려진 플래그 태그 ∪ 지정 접두)에 속하거나, 플래그 파일을 읽는
+    # 맥락일 때만 신뢰한다. 그 외 임의 `word{...}`(CSS·코드 등)는 가짜 플래그로 기록하지 않는다
+    # (정직성 §3 — 과거엔 'TAG{...} 항상 플래그'라 웹 enum 출력의 CSS 가 genuine 으로 오기록됐다).
+    allowed_tags = _KNOWN_FLAG_TAGS | set(pref_l)
+    flag_ctx = is_flag_command(command)
     for v in fmt_hits:
+        if v.split("{", 1)[0].lower() not in allowed_tags and not flag_ctx:
+            continue
         if v not in seen:
             seen.add(v)
             hits.append(FlagHit(v, classify_flag(command, flag_kind), command))

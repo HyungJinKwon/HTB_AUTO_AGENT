@@ -65,7 +65,7 @@ def _check_llm(llm_test: bool = False, ollama_model: str = "",
                      f"{_SETUP_HINT}  (수동: 'ollama serve' + 'ollama pull qwen2.5:7b', "
                      f"호스트 {prov.host})"))
     except Exception as e:                       # noqa: BLE001
-        rows.append(("Ollama(로컬)", False, f"로드 실패: {e}",
+        rows.append(("Ollama(로컬)", False, f"로드 실패: {llm_setup.scrub(str(e))}",
                      f"{_SETUP_HINT}  (수동: https://ollama.com 설치 후 'ollama pull qwen2.5:7b')"))
     return rows
 

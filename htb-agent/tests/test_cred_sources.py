@@ -55,6 +55,9 @@ check("타겟 반영", all("10.129.1.5" in c for c in cand))
 # 셸 인젝션 안전필터: 메타문자 든 자격은 명령에 안 넣음
 inj = lateral_candidates([("ev;il", "p`whoami`")], ["root"], "10.129.1.5")
 check("인젝션 자격은 명령 제외", not any("ev;il" in c or "whoami" in c for c in inj))
+# 선행 '-' 인자 인젝션: ssh 가 값을 옵션(-oProxyCommand=…)으로 오인하지 않도록 제외
+argi = lateral_candidates([("-oProxyCommand=id", "pw")], ["-x"], "10.129.1.5")
+check("선행 '-' 유저/비번은 제외", not any("ProxyCommand" in c for c in argi))
 check("빈 입력 안전", lateral_candidates([], [], "10.0.0.1") == [])
 
 print("\n=== 생성 전용 경계(불변) 자기점검 ===")

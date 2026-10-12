@@ -113,8 +113,14 @@ def parse_nmap_xml(xml_text: str) -> NmapResult:
             for port_el in ports_el.findall("port"):
                 state_el = port_el.find("state")
                 svc_el = port_el.find("service")
+                try:
+                    portid = int(port_el.get("portid", "0"))
+                except (TypeError, ValueError):
+                    # 잘 구성됐으나 portid 가 빈/비정수인 비정상 XML — fail-closed 계약대로
+                    # 크래시 대신 그 포트만 건너뛴다(실 nmap -oX 는 항상 정수 portid).
+                    continue
                 p = Port(
-                    port=int(port_el.get("portid", "0")),
+                    port=portid,
                     proto=port_el.get("protocol", "tcp"),
                     state=state_el.get("state", "") if state_el is not None else "",
                     service=svc_el.get("name", "") if svc_el is not None else "",

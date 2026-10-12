@@ -481,6 +481,11 @@ class Orchestrator(FootholdMixin):
             # 사용자 중단(Ctrl+C): 지금까지의 결과를 저장해 --resume 으로 이어갈 수 있게 한다
             interrupted = True
             self.audit.event("interrupted", sweeps=sweeps_run)
+        except Exception as e:   # noqa: BLE001 — [F3 불변식] 스윕 중 예기치 못한 예외(_process
+            # 스캐너·파싱 등)가 run() 밖으로 새면 _persist 가 생략돼 진행 상태가 통째로 유실된다
+            # (재개 불가). 감사에 남겨 침묵 드롭을 피하고, 저장 경로(PHASE 4)로 진행한다.
+            self.audit.event("sweep_error", error=f"{type(e).__name__}: {e}", sweeps=sweeps_run)
+            report.message += f"⚠ 스윕 중 오류({type(e).__name__}) — 진행분까지 저장(감사 로그 참조). "
         report.timed_out = self._time_up()
         report.elapsed_sec = round(self._clock() - self._start, 1)
         if report.timed_out:
@@ -490,7 +495,10 @@ class Orchestrator(FootholdMixin):
                              elapsed_sec=report.elapsed_sec, sweeps=sweeps_run)
 
         # ── PHASE 3.7: VULN (CVE/CWE 탐지 + 매핑) — 최종 출력까지 반영 ──
-        self._run_vuln(report, host, target)
+        try:
+            self._run_vuln(report, host, target)
+        except Exception as e:   # noqa: BLE001 — 최종 취약점 반영 실패가 저장·리포트를 막지 않음(F3)
+            self.audit.event("vuln_error", error=f"{type(e).__name__}: {e}")
 
         # NSE 취약점 스크립트 보수적 제안(실행은 무겁고 길어 수동 제안으로)
         if host.open_ports:
@@ -665,6 +673,22 @@ class Orchestrator(FootholdMixin):
         if self.world is not None:
             for item in prior.loot or []:
                 self.world.add_loot(item, "재개 복원")
+            # 학습 토픽(world.learned) 복원 — SSOT 완결·재개 후 동일 토픽 재학습 방지(LOW-1).
+            for item in prior.learned or []:
+                self.world.add_learned(item, "재개 복원")
+            # 권한레벨 복원 — foothold 등에서 직접 올린 access_level(root 등)이 재개 시
+            # 'none' 으로 퇴행하지 않게(privesc 재수행·goal 판정 왜곡 방지, LOW-2).
+            if prior.access_level:
+                self.world.raise_access(prior.access_level)
+        # 자동 등록 vhost(이름→IP) 복원 — _maybe_register_vhost 가 채운 hosts_map/_vhost_seen 은
+        # 비영속이라, 재개 시 vhost-only 웹앱이 out-of-scope 로 퇴행하던 결손(MED-1) 교정.
+        if prior.hosts_map:
+            if self.hosts_map is None:
+                self.hosts_map = {}
+            for host, ip in prior.hosts_map.items():
+                if host not in self.hosts_map:
+                    self.hosts_map[host] = ip
+                self._vhost_seen.add(host)   # 1차 등록분은 재탐지·재등록하지 않음
         # 수집 해시 복원 — 재개 run 의 크래킹 준비가 직전 run 의 해시를 그대로 이어쓰게.
         for hv in prior.found_hashes or []:
             if hv not in self._found_hashes:
@@ -863,6 +887,13 @@ class Orchestrator(FootholdMixin):
                 st.web_version = self.world.web_version
             if self.world.loot:
                 st.loot = list(self.world.loot)   # 재개 시 lateral 전제(bool(loot)) 보존
+            if self.world.learned:
+                st.learned = list(self.world.learned)   # SSOT 학습 토픽 보존(재학습 방지)
+            if self.world.access_level and self.world.access_level != "none":
+                st.access_level = self.world.access_level   # 직접 상승분(root 등) 보존
+        # 자동 등록 vhost(이름→IP) 영속 — 재개 시 스코프·_vhost_seen 복원(vhost-only 웹앱 보호)
+        if self.hosts_map:
+            st.hosts_map = dict(self.hosts_map)
         if getattr(self, "_found_hashes", None):
             st.found_hashes = list(self._found_hashes)
         if report.flags:

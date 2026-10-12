@@ -99,9 +99,14 @@ class FootholdMixin:
             sh = SSHTargetShell(target, user, pw)
             for v in vectors[:3]:
                 # v.plan 을 실행한 뒤 'id' 로 결과 확인 (한 줄로 묶어 실행)
+                before = len(report.enum_findings)
                 self._attempt(report, report.enum_findings,
                               sh.command(f"{v.plan.splitlines()[0]}; id"), phase="privesc")
-                last = report.enum_findings[-1].output or ""
+                # 이 명령의 '원본' finding 으로 확인한다 — 출력구동 교정이 발화하면 뒤에 교정본이
+                # append 돼 [-1] 이 교정본을 가리킬 수 있다(감사 LOW-3). 게이트 거부면 추가 없음.
+                if len(report.enum_findings) <= before:
+                    continue
+                last = report.enum_findings[before].output or ""
                 if "uid=0(root)" in last:
                     self.world.raise_access("root")
                     self._attempt(report, report.enum_findings,

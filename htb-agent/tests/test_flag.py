@@ -29,8 +29,17 @@ check("비플래그 명령의 hex 무시", scan("hashid 5f4dcc3b5aa765d61d8327de
 # 플래그 명령이면 hex 캡처 + 분류
 hits = scan("cat ~/user.txt", "the flag is " + "a"*32)
 check("플래그 명령서 hex 캡처", hits and hits[0].value == "a"*32 and hits[0].kind == "user")
-# TAG{} 는 명령 무관 항상
-check("TAG{} 항상 캡처", scan("echo test", "HTB{abc}") != [])
+# 알려진 플래그 TAG(HTB 등)는 명령 무관 캡처
+check("알려진 TAG(HTB{}) 캡처", scan("echo test", "HTB{abc}") != [])
+# 과매칭 방지(정직성): CSS/코드 word{...} 는 플래그로 기록하지 않음
+check("CSS header{...} 미기록", scan("curl http://t/", "<style>header{display:none}</style>") == [])
+check("CSS body{...} 미기록", scan("curl http://t/", "body{color:red}") == [])
+# 플래그 파일 맥락이면 임의 TAG 도 신뢰(파일 직독)
+check("플래그 파일 맥락이면 임의 TAG 캡처",
+      scan("cat /home/u/user.txt", "weird{deadbeef}") != [])
+# 지정 접두(prefixes)면 임의 TAG 도 신뢰
+check("지정 접두 TAG 캡처", scan("x", "DH{abc}", prefixes=("DH",)) != [])
+check("미지정·비파일 맥락의 임의 TAG 미기록", scan("curl http://t/", "picoCTFX{a}") == [])
 
 print("=== 오케스트레이터 플래그 획득 ===")
 AD = """<?xml version="1.0"?><nmaprun><host><status state="up"/>

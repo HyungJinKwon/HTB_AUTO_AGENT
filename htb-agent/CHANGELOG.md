@@ -2,6 +2,38 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.31.0] — 2026-10-12
+
+### 수정(Fixed) — 최종본 전수 감사(5-에이전트) 교정 배치
+전 코드·파일·문서 정밀 감사에서 확인된 결손·오류를 교정. 안전 경계(생성 전용 RCE·HTB_TOKEN
+비로깅·3관문)는 감사 결과 **무결(intact)** 확인됨.
+- **재개(resume) 상태원 결손**: `_maybe_register_vhost` 가 채우는 `hosts_map`/`_vhost_seen`,
+  `world.learned`(학습 토픽), `world.access_level`(직접 상승분)이 영속되지 않아 `--resume` 후
+  vhost-only 웹앱이 스코프 밖으로 퇴행하거나 권한레벨·학습이 초기화되던 문제 교정
+  (`state.py` 3필드 추가 + `_persist`/`_restore` 왕복 배선). 회귀 테스트 추가.
+- **플래그 과매칭(정직성)**: CSS/코드 `word{...}`(예: `header{display:none}`)가 익스 유래
+  플래그로 기록되던 오탐을, 알려진 플래그 TAG·지정 접두·플래그 파일 맥락으로 한정해 차단
+  (`flag.py`). 6개 검증 추가.
+- **파서 내구성**: 변형된 nmap XML 의 `portid` 비정수 값에서 `int()` 미처리 예외로 전체
+  파싱이 크래시하던 것을, 해당 포트만 건너뛰도록 fail-closed 가드 추가(`observation/parsers.py`).
+- **지속 불변식(persist-always)**: 스윕 루프·최종 취약점 단계의 미처리 예외가 진행분 저장을
+  건너뛸 수 있던 경로에 가드 추가(`orchestrator.py`).
+- **인자 인젝션 심층 방어**: `lateral_candidates` 가 선행 `-` 자격값을 ssh 옵션으로 오인당하지
+  않도록 제외 + `shlex.quote` 로 감쌈(`lateral.py` 와 일관, `cred_sources.py`). 회귀 추가.
+- **발판 벡터 선택 오류**: `_exploit_exec_stage` 가 교정 재시도로 밀려난 `enum_findings[-1]`
+  대신 해당 벡터의 결과를 정확히 참조하도록 수정(`foothold.py`).
+
+### 수정(Fixed) — 문서·패키징 정직성/정확성
+- README/USAGE 의 "웹 RCE 발판·측면이동 미배선" 서술이 실제 배선 상태(`--exploit-exec` 옵트인
+  뒤 `run()` 에 배선·호출, 실행 의존 없으면 생성까지만 안전 degrade)와 어긋나던 것을 정정.
+- `MANIFEST.in` 의 깨진 `include USAGE.md`(파일은 `docs/USAGE.md`) → 정정(sdist 누락 방지).
+- `requirements.txt` 의 "사용 예정" 표현을 실제(선택적 기능 의존·미설치 시 안전 비활성)로 갱신.
+
+### 수정(Fixed) — NIT
+- `doctor.py`: Ollama 로드 실패 메시지도 `llm_setup.scrub` 적용(Claude 분기와 대칭).
+- `report_export.py`: 지역변수 `html` 이 모듈 `import html` 를 가리던 섀도잉 제거.
+- `main.py`: `--llm-test` 단독 충돌 오류가 `--doctor` 로 오귀속되던 라벨 정정.
+
 ## [2.30.0] — 2026-10-12
 
 ### 변경(Changed) — 가독성: `render_summary` 섹션 분해(동작 불변)
