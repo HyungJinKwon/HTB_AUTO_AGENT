@@ -296,11 +296,16 @@ def _blue_team(host) -> str:
 
 def _defense_mirror(report) -> str:
     """취약점별 탐지·완화 미러(공격↔방어) + 배포형 탐지 산출물(Sigma/Suricata/Navigator/MISP/
-    triage). defense·detections 모듈에 위임(생성 전용)."""
-    from . import defense, detections
+    triage) + 실행 트레이스 ATT&CK 기법 커버리지. defense·detections·technique 에 위임(생성 전용)."""
+    from . import defense, detections, technique
     mirror = defense.render_markdown(report)
     deploy = detections.render_markdown(report)
-    return mirror + "\n\n**배포형 탐지 산출물** (ARTEX detections 식 — 검증 후 사용):\n\n" + deploy
+    findings = (getattr(report, "enum_findings", []) or []) + (getattr(report, "llm_findings", []) or [])
+    tech = technique.render_markdown(findings)
+    return (mirror
+            + "\n\n**배포형 탐지 산출물** (ARTEX detections 식 — 검증 후 사용):\n\n" + deploy
+            + "\n\n**실행 트레이스 ATT&CK 기법 커버리지** (CTF-Abacus 식 — 실제 돌린 명령 기준):\n\n"
+            + tech)
 
 
 def generate_writeup(report, machine_name: str = "<머신명>",

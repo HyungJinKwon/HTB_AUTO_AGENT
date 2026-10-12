@@ -2,6 +2,20 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.17.0] — 2026-10-12
+
+### 추가(Added) — T2-b 기법 taxonomy(ATT&CK) + T2-c TF-IDF 코사인 관련도
+라인레벨 감사의 CTF-Abacus(step별 기법 분류)·AutoPentester/Anomaly(벡터 관련도 부재) 지적을
+**stdlib 범위**에서 결정적으로 보강(외부 임베딩·의존 없음).
+- **[T2-c]** `tfidf.py` 신설(stdlib TF-IDF 코사인 — 희귀 용어 가중·길이 정규화).
+  `knowledge.relevant_notes` 가 노트 2개 이상이면 키워드 개수 대신 TF-IDF 코사인으로 랭킹
+  (매칭 없으면 앞 N개 폴백 — 동작 보존, 코퍼스 작아 매 호출 재구성해 교체/추가에도 최신).
+- **[T2-b]** `technique.py` 신설 — 실행한 '명령'을 ATT&CK 기법으로 라벨링(nmap→T1046,
+  ffuf→T1595.003, hydra→T1110, searchsploit→T1588.005 …). `coverage()` 는 ran 된 명령의
+  distinct 기법. 라이트업 블루팀 섹션에 '실행 트레이스 ATT&CK 커버리지'로 노출(생성 전용).
+  (detections.py 의 CWE→기법 매핑과 상보 — 이쪽은 '실제 돌린 명령' 기준.)
+- 신규 `test_tfidf_technique.py` **19건**. 전체 **123 스위트 | 2781 passed, 0 failed**.
+
 ## [2.16.0] — 2026-10-12
 
 ### 추가(Added) — T2-a 전제 가설 가지치기 + T2-d 궤적 드리프트 supervisor
