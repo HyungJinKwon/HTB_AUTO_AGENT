@@ -208,6 +208,9 @@ def build_parser() -> argparse.ArgumentParser:
     g_mode.add_argument("--judge", action="store_true", dest="judge",
                    help="옵트인(기본 OFF): 종료 시 LLM-심판이 '공략 달성' 주장이 증거로 "
                         "뒷받침되는지 별도 채점(조언만 — 규칙 판정·목표 달성을 덮지 않음). LLM 필요")
+    g_mode.add_argument("--gate-judge", action="store_true", dest="gate_judge",
+                   help="옵트인(기본 OFF): 자동승인될 명령을 LLM 심판이 ALLOW/ASK/DENY 로 "
+                        "재검토해 더 엄격하게만 조정(완화 불가·오류 시 기존 동작). LLM 필요")
     g_kb.add_argument("--no-enrich", action="store_true",
                    help="CVE/CWE 자동 수집(NVD/GitHub) 비활성")
     g_kb.add_argument("--learn-gaps", action="store_true", dest="learn_gaps",
@@ -703,6 +706,10 @@ def _run_target(args, cfg, knowledge_dir, runner) -> int:
         approver = auto_approve_in_scope
     else:
         approver = smart_approver
+    # [T2-f] 승인 게이트 LLM 폴백 심판(opt-in) — 자동승인될 명령만 강화(완화 불가·fail-safe).
+    if getattr(args, "gate_judge", False) and llm_router is not None:
+        from .gate_judge import judging_approver
+        approver = judging_approver(approver, llm_router)
     from .approval import interactive_observer
     observer = interactive_observer if (args.observe and runner is None) else None
 
