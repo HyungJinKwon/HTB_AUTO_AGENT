@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Callable
 if TYPE_CHECKING:
     from .scheduler import StageScheduler
 
-from . import command_fixer, diagnostics, flag_assess, preparations
+from . import command_fixer, diagnostics, flag_assess, preparations, results_verify
 from . import provenance as _prov
 from .audit import NullAudit
 from .command_validator import ValidationReport, shell_operators, validate
@@ -308,6 +308,8 @@ class Orchestrator(FootholdMixin):
                 self.world.add_cred(f"{c.username}:{sec}" if sec else c.username)
         self._found_hashes: list[str] = []   # 실행 원시출력에서 수집한 크래킹 대상 해시
         self._vhost_seen: set[str] = set()   # 리다이렉트에서 자동 등록한 vhost(중복 방지)
+        self._verify_retried: set[str] = set()   # [T1-a] 출력구동 교정을 이미 건 원 명령(1회 제한)
+        self._verify_budget_left = 8             # [T1-a] 전역 교정 재시도 상한(예산 보호)
         self.audit.event("session_start", target=target, resume=self.resume,
                          ranges=[str(n) for n in self.guard.allowed_target_cidrs])
 
@@ -1929,9 +1931,11 @@ class Orchestrator(FootholdMixin):
             self.world.add_loot(f"사람 관찰: {text[:80]}", source="사람 관찰")
         self.audit.event("human_observation", cmd=finding.command, text=text)
 
-    def _process(self, report: OrchestrationReport, finding: EnumFinding, out) -> None:
+    def _process(self, report: OrchestrationReport, finding: EnumFinding, out,
+                 corrective: bool = False) -> None:
         """실행 결과를 반영(파싱·플래그/해시/크리덴셜 스캔). 공유상태를 변경하므로
-        반드시 단일 스레드에서, 제출 순서대로 호출한다(병렬 실행과 분리)."""
+        반드시 단일 스레드에서, 제출 순서대로 호출한다(병렬 실행과 분리).
+        corrective=True 면 이 finding 은 교정 재시도분이라 추가 교정을 걸지 않는다(재귀 방지)."""
         cmd = finding.command
         finding.ran = out.launched
         report.gate_stats["executed" if out.launched else "run_failed"] += 1
@@ -1978,6 +1982,37 @@ class Orchestrator(FootholdMixin):
         # vhost 자동 등록 — 리다이렉트(→ http://connected.htb/)에서 발견한 호스트명을
         # '타겟 IP' 로 스코프 해석맵에 자동 등록(이후 그 vhost 명령이 범위 안으로 인식됨).
         self._maybe_register_vhost(report, finding.output)
+        # [T1-a] 출력구동 Results Verifier — 실행 후 출력을 보고 '한 끗 빠진' 명령을 교정해
+        # 1회 재시도(생성 전용 — 교정본도 3관문 재통과). 교정분은 corrective=True 라 재귀 안 함.
+        if not corrective:
+            self._maybe_corrective_retry(report, finding, out)
+
+    def _maybe_corrective_retry(self, report: OrchestrationReport,
+                                finding: EnumFinding, out) -> None:
+        """실행 결과가 교정 가능한 실패면(results_verify 규칙) 교정본을 3관문에 1회 재투입.
+        유한·예산보호: 원 명령당 1회, 전역 상한(_verify_budget_left), 시간 소진 시 생략,
+        교정본은 KB 열거 예산에 계상하지 않음(budgeted=False)."""
+        if self.dry_run or self._time_up():
+            return
+        if not hasattr(self, "_verify_retried"):   # run() 미경유(직접 호출/테스트) 안전 초기화
+            self._verify_retried = set()
+            self._verify_budget_left = 8
+        if self._verify_budget_left <= 0 or finding.command in self._verify_retried:
+            return
+        corr = results_verify.corrective_command(finding.command, out)
+        if corr is None:
+            return
+        new_cmd, reason = corr
+        self._verify_retried.add(finding.command)
+        # 교정본이 이미 시도됐거나(중복) 원본과 같으면 건너뜀
+        done = {f.command for f in (report.enum_findings + report.llm_findings)}
+        if new_cmd == finding.command or new_cmd in done:
+            return
+        self._verify_budget_left -= 1
+        finding.note = (finding.note + " · " if finding.note else "") + f"✎ 출력구동 교정({reason})"
+        self.audit.event("results_verify", original=finding.command, fixed=new_cmd, reason=reason)
+        self._attempt(report, report.enum_findings, new_cmd, finding.phase,
+                      budgeted=False, corrective=True)
 
     def _maybe_register_vhost(self, report: OrchestrationReport, text: str) -> None:
         """리다이렉트 출력에서 vhost 를 발견하면 타겟 IP 로 스코프 해석맵(hosts_map)에
@@ -2092,9 +2127,11 @@ class Orchestrator(FootholdMixin):
             return RunOutput(cmd, error=f"러너 예외: {type(e).__name__}: {e}", returncode=-1)
 
     def _attempt(self, report: OrchestrationReport, findings: list[EnumFinding],
-                 cmd: str, phase: str = "enum", budgeted: bool = True) -> None:
+                 cmd: str, phase: str = "enum", budgeted: bool = True,
+                 corrective: bool = False) -> None:
         """순차 실행: 게이트 → (통과 시) 실행 → 결과 처리.
-        budgeted=False 면 KB 열거 예산(max_enum)에 계상하지 않는다([S5-1] 소비 스테이지용)."""
+        budgeted=False 면 KB 열거 예산(max_enum)에 계상하지 않는다([S5-1] 소비 스테이지용).
+        corrective=True 면 이 finding 은 '출력구동 교정 재시도'라 또 교정하지 않는다(재귀 방지)."""
         finding = self._gate(report, findings, cmd, phase, budgeted=budgeted)
         if finding is None:
             return
@@ -2103,7 +2140,7 @@ class Orchestrator(FootholdMixin):
             report.gate_stats["dry_run"] = report.gate_stats.get("dry_run", 0) + 1
             return
         out = self._safe_run(finding.command)
-        self._process(report, finding, out)
+        self._process(report, finding, out, corrective=corrective)
 
     def _attempt_batch(self, report: OrchestrationReport, findings: list[EnumFinding],
                        cmds: list[str], phase: str) -> list[EnumFinding]:
