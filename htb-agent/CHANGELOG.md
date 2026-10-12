@@ -2,6 +2,37 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.25.0] — 2026-10-12
+
+### 추가(Added) — 리버스셸 수신 발판 배선(`_acquire_session`) (opt-in)
+남은 설계 간극이던 '역쉘 수신 경로'를 발판 획득에 실제로 배선한다. 기존엔 `_acquire_session` 이
+웹 RCE 분기만 활성이었다(역쉘은 인터페이스·transport 만 존재, 미배선).
+- **`foothold.py`**: `_acquire_session` 을 (1) 웹 RCE 분기 → 실패 시 (2) **리버스셸 수신 분기**
+  순으로 재구성. `_acquire_web_rce`/`_acquire_reverse_shell` 로 분리.
+  - 리버스셸 분기는 준비된 payload 컨텍스트(`revshell_lhost`/`lport`)가 있을 때 소켓 리스너로
+    콜백을 수신하고, **성립 검증(`looks_like_shell`)을 통과한 세션만** 인정(거짓 발판 폐기).
+  - 실제 소켓 accept/recv 는 주입 가능한 catcher(기본 `shell_transport.catch_reverse_shell` —
+    RCE 실행 표면). 테스트는 catcher 를 주입해 **네트워크 없이** 전 경로를 검증.
+- **CLI `--catch-revshell`**(기본 OFF): 켜야 리스너 수신을 시도한다. 기본 흐름엔 소켓 블로킹 없음.
+  `Orchestrator(catch_revshell=...)` 로 전달.
+- **`shell_transport.py`**: `import requests` 를 `web_http_fn` 안으로 지연 임포트 — 리버스셸 수신
+  (표준 socket)은 requests 미설치 환경에서도 동작하도록 선택 의존 분리.
+
+### 안전(Safety)
+- 역쉘 수신은 **opt-in + `--exploit-exec` 전용 + 성립 검증 통과분만** 인정. payload 발사·소켓
+  수신은 RCE 실행 표면이라 명시 플래그 없이는 동작하지 않는다(권한 확인 대상 전용). 콜백 없음·
+  bind 실패·타임아웃은 `OSError` 로 흡수해 '발판 미확보'로 안전 degrade(run 크래시 없음).
+
+### 테스트(Tests)
+- 신규 `test_foothold_revshell.py`(9): catch off→미접촉 · 컨텍스트 없음→안내 · 콜백+검증통과→세션 ·
+  헛발판→폐기 · 타임아웃(OSError)→안전 degrade · 웹 분기 우선. 실 소켓 없이 catcher 주입.
+- 전체 **131 스위트 | 2904 passed, 0 failed**.
+
+### 비고 — 라이브 검증
+- 실 HTB 타겟에 대한 **엔드투엔드 라이브 실행**(VPN·실제 콜백 수신)은 이 샌드박스에서 검증 불가하다
+  (§3 — 검증 못 한 것은 '됐다'고 하지 않음). 본 변경은 수신 경로의 **코드 배선 + 오프라인(주입)
+  검증**까지이며, 실 타겟 콜백 수신은 권한 확인된 환경에서 사용자가 확인할 몫이다.
+
 ## [2.24.0] — 2026-10-12
 
 ### 수정(Fixed) — 감사 잔여 LOW 항목·방어적 하드닝 일괄 반영
