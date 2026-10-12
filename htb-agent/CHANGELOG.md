@@ -2,6 +2,23 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.15.0] — 2026-10-12
+
+### 추가(Added) — T1-c. 배포형 탐지 산출물 (ARTEX detections 식 블루팀 룰셋, 클린룸)
+라인레벨 감사에서 ARTEX 의 최대 미반영 축으로 꼽힌 '돌려볼 수 있는 탐지 산출물'을 구현한다.
+기존 `defense.py` 는 '취약점→탐지/완화'를 **산문 표**로만 만들었는데, 이제 탐지/공략된
+CWE·CVE·대상에서 **실제 배포 가능한 룰**을 생성한다(§7 블루팀·SIEM/Snort·Suricata 지표).
+- **`detections.py` 신설**(생성 전용·방어용):
+  - `sigma_rules` — CWE별 Sigma YAML(웹서버 로그 범용, ATT&CK 태그).
+  - `suricata_rules` — 네트워크 의미 CWE 의 HTTP content 매칭 룰(sid 1000000+).
+  - `navigator_layer` — ATT&CK Navigator layer JSON(매핑 기법 색칠).
+  - `misp_event` — MISP 이벤트 유사 IoC(대상·탐지 CVE, `to_ids=False`·외부공유 금지).
+  - `host_triage_script` — **읽기 전용** 침해 분류 셸(id·ss·ps·sudo -l·SUID·cron·last — 수집만).
+- **결선**: `writeup._defense_mirror` 가 미러 표 뒤에 배포형 산출물 섹션을 덧붙임(두 템플릿 공통).
+- 근거 없으면(CWE·CVE·대상 없음) 정직하게 생략(지어내지 않음, §3).
+- 신규 `test_detections.py` **22건**(규칙·Navigator/MISP JSON 유효·triage 읽기전용·근거없음
+  생략·Sigma 맵 결손 CWE 무예외). 전체 **121 스위트 | 2751 passed, 0 failed**.
+
 ## [2.14.0] — 2026-10-12
 
 ### 추가(Added) — T1-a. 출력구동 Results Verifier (실행 후 명령 교정·재시도)
