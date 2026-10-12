@@ -36,6 +36,7 @@ class OllamaProvider(LLMProvider):
         self._backoff_base = 0.4          # 초
         self._backoff_cap = 4.0           # 재시도 간 최대 대기(예산 보호)
         self._sleep = time.sleep
+        self.slept_sec = 0.0              # [T2-e] 재시도 백오프로 '대기'한 누적 시간(예산서 제외용)
 
     def available(self) -> tuple[bool, str]:
         try:
@@ -87,7 +88,9 @@ class OllamaProvider(LLMProvider):
             except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
                 last = e                  # 연결거부·타임아웃·소켓·깨진 JSON = 전이성 → 재시도
             if attempt < self._retries:
-                self._sleep(self._backoff(attempt))
+                delay = self._backoff(attempt)
+                self.slept_sec += delay      # [T2-e] 대기 시간 누적(시간 예산서 제외)
+                self._sleep(delay)
                 continue
             raise last                    # 재시도 소진 — 마지막 오류를 올린다(라우터가 폴백/집계)
         raise last if last else RuntimeError("ollama: unreachable")  # pragma: no cover

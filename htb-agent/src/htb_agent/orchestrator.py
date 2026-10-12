@@ -743,9 +743,14 @@ class Orchestrator(FootholdMixin):
 
     def _time_up(self) -> bool:
         """해커톤 시간 예산 마감 도달 여부(예산 0=무제한이면 항상 False).
-        _deadline 은 run() 에서 설정되므로, run() 전(단위테스트 등 직접 호출)엔 getattr 로 안전."""
+        _deadline 은 run() 에서 설정되므로, run() 전(단위테스트 등 직접 호출)엔 getattr 로 안전.
+        [T2-e] LLM 재시도/백오프 '대기' 시간은 예산에서 제외한다 — 일시 네트워크 블립의 대기가
+        실제 작업 시간을 깎지 않도록 라우터가 보고한 slept 만큼 마감을 뒤로 민다(Deadline pause)."""
         deadline = getattr(self, "_deadline", None)
-        return deadline is not None and self._clock() >= deadline
+        if deadline is None:
+            return False
+        slept = float(getattr(self.llm_router, "slept_sec", 0.0) or 0.0)
+        return self._clock() >= deadline + slept
 
     def _refresh_analysis(self, report: OrchestrationReport, prof: ProfileResult,
                           host: NmapHost, target: str) -> None:
