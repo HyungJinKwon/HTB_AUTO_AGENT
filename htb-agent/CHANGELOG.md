@@ -2,6 +2,19 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.30.0] — 2026-10-12
+
+### 변경(Changed) — 가독성: `render_summary` 섹션 분해(동작 불변)
+가독성 리뷰 권고(R1) 반영. 244줄 단일 함수 `report_view.render_summary` 를 형제 `report_export.
+to_html`(섹션별 `_html_*` 위임)과 같은 구조로 분해 — 섹션별 `_view_*(report, ui) -> list[str]`
+렌더러 20개로 나누고, `render_summary` 는 선언 순서대로 이어 붙이는 얇은 스파인으로 축소.
+- REPETITION 분석(`_rr`)은 스파인에서 1회 계산해 REPETITION·NEXT OPTIONS 두 섹션이 공유(기존
+  "반복 분석 1회만" 동작 보존).
+- **동작 불변 보증**: 분해 전후 `render_summary` 출력이 **바이트 동일**함을 풍부한 리포트(모든 섹션
+  채움) 골든 diff 로 검증. 섹션 로직이 독립 함수가 되어 개별 테스트·수정 가능(HTML 형제와 대칭).
+- 신규 `test_report_view_sections.py`(20): 섹션 존재·순서·빈 리포트·`_view_*` 빈 목록 반환.
+  전체 **134 스위트 | 2977 passed, 0 failed**.
+
 ## [2.29.0] — 2026-10-12
 
 ### 변경(Changed) — 최적화·안정화·가독성·초보자 친화 재검토(3-에이전트) 후속

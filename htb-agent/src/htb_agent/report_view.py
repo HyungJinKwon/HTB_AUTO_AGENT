@@ -89,246 +89,358 @@ def render_glance(report) -> str:
     return ui.panel("한눈에 보기", rows, style="accent" if report.status == "done" else "warn")
 
 
-def render_summary(report) -> str:
-    from . import ui
-    st = ui.ok if report.status == "done" else ui.accent2
-    head = (ui.accent("ASSASSIN") + ui.dim(" · 오케스트레이션 ")
-            + ui.bold(report.target) + "  " + st(f"[{report.status}]")
-            + (("  " + ui.dim(report.message)) if report.message else ""))
-    lines = [head, ui.rule("", 60, "navy")]
-    if report.recon:
-        lines.append(ui.heading("RECON", "📡"))
-        lines.append(report.recon.summary())
-    if report.profile:
-        lines.append("\n" + ui.heading("PROFILE", "🧭"))
-        lines.append(report.profile.summary())
-    if report.world is not None:
-        lines.append("\n" + ui.heading("STATE  (월드 모델 — 구조화 상태)", "🗺️"))
-        lines.append(report.world.summary())
-    if report.plan:
-        lines.append("\n" + ui.heading(
-            "PLAN  (가설 보드 — 분석가가 계획·갱신, 명령은 '지금 할 일'에 집중)", "🎯"))
-        focus = report.plan.focus()
-        for ln in report.plan.board_lines():
-            is_focus = focus is not None and ln.split(" ", 2)[1] == focus.id
-            lines.append("  " + (ui.accent2(ln + "  ← 지금") if is_focus else ln))
-        lines.append("  " + ui.dim("상태는 방향 잡기용〔추정〕 — 플래그·목표 판정은 실행 결과로만 합니다."))
-    if report.analysis:
-        lines.append("\n" + ui.heading("ANALYSIS  (LLM 분석 — 병렬 가설·계획·경로)", "🧠"))
-        for ln in report.analysis.splitlines():
-            if ln.strip():
-                lines.append("  " + ui.dim(ln.strip()))
-    if report.acquired_knowledge or report.knowledge_gaps:
-        lines.append("\n" + ui.heading(
-            "LEARN  (자율 지식 획득 — 권위 출처만, P1 유지)", "🎓"))
-        for a in report.acquired_knowledge:
-            lines.append("  " + ui.ok("학습") + " " + a)
-        for g in report.knowledge_gaps:
-            lines.append("  " + ui.dim("미해석 공백(수동 조사): ") + g)
+# ── 섹션별 렌더러(터미널) — report_export 의 _html_* 와 같은 구조로 분해(가독성·테스트성).
+# 각 함수는 자기 섹션의 줄 목록을 돌려주고(해당 없으면 []), render_summary 는 얇은 스파인으로
+# 순서대로 이어 붙인다. 출력은 분해 전과 바이트 동일(동작 보존). ui 는 호출부에서 주입.
+
+def _view_recon(report, ui) -> list[str]:
+    if not report.recon:
+        return []
+    return [ui.heading("RECON", "📡"), report.recon.summary()]
+
+
+def _view_profile(report, ui) -> list[str]:
+    if not report.profile:
+        return []
+    return ["\n" + ui.heading("PROFILE", "🧭"), report.profile.summary()]
+
+
+def _view_state(report, ui) -> list[str]:
+    if report.world is None:
+        return []
+    return ["\n" + ui.heading("STATE  (월드 모델 — 구조화 상태)", "🗺️"), report.world.summary()]
+
+
+def _view_plan(report, ui) -> list[str]:
+    if not report.plan:
+        return []
+    out = ["\n" + ui.heading(
+        "PLAN  (가설 보드 — 분석가가 계획·갱신, 명령은 '지금 할 일'에 집중)", "🎯")]
+    focus = report.plan.focus()
+    for ln in report.plan.board_lines():
+        is_focus = focus is not None and ln.split(" ", 2)[1] == focus.id
+        out.append("  " + (ui.accent2(ln + "  ← 지금") if is_focus else ln))
+    out.append("  " + ui.dim("상태는 방향 잡기용〔추정〕 — 플래그·목표 판정은 실행 결과로만 합니다."))
+    return out
+
+
+def _view_analysis(report, ui) -> list[str]:
+    if not report.analysis:
+        return []
+    out = ["\n" + ui.heading("ANALYSIS  (LLM 분석 — 병렬 가설·계획·경로)", "🧠")]
+    for ln in report.analysis.splitlines():
+        if ln.strip():
+            out.append("  " + ui.dim(ln.strip()))
+    return out
+
+
+def _view_learn(report, ui) -> list[str]:
+    if not (report.acquired_knowledge or report.knowledge_gaps):
+        return []
+    out = ["\n" + ui.heading("LEARN  (자율 지식 획득 — 권위 출처만, P1 유지)", "🎓")]
+    for a in report.acquired_knowledge:
+        out.append("  " + ui.ok("학습") + " " + a)
+    for g in report.knowledge_gaps:
+        out.append("  " + ui.dim("미해석 공백(수동 조사): ") + g)
+    return out
+
+
+def _view_phases(report, ui) -> list[str]:
     # 모의해킹 단계 순서대로 그룹화 출력
     from .orchestrator import PENTEST_PHASES  # 지연 임포트(순환 회피)
+    out: list[str] = []
     all_findings = report.enum_findings + report.llm_findings
     for key, label in PENTEST_PHASES:
         group = [f for f in all_findings if f.phase == key]
         st_label = report.phase_status.get(key, "")
         if group or st_label:
             suffix = ("  " + ui.dim(f"[{st_label}]")) if st_label else ""
-            lines.append("\n" + ui.rule(f"단계: {label}{suffix}", 60))
+            out.append("\n" + ui.rule(f"단계: {label}{suffix}", 60))
         for f in group:
             mark = ui.mark_run() if f.ran else ui.dim("·")
             note = ui.dim(f"  — {f.note}") if f.note else ""
-            lines.append(f"  {mark} {f.command}{note}")
+            out.append(f"  {mark} {f.command}{note}")
             if f.output:
-                lines.append("      " + ui.dim(f.output))
-    if report.blockers:
-        from . import diagnostics as _diag
-        lines.append("\n" + ui.heading(
-            "BLOCKERS  (막힌 지점 — 사람 확인용. 자동 재공격 아님)", "🧯"))
-        diags = [d for _, d in report.blockers]
-        tgt = [(c, d) for c, d in report.blockers if d.is_target]
-        env = [(c, d) for c, d in report.blockers if not d.is_target]
-        if tgt:
-            lines.append("  " + ui.accent2("대상 응답(경로 판단에 유효):"))
-            for cmd, d in tgt[:8]:
-                lines.append(f"    · {d.label}  — {ui.dim(cmd[:60])}")
-                if d.hint:
-                    lines.append("      " + ui.dim("↳ " + d.hint))
-        if env:
-            lines.append("  " + ui.accent2("환경/도구/네트워크(경로 실패 아님):"))
-            for cmd, d in env[:8]:
-                lines.append(f"    · {d.label}  — {ui.dim(cmd[:60])}")
-                if d.hint:
-                    lines.append("      " + ui.dim("↳ " + d.hint))
-        # 오판 방지: '대상이 거듭 거부'한 범주만 경로 재검토 후보로 '표시'(결정은 사람)
-        signals = _diag.abandonment_signals(diags)
-        repeated = {c: n for c, n in signals.items() if n >= 2}
-        if repeated:
-            lines.append("  " + ui.warn("경로 재검토 후보(대상이 2회+ 거부): ")
-                         + ", ".join(f"{c}×{n}" for c, n in repeated.items())
-                         + ui.dim("  — 환경 문제는 제외됨. 포기 여부는 사람이 판단."))
-    from . import repetition as _rep
-    _rr = _rep.analyze(report.enum_findings + report.llm_findings, report.blockers)
-    if _rr.has_findings:
-        lines.append("\n" + ui.heading(
-            "REPETITION  (반복·정체 감지 — 사람 확인용. 자동 재계획 아님)", "🔁"))
-        for sig, n in _rr.repeated_cmds[:6]:
-            lines.append("  " + ui.warn(f"반복 명령 ×{n}: ") + ui.dim(sig))
-        for cat, n in _rr.repeated_failures[:6]:
-            lines.append("  " + ui.warn(f"같은 실패 ×{n}: ") + ui.dim(cat))
-        if _rr.stalled:
-            lines.append("  " + ui.warn("정체: ")
-                         + ui.dim("실행은 여러 번이나 유의미한 출력이 희박 — 다른 각도를 사람이 검토"))
-    if report.flag_provenance:
-        lines.append("\n" + ui.heading(
-            "PROVENANCE  (플래그 출처 검증 — 실행 트레이스 기반)", "🔎"))
-        for p in report.flag_provenance:
-            pmark = ui.ok if p.verdict == "exploit-derived" else ui.warn
-            lines.append("  " + pmark(f"[{p.label}] ") + f"{p.kind} flag")
-            lines.append("      " + ui.dim(f"↳ {p.reason} · {p.command[:60]}"))
-        susp = [p for p in report.flag_provenance if p.verdict != "exploit-derived"]
-        if susp:
-            lines.append("  " + ui.warn(
-                f"※ {len(susp)}건은 공략 유래가 아닐 수 있음 — 사람이 실제 공략 경로 확인"))
-        # 적대적 재검증(skeptic) 확신도 — 독립 재현 여부(재현됨/단일 출처/미신뢰/미확정)
-        conf = getattr(report, "flag_confidence", None) or {}
-        if conf:
-            lines.append("  " + ui.dim("재검증(skeptic) — 독립 재현 기준 확신도:"))
-            for (kind, _val), c in conf.items():
-                cmark = ui.ok if c.level == "reproduced" else ui.warn
-                lines.append("    " + cmark(f"[{c.label}] ") + f"{kind} flag")
-        # [A6] LLM-심판(조언) — 규칙 판정을 덮지 않는 보조 의견(opt-in --judge 일 때만 존재)
-        jv = getattr(report, "judge_verdict", None)
-        if jv is not None:
-            jmark = ui.ok if getattr(jv, "passed", False) else ui.warn
-            lines.append("  " + jmark(jv.label()))
+                out.append("      " + ui.dim(f.output))
+    return out
+
+
+def _view_blockers(report, ui) -> list[str]:
+    if not report.blockers:
+        return []
+    from . import diagnostics as _diag
+    out = ["\n" + ui.heading("BLOCKERS  (막힌 지점 — 사람 확인용. 자동 재공격 아님)", "🧯")]
+    diags = [d for _, d in report.blockers]
+    tgt = [(c, d) for c, d in report.blockers if d.is_target]
+    env = [(c, d) for c, d in report.blockers if not d.is_target]
+    if tgt:
+        out.append("  " + ui.accent2("대상 응답(경로 판단에 유효):"))
+        for cmd, d in tgt[:8]:
+            out.append(f"    · {d.label}  — {ui.dim(cmd[:60])}")
+            if d.hint:
+                out.append("      " + ui.dim("↳ " + d.hint))
+    if env:
+        out.append("  " + ui.accent2("환경/도구/네트워크(경로 실패 아님):"))
+        for cmd, d in env[:8]:
+            out.append(f"    · {d.label}  — {ui.dim(cmd[:60])}")
+            if d.hint:
+                out.append("      " + ui.dim("↳ " + d.hint))
+    # 오판 방지: '대상이 거듭 거부'한 범주만 경로 재검토 후보로 '표시'(결정은 사람)
+    signals = _diag.abandonment_signals(diags)
+    repeated = {c: n for c, n in signals.items() if n >= 2}
+    if repeated:
+        out.append("  " + ui.warn("경로 재검토 후보(대상이 2회+ 거부): ")
+                   + ", ".join(f"{c}×{n}" for c, n in repeated.items())
+                   + ui.dim("  — 환경 문제는 제외됨. 포기 여부는 사람이 판단."))
+    return out
+
+
+def _view_repetition(report, ui, rr) -> list[str]:
+    if not rr.has_findings:
+        return []
+    out = ["\n" + ui.heading("REPETITION  (반복·정체 감지 — 사람 확인용. 자동 재계획 아님)", "🔁")]
+    for sig, n in rr.repeated_cmds[:6]:
+        out.append("  " + ui.warn(f"반복 명령 ×{n}: ") + ui.dim(sig))
+    for cat, n in rr.repeated_failures[:6]:
+        out.append("  " + ui.warn(f"같은 실패 ×{n}: ") + ui.dim(cat))
+    if rr.stalled:
+        out.append("  " + ui.warn("정체: ")
+                   + ui.dim("실행은 여러 번이나 유의미한 출력이 희박 — 다른 각도를 사람이 검토"))
+    return out
+
+
+def _view_provenance(report, ui) -> list[str]:
+    if not report.flag_provenance:
+        return []
+    out = ["\n" + ui.heading("PROVENANCE  (플래그 출처 검증 — 실행 트레이스 기반)", "🔎")]
+    for p in report.flag_provenance:
+        pmark = ui.ok if p.verdict == "exploit-derived" else ui.warn
+        out.append("  " + pmark(f"[{p.label}] ") + f"{p.kind} flag")
+        out.append("      " + ui.dim(f"↳ {p.reason} · {p.command[:60]}"))
+    susp = [p for p in report.flag_provenance if p.verdict != "exploit-derived"]
+    if susp:
+        out.append("  " + ui.warn(
+            f"※ {len(susp)}건은 공략 유래가 아닐 수 있음 — 사람이 실제 공략 경로 확인"))
+    # 적대적 재검증(skeptic) 확신도 — 독립 재현 여부(재현됨/단일 출처/미신뢰/미확정)
+    conf = getattr(report, "flag_confidence", None) or {}
+    if conf:
+        out.append("  " + ui.dim("재검증(skeptic) — 독립 재현 기준 확신도:"))
+        for (kind, _val), c in conf.items():
+            cmark = ui.ok if c.level == "reproduced" else ui.warn
+            out.append("    " + cmark(f"[{c.label}] ") + f"{kind} flag")
+    # [A6] LLM-심판(조언) — 규칙 판정을 덮지 않는 보조 의견(opt-in --judge 일 때만 존재)
+    jv = getattr(report, "judge_verdict", None)
+    if jv is not None:
+        jmark = ui.ok if getattr(jv, "passed", False) else ui.warn
+        out.append("  " + jmark(jv.label()))
+    return out
+
+
+def _view_next_options(report, ui, rr) -> list[str]:
     from . import recommend as _recommend
-    _recs = _recommend.propose(report, repetition=_rr)   # 반복 분석 1회만
-    if _recs.has_items:
-        lines.append("\n" + ui.heading(
-            "NEXT OPTIONS  (다음 선택지 — 사람이 골라 승인. 자동 실행 아님)", "🧭"))
-        for i, r in enumerate(_recs.items, 1):
-            lines.append(f"  {ui.accent2(str(i) + '.')} {r.title}")
-            lines.append("      " + ui.dim("근거: " + r.rationale))
-            if r.ref:
-                lines.append("      " + ui.dim("참고: " + r.ref[:72]))
-        lines.append("  " + ui.dim("→ 번호를 골라 해당 명령/각도를 승인하면 3관문을 거쳐 실행됩니다."))
-    if report.detected_cve or report.detected_cwe or report.vuln_matches or report.discovered_cve:
-        lines.append("\n" + ui.heading(
-            "VULN  (탐지된 취약점 — 수동 검증/익스플로잇 필요)", "🛑"))
-        if report.detected_cve:
-            lines.append(ui.kv("탐지 CVE", ui.warn(", ".join(report.detected_cve)), 9))
-        if report.discovered_cve:
-            # 제품→CVE 역질의(NVD)로 자동 발견한 것 — KB 룰 없이도 신종 취약점을 수면 위로.
-            lines.append(ui.kv("🔎 자동발견 CVE",
-                               ui.warn(", ".join(report.discovered_cve)) + ui.dim(" (제품·버전 기반 NVD 역질의 — 버전대조 확인)"), 9))
-        if report.detected_cwe:
-            lines.append(ui.kv("탐지 CWE", ui.warn(", ".join(report.detected_cwe)), 9))
-        for m in report.vuln_matches:
-            sev = f"[{m.severity}] " if m.severity else ""
-            ids = " ".join(m.cve + m.cwe)
-            lines.append("  " + ui.mark_warn(
-                ui.warn(sev) + m.name + ui.dim(f" ({ids}) — 매칭:{m.matched_on}")))
-            if m.note:
-                lines.append(ui.dim(f"       비고: {m.note}"))
-            for s in m.suggest:
-                lines.append("       " + ui.accent2("제안: ") + s)
-    if report.enriched:
-        lines.append("\n" + ui.heading("CVE 레퍼런스 (자동 수집 — NVD/GitHub)", "📚"))
-        for e in report.enriched:
-            sev = f"[{e.severity} {e.cvss}] " if e.severity else ""
-            badge = ui.accent2("🔎 ") if e.id in report.discovered_cve else ""
-            lines.append("  " + badge + ui.warn(sev) + ui.bold(e.id)
-                         + (ui.dim("  " + ", ".join(e.cwe)) if e.cwe else ""))
-            if e.description:
-                lines.append(ui.dim("     " + e.description[:160]))
-            for r in e.references[:3]:
-                lines.append("     " + ui.accent2("ref: ") + ui.dim(r))
-            for p in e.poc_repos[:3]:
-                lines.append("     " + ui.accent2("PoC: ") + ui.dim(p))
-    if report.flags:
-        lines.append("\n" + ui.heading("🚩 플래그 (FLAG)"))
-        if report.flag_kind == "single":
-            for fh in report.flags:
-                lines.append("  " + ui.flag(fh.value)
-                             + ui.dim(f"  ← {fh.source}"))
-        else:
-            uf = ui.flag(report.user_flag) if report.user_flag else ui.dim("미획득")
-            rf = ui.flag(report.root_flag) if report.root_flag else ui.dim("미획득")
-            lines.append("  " + ui.dim("user.txt:") + " " + uf)
-            lines.append("  " + ui.dim("root.txt:") + " " + rf)
-            for fh in report.flags:
-                if fh.kind == "unknown":
-                    lines.append(ui.dim(f"  (미분류) {fh.value} ← {fh.source}"))
-    if report.revshells:
-        from .revshell import listener_hints
-        lines.append("\n" + ui.heading(
-            "리버스쉘 (자동 준비 — 초기 침투용 · 생성만, 에이전트는 실행 안 함)", "🐚"))
-        lines.append(ui.dim(
-            f"  LHOST={report.revshell_lhost}  LPORT={report.revshell_lport}"
-            "  ·  권한 확인 대상에서 사용자가 직접 실행"))
-        lines.append("  " + ui.accent2("리스너: ") + listener_hints(report.revshell_lport)[0])
-        # 화면 잡음 축소(초보자): 대표 3개만 보여 주고 전체는 --json/--html 로
-        _show = report.revshells[:3]
-        for s in _show:
-            lines.append("  " + ui.accent2(f"[{s.name}]"))
-            lines.append("    " + s.payload)
-        if len(report.revshells) > len(_show):
-            lines.append(ui.dim(f"  … 외 {len(report.revshells) - len(_show)}종(bash/nc/python/php/"
-                                "powershell/socat 등) — 전체는 --json/--html"))
-    if report.cloud_checks:
-        lines.append("\n" + ui.heading(
-            "AWS/S3 열거 (자동 준비 — 생성만, AWS 는 범위 밖·실행 안 함)", "☁️"))
-        if report.cloud_candidates:
-            lines.append(ui.dim(
-                f"  버킷 후보({len(report.cloud_candidates)}): "
-                + ", ".join(report.cloud_candidates[:12])
-                + (" …" if len(report.cloud_candidates) > 12 else "")))
-        for c in report.cloud_checks:
-            lines.append("  " + ui.accent2(f"[{c.name}] ") + c.command)
-    if report.privesc_steps:
-        lines.append("\n" + ui.heading(
-            "권한 상승 플레이북 (자동 준비 — 대상 셸에서 실행 · 생성만)", "⬆️"))
-        for s in report.privesc_steps:
-            lines.append("  " + ui.accent2(f"[{s.category}] ") + s.command)
-            if s.note:
-                lines.append(ui.dim("      " + s.note))
-        for c in report.privesc_cve_candidates:
-            lines.append("  " + ui.mark_warn(ui.warn("LPE 후보: ") + c))
-    if report.crack_jobs:
-        lines.append("\n" + ui.heading(
-            "해시 크래킹 (자동 준비 — 생성만, 사용자 환경에서 실행)", "🔑"))
-        for j in report.crack_jobs:
-            gnames = ", ".join(g.name for g in j.guesses) or "미상"
-            lines.append("  " + ui.accent2("해시: ") + ui.dim(j.hash[:64]
-                         + ("…" if len(j.hash) > 64 else "")))
-            lines.append("    " + ui.dim(f"식별: {gnames}"))
-            for c in j.commands:
-                lines.append("    " + ui.accent2(f"[{c.tool}] ") + c.command)
-    if getattr(report, "lateral_candidates", None):
-        lines.append("\n" + ui.heading(
-            "측면 이동 후보 (수확 크리덴셜/해시 재사용·PtH(Pass-the-Hash, 해시 그대로 재사용) "
-            "— 생성만, 사용자 실행)", "↔"))
-        _lat = report.lateral_candidates[:8]
-        for c in _lat:
-            lines.append("  " + ui.accent2(f"[{c.technique}/{c.service}] ") + c.command)
-        if len(report.lateral_candidates) > len(_lat):
-            lines.append(ui.dim(f"  … 외 {len(report.lateral_candidates) - len(_lat)}개"))
-    if report.manual_suggestions:
-        lines.append("\n" + ui.heading("수동 제안 — 종류별 바로 적용하는 법", "✋"))
-        for title, how, items in _group_manual(report.manual_suggestions):
-            lines.append("  " + ui.bold(f"{title} ({len(items)})") + "  " + ui.info("→ " + how))
-            # 익스플로잇 후보는 '고를 대상'이므로 자르지 않고 전부 보여 준다(핵심 결정).
-            if title == _EXPLOIT_TITLE:
-                for s in items:
-                    lines.append(ui.bullet(s, "·", "accent2"))
-                continue
-            # 초보자 화면: 옵션만 덧붙인 변형·같은 꼬리표는 숨기고 앞의 몇 개만(전체는 리포트에)
-            shown = _compact_manual(items)
-            for s in shown[:_MANUAL_SHOW]:
-                lines.append(ui.bullet(s, "·", "dim"))
-            rest = len(items) - min(len(shown), _MANUAL_SHOW)
-            if rest > 0:
-                lines.append("    " + ui.dim(f"… 외 {rest}개 (옵션 변형 포함) — 전체 목록: --html / --json 리포트"))
+    recs = _recommend.propose(report, repetition=rr)   # 반복 분석 1회만(스파인에서 계산)
+    if not recs.has_items:
+        return []
+    out = ["\n" + ui.heading(
+        "NEXT OPTIONS  (다음 선택지 — 사람이 골라 승인. 자동 실행 아님)", "🧭")]
+    for i, r in enumerate(recs.items, 1):
+        out.append(f"  {ui.accent2(str(i) + '.')} {r.title}")
+        out.append("      " + ui.dim("근거: " + r.rationale))
+        if r.ref:
+            out.append("      " + ui.dim("참고: " + r.ref[:72]))
+    out.append("  " + ui.dim("→ 번호를 골라 해당 명령/각도를 승인하면 3관문을 거쳐 실행됩니다."))
+    return out
+
+
+def _view_vuln(report, ui) -> list[str]:
+    if not (report.detected_cve or report.detected_cwe or report.vuln_matches
+            or report.discovered_cve):
+        return []
+    out = ["\n" + ui.heading("VULN  (탐지된 취약점 — 수동 검증/익스플로잇 필요)", "🛑")]
+    if report.detected_cve:
+        out.append(ui.kv("탐지 CVE", ui.warn(", ".join(report.detected_cve)), 9))
+    if report.discovered_cve:
+        # 제품→CVE 역질의(NVD)로 자동 발견한 것 — KB 룰 없이도 신종 취약점을 수면 위로.
+        out.append(ui.kv("🔎 자동발견 CVE",
+                         ui.warn(", ".join(report.discovered_cve)) + ui.dim(" (제품·버전 기반 NVD 역질의 — 버전대조 확인)"), 9))
+    if report.detected_cwe:
+        out.append(ui.kv("탐지 CWE", ui.warn(", ".join(report.detected_cwe)), 9))
+    for m in report.vuln_matches:
+        sev = f"[{m.severity}] " if m.severity else ""
+        ids = " ".join(m.cve + m.cwe)
+        out.append("  " + ui.mark_warn(
+            ui.warn(sev) + m.name + ui.dim(f" ({ids}) — 매칭:{m.matched_on}")))
+        if m.note:
+            out.append(ui.dim(f"       비고: {m.note}"))
+        for s in m.suggest:
+            out.append("       " + ui.accent2("제안: ") + s)
+    return out
+
+
+def _view_enriched(report, ui) -> list[str]:
+    if not report.enriched:
+        return []
+    out = ["\n" + ui.heading("CVE 레퍼런스 (자동 수집 — NVD/GitHub)", "📚")]
+    for e in report.enriched:
+        sev = f"[{e.severity} {e.cvss}] " if e.severity else ""
+        badge = ui.accent2("🔎 ") if e.id in report.discovered_cve else ""
+        out.append("  " + badge + ui.warn(sev) + ui.bold(e.id)
+                   + (ui.dim("  " + ", ".join(e.cwe)) if e.cwe else ""))
+        if e.description:
+            out.append(ui.dim("     " + e.description[:160]))
+        for r in e.references[:3]:
+            out.append("     " + ui.accent2("ref: ") + ui.dim(r))
+        for p in e.poc_repos[:3]:
+            out.append("     " + ui.accent2("PoC: ") + ui.dim(p))
+    return out
+
+
+def _view_flags(report, ui) -> list[str]:
+    if not report.flags:
+        return []
+    out = ["\n" + ui.heading("🚩 플래그 (FLAG)")]
+    if report.flag_kind == "single":
+        for fh in report.flags:
+            out.append("  " + ui.flag(fh.value) + ui.dim(f"  ← {fh.source}"))
+    else:
+        uf = ui.flag(report.user_flag) if report.user_flag else ui.dim("미획득")
+        rf = ui.flag(report.root_flag) if report.root_flag else ui.dim("미획득")
+        out.append("  " + ui.dim("user.txt:") + " " + uf)
+        out.append("  " + ui.dim("root.txt:") + " " + rf)
+        for fh in report.flags:
+            if fh.kind == "unknown":
+                out.append(ui.dim(f"  (미분류) {fh.value} ← {fh.source}"))
+    return out
+
+
+def _view_revshell(report, ui) -> list[str]:
+    if not report.revshells:
+        return []
+    from .revshell import listener_hints
+    out = ["\n" + ui.heading(
+        "리버스쉘 (자동 준비 — 초기 침투용 · 생성만, 에이전트는 실행 안 함)", "🐚")]
+    out.append(ui.dim(
+        f"  LHOST={report.revshell_lhost}  LPORT={report.revshell_lport}"
+        "  ·  권한 확인 대상에서 사용자가 직접 실행"))
+    out.append("  " + ui.accent2("리스너: ") + listener_hints(report.revshell_lport)[0])
+    # 화면 잡음 축소(초보자): 대표 3개만 보여 주고 전체는 --json/--html 로
+    _show = report.revshells[:3]
+    for s in _show:
+        out.append("  " + ui.accent2(f"[{s.name}]"))
+        out.append("    " + s.payload)
+    if len(report.revshells) > len(_show):
+        out.append(ui.dim(f"  … 외 {len(report.revshells) - len(_show)}종(bash/nc/python/php/"
+                          "powershell/socat 등) — 전체는 --json/--html"))
+    return out
+
+
+def _view_cloud(report, ui) -> list[str]:
+    if not report.cloud_checks:
+        return []
+    out = ["\n" + ui.heading("AWS/S3 열거 (자동 준비 — 생성만, AWS 는 범위 밖·실행 안 함)", "☁️")]
+    if report.cloud_candidates:
+        out.append(ui.dim(
+            f"  버킷 후보({len(report.cloud_candidates)}): "
+            + ", ".join(report.cloud_candidates[:12])
+            + (" …" if len(report.cloud_candidates) > 12 else "")))
+    for c in report.cloud_checks:
+        out.append("  " + ui.accent2(f"[{c.name}] ") + c.command)
+    return out
+
+
+def _view_privesc(report, ui) -> list[str]:
+    if not report.privesc_steps:
+        return []
+    out = ["\n" + ui.heading("권한 상승 플레이북 (자동 준비 — 대상 셸에서 실행 · 생성만)", "⬆️")]
+    for s in report.privesc_steps:
+        out.append("  " + ui.accent2(f"[{s.category}] ") + s.command)
+        if s.note:
+            out.append(ui.dim("      " + s.note))
+    for c in report.privesc_cve_candidates:
+        out.append("  " + ui.mark_warn(ui.warn("LPE 후보: ") + c))
+    return out
+
+
+def _view_crack(report, ui) -> list[str]:
+    if not report.crack_jobs:
+        return []
+    out = ["\n" + ui.heading("해시 크래킹 (자동 준비 — 생성만, 사용자 환경에서 실행)", "🔑")]
+    for j in report.crack_jobs:
+        gnames = ", ".join(g.name for g in j.guesses) or "미상"
+        out.append("  " + ui.accent2("해시: ") + ui.dim(j.hash[:64]
+                   + ("…" if len(j.hash) > 64 else "")))
+        out.append("    " + ui.dim(f"식별: {gnames}"))
+        for c in j.commands:
+            out.append("    " + ui.accent2(f"[{c.tool}] ") + c.command)
+    return out
+
+
+def _view_lateral(report, ui) -> list[str]:
+    if not getattr(report, "lateral_candidates", None):
+        return []
+    out = ["\n" + ui.heading(
+        "측면 이동 후보 (수확 크리덴셜/해시 재사용·PtH(Pass-the-Hash, 해시 그대로 재사용) "
+        "— 생성만, 사용자 실행)", "↔")]
+    _lat = report.lateral_candidates[:8]
+    for c in _lat:
+        out.append("  " + ui.accent2(f"[{c.technique}/{c.service}] ") + c.command)
+    if len(report.lateral_candidates) > len(_lat):
+        out.append(ui.dim(f"  … 외 {len(report.lateral_candidates) - len(_lat)}개"))
+    return out
+
+
+def _view_manual(report, ui) -> list[str]:
+    if not report.manual_suggestions:
+        return []
+    out = ["\n" + ui.heading("수동 제안 — 종류별 바로 적용하는 법", "✋")]
+    for title, how, items in _group_manual(report.manual_suggestions):
+        out.append("  " + ui.bold(f"{title} ({len(items)})") + "  " + ui.info("→ " + how))
+        # 익스플로잇 후보는 '고를 대상'이므로 자르지 않고 전부 보여 준다(핵심 결정).
+        if title == _EXPLOIT_TITLE:
+            for s in items:
+                out.append(ui.bullet(s, "·", "accent2"))
+            continue
+        # 초보자 화면: 옵션만 덧붙인 변형·같은 꼬리표는 숨기고 앞의 몇 개만(전체는 리포트에)
+        shown = _compact_manual(items)
+        for s in shown[:_MANUAL_SHOW]:
+            out.append(ui.bullet(s, "·", "dim"))
+        rest = len(items) - min(len(shown), _MANUAL_SHOW)
+        if rest > 0:
+            out.append("    " + ui.dim(f"… 외 {rest}개 (옵션 변형 포함) — 전체 목록: --html / --json 리포트"))
+    return out
+
+
+def render_summary(report) -> str:
+    """터미널 요약 — 얇은 스파인이 섹션 렌더러(_view_*)를 선언 순서대로 이어 붙인다.
+    REPETITION 분석(_rr)은 스파인에서 1회 계산해 REPETITION·NEXT OPTIONS 두 섹션에 공유한다."""
+    from . import repetition as _rep
+    from . import ui
+    st = ui.ok if report.status == "done" else ui.accent2
+    head = (ui.accent("ASSASSIN") + ui.dim(" · 오케스트레이션 ")
+            + ui.bold(report.target) + "  " + st(f"[{report.status}]")
+            + (("  " + ui.dim(report.message)) if report.message else ""))
+    lines = [head, ui.rule("", 60, "navy")]
+    lines += _view_recon(report, ui)
+    lines += _view_profile(report, ui)
+    lines += _view_state(report, ui)
+    lines += _view_plan(report, ui)
+    lines += _view_analysis(report, ui)
+    lines += _view_learn(report, ui)
+    lines += _view_phases(report, ui)
+    lines += _view_blockers(report, ui)
+    _rr = _rep.analyze(report.enum_findings + report.llm_findings, report.blockers)
+    lines += _view_repetition(report, ui, _rr)
+    lines += _view_provenance(report, ui)
+    lines += _view_next_options(report, ui, _rr)
+    lines += _view_vuln(report, ui)
+    lines += _view_enriched(report, ui)
+    lines += _view_flags(report, ui)
+    lines += _view_revshell(report, ui)
+    lines += _view_cloud(report, ui)
+    lines += _view_privesc(report, ui)
+    lines += _view_crack(report, ui)
+    lines += _view_lateral(report, ui)
+    lines += _view_manual(report, ui)
     solved = render_solved(report)
     if solved:
         lines.append("\n" + solved)
