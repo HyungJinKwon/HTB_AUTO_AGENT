@@ -182,6 +182,18 @@ class KnowledgeBase:
             self._lower_cache = cache
         return cache[1]
 
+    def _tfidf_index(self):
+        """노트 코퍼스의 TF-IDF 색인 캐시. RAG 는 단계×라운드×스윕마다 호출되므로, 같은 노트
+        집합에 대해 색인(df/idf/norm — 전 코퍼스 토크나이즈)을 매번 재구성하지 않는다. 시그니처는
+        `_lowered_notes` 와 동일한 '노트 id 튜플'이라 추가·교체 시 자동 무효화(항상 최신·결정적)."""
+        from .tfidf import TfidfIndex
+        cache = getattr(self, "_tfidf_cache", None)
+        sig = tuple(id(n) for n in self.notes)
+        if cache is None or cache[0] != sig:
+            cache = (sig, TfidfIndex(self._lowered_notes()))
+            self._tfidf_cache = cache
+        return cache[1]
+
     def external_notes(self) -> list[str]:
         """런타임에 '외부에서 가져온' 노트(자가학습·웹학습: 파일명이 learned…)의 본문.
         provenance 의 looked-up 판정용 — 번들 시드(seed-…, 공략 흔적 없는 레퍼런스)는 제외한다.
@@ -203,9 +215,8 @@ class KnowledgeBase:
         if not q:
             return self.notes[:limit]
         if len(self.notes) >= 2:
-            # KB 노트 코퍼스는 작아 매 호출 재구성(캐시 미사용 — 내용 교체/추가에도 항상 최신).
-            from .tfidf import TfidfIndex
-            ranked = TfidfIndex(self._lowered_notes()).rank(q, limit=limit)
+            # 색인은 노트 집합별로 캐시(_tfidf_index) — 매 호출 재구성 않고도 내용 교체/추가 시 최신.
+            ranked = self._tfidf_index().rank(q, limit=limit)
             if ranked:
                 return [self.notes[i] for i, _ in ranked]
             return self.notes[:limit]

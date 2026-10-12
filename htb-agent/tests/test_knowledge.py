@@ -124,5 +124,16 @@ check("교체된 노트 내용이 관련도 검색에 반영(stale 캐시 아님
       any("kerberoasting" in n for n in r))
 check("교체로 사라진 내용은 노트에 없음", not any("sqlinjection" in n for n in kb2.notes))
 
+print("\n=== TF-IDF 색인 캐시: 동일 노트 재사용·변경 시 재구성 ===")
+kb3 = KnowledgeBase(rules=[], notes=["alpha sqli tips", "beta ssh notes"])
+idx_a = kb3._tfidf_index()
+idx_b = kb3._tfidf_index()
+check("동일 노트 → 색인 객체 재사용(재구성 안 함)", idx_a is idx_b)
+kb3.notes.append("gamma kerberoasting")           # 노트 추가 → 시그니처 변화 → 재구성
+idx_c = kb3._tfidf_index()
+check("노트 변경 → 색인 재구성(stale 아님)", idx_c is not idx_a)
+check("재구성된 색인이 새 노트 반영",
+      any("kerberoasting" in kb3.notes[i] for i, _ in idx_c.rank(["kerberoasting"], limit=1)))
+
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
