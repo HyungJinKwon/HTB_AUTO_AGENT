@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Callable
 if TYPE_CHECKING:
     from .scheduler import StageScheduler
 
-from . import command_fixer, diagnostics, flag_assess, preparations, results_verify
+from . import command_fixer, diagnostics, flag_assess, preparations, results_verify, reversing
 from . import provenance as _prov
 from .audit import NullAudit
 from .command_validator import ValidationReport, shell_operators, validate
@@ -359,6 +359,7 @@ class Orchestrator(FootholdMixin):
             report.host = host
             report.message += "(열린 포트 없음 — 첨부파일 분석으로 진행) "
             self.audit.event("offline_files", files=self.workspace.imported[:20])
+            self._analyze_offline_files(report)   # [G2] export-first 정적 리버싱
         if host is None or (not host.open_ports and not (
                 self.workspace is not None and self.workspace.imported)):
             report.status = "escalate"
@@ -2018,6 +2019,24 @@ class Orchestrator(FootholdMixin):
         self.audit.event("results_verify", original=finding.command, fixed=new_cmd, reason=reason)
         self._attempt(report, report.enum_findings, new_cmd, finding.phase,
                       budgeted=False, corrective=True)
+
+    def _analyze_offline_files(self, report: OrchestrationReport) -> None:
+        """[G2] 첨부 바이너리마다 export-first 정적 분석 명령을 3관문에 투입(생성 전용·비실행).
+        바이너리를 '실행'하지 않는 정적 도구만(file/strings/nm/objdump/checksec/r2 -A). 예산
+        비계상(budgeted=False) — 열거 예산을 쓰지 않는 결정적 분석 패스."""
+        ws = self.workspace
+        if ws is None or not getattr(ws, "imported", None):
+            return
+        import os as _os
+        seen: set[str] = set()
+        for rel in list(ws.imported)[:10]:   # 파일 수 상한(과다 첨부 방어)
+            full = _os.path.join(ws.root, rel)
+            for cmd in reversing.export_first_commands(full):
+                if cmd in seen:
+                    continue
+                seen.add(cmd)
+                self._attempt(report, report.enum_findings, cmd, phase="access",
+                              budgeted=False, corrective=True)   # corrective=재귀 교정 억제
 
     def _maybe_register_vhost(self, report: OrchestrationReport, text: str) -> None:
         """리다이렉트 출력에서 vhost 를 발견하면 타겟 IP 로 스코프 해석맵(hosts_map)에
