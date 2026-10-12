@@ -35,17 +35,19 @@ def _insert_flag(cmd: str, flag: str) -> str:
 
 
 def _has_token(cmd: str, *tokens: str) -> bool:
-    """명령에 토큰(플래그)이 이미 있는지. 단일 대시 단축플래그는 결합형(-sSL 의 L)도 인정."""
-    low = f" {cmd.lower()} "
-    toks = cmd.lower().split()
+    """명령에 토큰(플래그)이 이미 있는지. 단일 대시 단축플래그는 결합형(-sSL 의 L)도 인정.
+    단축 플래그는 **대소문자 구분**한다 — curl `-K`(설정파일) 가 `-k`(--insecure) 로 오인돼
+    자가서명 TLS 교정을 삼키던 문제(감사 B-LOW4) 방지. nmap `-Pn`/`-pn` 은 호출부가 두 형태를
+    모두 넘겨 커버한다."""
+    padded = f" {cmd} "
+    toks = cmd.split()
     for t in tokens:
-        tl = t.lower()
-        if f" {tl} " in low or f" {tl}=" in low:
+        if f" {t} " in padded or f" {t}=" in padded:
             return True
-        if re.fullmatch(r"-[a-z]", tl):   # 결합형 단축플래그: -L 이 -sSL 안에 있으면 True
-            letter = tl[1]
+        if re.fullmatch(r"-[A-Za-z]", t):   # 결합형 단축플래그: -L 이 -sSL 안에 있으면 True
+            letter = t[1]
             for tk in toks:
-                if re.fullmatch(r"-[a-z]+", tk) and letter in tk[1:]:
+                if re.fullmatch(r"-[A-Za-z]+", tk) and letter in tk[1:]:
                     return True
     return False
 

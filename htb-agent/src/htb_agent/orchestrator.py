@@ -534,6 +534,7 @@ class Orchestrator(FootholdMixin):
         # 진행 상태'가 통째로 유실된다(재개 불가). 예외는 감사 로그에 남겨 침묵 드롭을 피하고
         # (정직성 §3), 리포트·저장(PHASE 4)으로 반드시 진행한다. 명령 실행 자체는 _safe_run 이
         # 이미 흡수하므로, 여기서 잡히는 건 파싱·준비·평가 로직의 예외다.
+        post_stage_error = ""
         try:
             if not interrupted:
                 self._refresh_exploit_shortlist(report, host)
@@ -579,9 +580,15 @@ class Orchestrator(FootholdMixin):
             self.audit.event("interrupted", stage="post-loop")
         except Exception as e:   # noqa: BLE001 — 저장 보장 위해 흡수하되 감사에 남김(재개 상태 보존)
             self.audit.event("post_stage_error", error=f"{type(e).__name__}: {e}")
+            post_stage_error = f"{type(e).__name__}: {e}"   # PHASE 4 상태를 'done' 으로 과장하지 않음
 
         # ── PHASE 4: REPORT ──
         report.status = "interrupted" if interrupted else "done"
+        if post_stage_error and not interrupted:
+            # 후처리(준비·평가) 스테이지에서 예외가 흡수됐으면 'done' 으로 묵인하지 않고 명시한다
+            # (정직성 §3 — 일부 생성 전용 산출물이 누락됐을 수 있음). 코어 파이프라인·저장은 정상.
+            report.message += (f"⚠ 후처리 단계 일부 오류({post_stage_error}) — 준비/평가 산출물 "
+                               "일부 누락 가능(감사 로그 참조). 코어 결과·저장은 정상. ")
         if report.timed_out:
             report.message += (f"시간 예산 {self.time_budget:g}분 소진(경과 {report.elapsed_sec:.0f}초) "
                                "— 남은 단계 생략, 진행 상태 저장(--resume 으로 이어서 진행). ")
@@ -1795,22 +1802,28 @@ class Orchestrator(FootholdMixin):
 
     def _prepare_lateral(self, report: OrchestrationReport) -> None:
         """수확한 크리덴셜/NT 해시를 '열린 다른 서비스' 재사용·PtH 후보로 준비(생성 전용)."""
-        from .target_shell import parse_cred
         creds: list[tuple[str, str]] = []
         nt_hashes: list[tuple[str, str]] = []
         if self.world is not None:
             for c in self.world.creds:
-                pc = parse_cred(c)
-                if pc and pc not in creds:
-                    creds.append(pc)
-                # 'user:<HASH>' 형태(평문 아님)는 NT 해시 후보로(<...> 벗겨서)
-                elif ":" in c:
-                    user, secret = c.split(":", 1)
-                    secret = secret.strip().strip("<>").strip()
-                    if user.strip() and re.fullmatch(r"[0-9a-fA-F]{32}", secret):
-                        pair = (user.strip(), secret)
-                        if pair not in nt_hashes:
-                            nt_hashes.append(pair)
+                if ":" not in c:
+                    continue
+                user, secret = c.split(":", 1)
+                user = user.strip()
+                secret = secret.strip().strip("<>").strip()   # 'user:<HASH>'·'user:HASH' 모두
+                if not user or not secret:
+                    continue
+                # NT 해시(정확히 32 hex)는 PtH 후보로만 — 평문 비밀번호와 혼동 금지(감사 B-MED1).
+                # 과거엔 parse_cred 가 'user:HASH'(꺾쇠 없음)를 평문으로 받아 해시를 -p 로도
+                # 스프레이하는 가짜 후보를 만들었다. 해시 모양이면 nt_hashes 로만 보낸다.
+                if re.fullmatch(r"[0-9a-fA-F]{32}", secret):
+                    pair = (user, secret)
+                    if pair not in nt_hashes:
+                        nt_hashes.append(pair)
+                else:
+                    pc = (user, secret)
+                    if pc not in creds:
+                        creds.append(pc)
         if self.vault is not None:
             for cred in self.vault.creds:
                 nt = getattr(cred, "nt_hash", None)

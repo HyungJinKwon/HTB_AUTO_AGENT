@@ -122,5 +122,46 @@ if _has_requests:
 else:
     check("requests 미설치 — 웹 우선 케이스 스킵(환경)", True)
 
+print("\n=== 웹 probe 런타임 예외 → 리버스셸 폴백으로 진행(감사 A-MED) ===")
+from htb_agent import shell_transport  # noqa: E402
+
+orcW = make_orc()
+orcW.world.web_product = "FreePBX"
+orcW.rce_url = "https://t/x"
+good_w = session_with("uid=0(root) gid=0(root)")
+orcW._revshell_catcher = lambda lhost, lport: good_w
+_orig_http = getattr(shell_transport, "web_http_fn", None)
+
+
+def _raise_http(spec):
+    raise ConnectionError("connection refused")   # 런타임 요청 실패(연결거부·타임아웃 류)
+
+
+shell_transport.web_http_fn = _raise_http
+try:
+    s_fb = orcW._acquire_session(report_with_revshell(), None)
+finally:
+    if _orig_http is not None:
+        shell_transport.web_http_fn = _orig_http
+check("웹 probe 예외를 삼키고 리버스셸 폴백으로 세션 확보", s_fb is good_w)
+
+print("\n=== 리버스셸 성립검증 중 소켓 OSError → None + 세션 close(감사 A-LOW) ===")
+orcV = make_orc()
+
+
+def session_raises_on_run():
+    def transport(framed):
+        raise OSError("connection reset by peer")
+    s = ReverseShellSession("10.10.14.9", 4444)
+    s.attach(transport)
+    return s
+
+
+raised_sess = session_raises_on_run()
+orcV._revshell_catcher = lambda lhost, lport: raised_sess
+s_v = orcV._acquire_session(report_with_revshell(), None)
+check("검증 중 OSError → None(크래시 아님)", s_v is None)
+check("검증 실패 세션은 close 됨(누수 방지)", not raised_sess.alive)
+
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
