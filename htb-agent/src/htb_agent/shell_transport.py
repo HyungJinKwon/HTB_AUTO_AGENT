@@ -1,7 +1,8 @@
-"""발판 실행 transport — 리버스셸 소켓 / 웹RCE HTTP (사용자 커밋, RCE 실행 표면)."""
-import socket
+"""발판 실행 transport — 리버스셸 소켓 / 웹RCE HTTP (사용자 커밋, RCE 실행 표면).
 
-import requests
+requests 는 web_http_fn 안에서 지연 임포트한다 — 리버스셸 수신(catch_reverse_shell)은 표준
+socket 만 쓰므로 requests 미설치 환경에서도 동작하게(선택 의존 분리)."""
+import socket
 
 from .shell_session import ReverseShellSession
 
@@ -34,6 +35,7 @@ def catch_reverse_shell(lhost: str, lport: int, timeout: float = 120.0) -> Rever
 
 
 def web_http_fn(spec: dict) -> str:
+    import requests  # 지연 임포트(선택 의존) — 소켓 수신 경로와 분리
     r = requests.request(spec["method"], spec["url"],
                          params=spec["params"] or None,
                          data=spec["data"] or None,

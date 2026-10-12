@@ -225,6 +225,7 @@ class Orchestrator(FootholdMixin):
                  dry_run: bool = False,
                  exploit_exec: bool = False,
                  auto_poc: bool = False,
+                 catch_revshell: bool = False,
                  poc_commands: "list[str] | None" = None,
                  judge: bool = False,
                  workspace=None):
@@ -282,6 +283,9 @@ class Orchestrator(FootholdMixin):
         self.dry_run = dry_run
         self.exploit_exec = exploit_exec
         self.auto_poc = auto_poc
+        # 리버스셸 수신 발판(opt-in). 켜지면 _acquire_session 이 준비된 revshell(lhost/lport)로
+        # 소켓 리스너를 띄워 콜백을 받는다(RCE 실행 표면). 기본 OFF — 기본 흐름에 소켓 블로킹 없음.
+        self.catch_revshell = catch_revshell
         self.judge = judge   # [A6] LLM-심판(opt-in·advisory)
         self._exploit_looked_up: set[str] = set()   # 제품별 공개 익스 조회 1회 가드
         self._version_probed: set[str] = set()       # 제품별 버전 노출 프로브 1회 가드

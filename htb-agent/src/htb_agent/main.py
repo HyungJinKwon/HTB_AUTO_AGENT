@@ -205,6 +205,10 @@ def build_parser() -> argparse.ArgumentParser:
     g_mode.add_argument("--exploit-exec", action="store_true", dest="exploit_exec",
                    help="옵트인(기본 OFF): 확보한 평문 자격으로 SSH 접속해 플래그 읽기·권한상승 "
                         "열거를 게이트를 거쳐 자동 실행(권한 확인 대상 전용)")
+    g_mode.add_argument("--catch-revshell", action="store_true", dest="catch_revshell",
+                   help="옵트인(기본 OFF): --exploit-exec 발판 단계에서 준비된 리버스셸 payload 의 "
+                        "콜백을 소켓 리스너로 수신해 발판 세션화(공격자 IP/포트 확보 시). 성립 검증 "
+                        "통과분만 인정. 소켓 수신은 RCE 실행 표면 — 권한 확인 대상 전용")
     g_mode.add_argument("--judge", action="store_true", dest="judge",
                    help="옵트인(기본 OFF): 종료 시 LLM-심판이 '공략 달성' 주장이 증거로 "
                         "뒷받침되는지 별도 채점(조언만 — 규칙 판정·목표 달성을 덮지 않음). LLM 필요")
@@ -827,6 +831,7 @@ def _run_target(args, cfg, knowledge_dir, runner) -> int:
                                 workspace=workspace,
                                 auto_poc=args.auto_poc,
                                 exploit_exec=args.exploit_exec,
+                                catch_revshell=getattr(args, "catch_revshell", False),
                                 judge=getattr(args, "judge", False),
                                 poc_commands=args.poc_commands or [],
                                 dry_run=args.dry_run,
