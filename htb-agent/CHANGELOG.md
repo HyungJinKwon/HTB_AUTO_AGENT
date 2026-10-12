@@ -2,6 +2,19 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.21.0] — 2026-10-12
+
+### 추가(Added) — G2. export-first 정적 리버싱 (redcat2 doctrine/60 이식)
+라인레벨 감사의 redcat2 'export-first 리버싱' 축. rev/pwn/forensic 첨부 바이너리를 받으면
+**정적 분석**(바이너리 비실행)으로 일괄 추출해 자동 투입한다(기존엔 도구만 등록돼 있고 워크플로
+없었음).
+- **`reversing.py` 신설**: `export_first_commands(path)` — file·strings(ascii+wide)·nm·checksec·
+  objdump -d·`r2 -A`(정적) 순서 생성. **바이너리를 실행하지 않음**(gdb 실행·`./바이너리`·
+  ltrace/strace 제외 — 신뢰 불가 파일 실행 금지). 경로 shlex 인용(주입 차단).
+- **오케스트레이터**: 첨부파일 분석 경로(열린 포트 없음)에서 `_analyze_offline_files` 가 바이너리
+  마다 export-first 명령을 3관문에 투입(최대 10개·예산 비계상 budgeted=False·재귀 교정 억제).
+- 신규 `test_reversing.py` **11건**. 전체 **127 스위트 | 2827 passed, 0 failed**.
+
 ## [2.20.0] — 2026-10-12
 
 ### 추가(Added) — auto-relaunch 래퍼 (redcat2 run.sh MAX_RESTARTS 이식, opt-in)
