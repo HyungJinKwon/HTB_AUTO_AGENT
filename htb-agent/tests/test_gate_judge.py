@@ -31,6 +31,10 @@ def base_true(cmd, vrep, sres):
     return True
 
 
+def base_false(cmd, vrep, sres):
+    return False
+
+
 class Router:
     def __init__(self, verdict="ALLOW", raises=False):
         self.verdict = verdict
@@ -85,6 +89,17 @@ try:
 finally:
     approval.interactive_approver = orig
 check("ASK → interactive 로 위임", res == "INTERACTIVE_CALLED")
+
+print("\n=== 완화 불가 핵심(감사 T2): base 가 거부하면 ALLOW 판정도 뒤집지 못한다 ===")
+# base 가 자동승인(auto_allowed)이라도 vrep/sres 조건을 통과시킨 뒤 base 가 최종 False 를
+# 낼 수 있는 경로는 없지만, '심판이 base 거부를 ALLOW 로 뒤집지 못함'을 직접 못박는다.
+# judging_approver 는 심판이 ALLOW 면 base 결과를 그대로 반환하므로 base_false → False.
+rbf = Router("ALLOW")
+check("base=False·심판 ALLOW → 여전히 False(완화 불가)",
+      gate_judge.judging_approver(base_false, rbf)("nmap x", VREP_OK, SRES_AUTO) is False)
+# base 가 거부(False)인 자동승인 경로에서도 DENY 는 당연히 차단 유지.
+check("base=False·심판 DENY → False(차단 유지)",
+      gate_judge.judging_approver(base_false, Router("DENY"))("nmap x", VREP_OK, SRES_AUTO) is False)
 
 print("\n=== fail-safe: 심판 오류 → 기존 동작(차단 안 함) ===")
 rerr = Router(raises=True)

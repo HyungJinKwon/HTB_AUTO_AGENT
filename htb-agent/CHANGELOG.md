@@ -2,6 +2,42 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.23.0] — 2026-10-12
+
+### 수정(Fixed) — 4-에이전트 적대적 감사 후속(누락·오류·개선 일괄 반영)
+직전까지 만든 전 산출물(가설 EV·Results Verifier·배포형 탐지·TF-IDF·gate-judge·auto-relaunch·
+리버싱·HTB 통합)을 4개 독립 리뷰 에이전트가 READ-ONLY 교차검증. 확정 결함만 테스트 선작성으로 수정.
+
+- **[H1·安] gate-judge 가 자율+샌드박스에서 무력화되던 버그**: `--gate-judge` 래핑 뒤에 contained
+  자동승인(`auto_approve_contained`)이 **재대입돼 강화 게이트가 조용히 죽던** 경로. 승인자 선택을
+  `main.select_approver` **단일 함수**로 모아 실행기(contained) 확정 뒤 gate-judge 를 **맨 마지막에**
+  덧씌우도록 구조적으로 차단. (`test_approver_select.py` 회귀 — 심판 DENY 가 자동승인을 실제 차단함을 검증.)
+- **[H2] Sigma 룰 YAML 깨짐**: SQLi 키워드 `' or '1'='1` 의 작은따옴표 미이스케이프로 파싱 불가
+  YAML 생성 → SIEM 적재 실패. 작은따옴표 doubling(`''`) 이스케이프.
+- **[H3] Suricata 룰 적재 불가**: `|nc `·`;id` 의 `|`(hex 구분자)·`;` 미이스케이프. content 특수바이트를
+  `|HH|` hex-escape(`_suricata_content`).
+- **[H4] HTB 통합 네트워크 장애 시 크래시**: `_urllib_post` 가 `HTTPError` 만 잡아 `URLError`/타임아웃이
+  `except HtbError` 를 뚫고 run 전체를 죽임. `URLError`/`TimeoutError`/`OSError` → `HtbError` 승격(토큰 미노출).
+- **[M1] 가설 '막힘' 임계 불일치**: 경고/audit 임계가 고정 `replan_after` 였는데 `stuck()`/`focus()` 는
+  가설별 `budget(h)` 사용 → 저예산 가설은 경고가 영영 안 뜸. 임계를 `budget(h)` 로 통일.
+- **[M2] 재개 시 오프라인 정적분석 중복 재실행**: `_analyze_offline_files` 가 복원 finding 을 안 봐서
+  file/strings/nm 를 재실행. 복원분을 skip 집합에 포함(생성 전용이라 안전경계는 무관, 낭비 제거).
+- **[M3/M4] Results Verifier 교정 위치·래퍼**: `_insert_flag` 가 env-prefix(`PROXY=1 nmap`)·래퍼
+  (`sudo`/`proxychains`) 뒤가 아닌 첫 토큰 뒤에 삽입하던 것 → 실제 바이너리 뒤로. `binary_of` 에
+  `skip_wrappers` 옵션 추가(교정·기법 라벨이 `sudo nmap` 도 인식).
+- **[M5] 교정 멱등성**: `_has_token` 이 결합형 단축플래그(`-sSL` 의 `-L`)를 못 봐 `-L` 중복 삽입하던 것 수정.
+
+### 문서(Docs) — 코드와 모순되던 서술 정정(정직성 §3)
+- `ARCHITECTURE.md §9`: gate_judge(2.19.0)를 "미반영 T2-f" 로 두던 모순 → **A9 ADR 신설**(구현·적용지점 명시).
+- `RESEARCH.md`: Results Verifier "미구현"(→2.14.0 구현)·TF-IDF "코사인 아님"(→2.17.0 결선) 정정.
+- `CHANGELOG [2.13.0]`: `test_hypothesis_ev` 라벨 20→21 오기 정정(합계는 기존에도 정상).
+
+### 테스트(Tests)
+- 신규 `test_approver_select.py`(9)·`test_audit_fixes.py`(8, M1/M2 회귀). 기존 스위트 보강:
+  detections(+8, Sigma/Suricata 이스케이프)·results_verify(+4, 삽입위치·멱등)·htb_platform(+5,
+  URLError·submit-flags 안전필터)·gate_judge(+2, base 거부 완화불가 직접 검증).
+- 전체 **130 스위트 | 2883 passed, 0 failed**.
+
 ## [2.22.0] — 2026-10-12
 
 ### 추가(Added) — G1. HTB 통합: VPN 프리플라이트 + 플래그 자동제출 + 머신 스폰 (opt-in)
@@ -143,7 +179,7 @@ redcat2 교리의 **confidence×impact÷cost** 기대값을 승인제 구조에 
   가설별). `stuck()` 이 이를 사용.
 - 분석가 프롬프트·`apply_update`·`from_dict`·`context_lines` 가 impact·cost 를 주고받음.
 - **하위호환**: 전부 '중'·misses=0 이면 EV∝priority·budget==replan_after 라 기존 순서·임계와
-  동일(실행·판정 로직과 무관, 방향성만). 신규 `test_hypothesis_ev.py` **20건**. 전체
+  동일(실행·판정 로직과 무관, 방향성만). 신규 `test_hypothesis_ev.py` **21건**. 전체
   **119 스위트 | 2716 passed, 0 failed**.
 
 ## [2.12.0] — 2026-10-11

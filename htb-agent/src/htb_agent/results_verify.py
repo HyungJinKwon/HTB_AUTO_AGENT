@@ -18,22 +18,36 @@ from __future__ import annotations
 
 import re
 
-from .util import binary_of
+from .util import binary_index, binary_of
 
 
 def _insert_flag(cmd: str, flag: str) -> str:
-    """첫 토큰(바이너리) 바로 뒤에 플래그를 끼운다. 'nmap 10.0.0.1' → 'nmap -Pn 10.0.0.1'."""
-    parts = cmd.strip().split(None, 1)
-    if not parts:
+    """실제 바이너리 바로 뒤에 플래그를 끼운다(선행 env-prefix·래퍼는 건너뜀).
+    'nmap 10.0.0.1' → 'nmap -Pn 10.0.0.1', 'sudo nmap x' → 'sudo nmap -Pn x',
+    'PROXY=1 nmap x' → 'PROXY=1 nmap -Pn x'."""
+    toks = cmd.strip().split()
+    if not toks:
         return cmd
-    if len(parts) == 1:
-        return f"{parts[0]} {flag}"
-    return f"{parts[0]} {flag} {parts[1]}"
+    i = binary_index(toks)            # 바이너리 인덱스(env-prefix/래퍼 skip)
+    if i >= len(toks):                # 바이너리 없음(전부 env-prefix 등) — 손대지 않음
+        return cmd
+    return " ".join(toks[: i + 1] + [flag] + toks[i + 1:])
 
 
 def _has_token(cmd: str, *tokens: str) -> bool:
+    """명령에 토큰(플래그)이 이미 있는지. 단일 대시 단축플래그는 결합형(-sSL 의 L)도 인정."""
     low = f" {cmd.lower()} "
-    return any(f" {t.lower()} " in low or f" {t.lower()}=" in low for t in tokens)
+    toks = cmd.lower().split()
+    for t in tokens:
+        tl = t.lower()
+        if f" {tl} " in low or f" {tl}=" in low:
+            return True
+        if re.fullmatch(r"-[a-z]", tl):   # 결합형 단축플래그: -L 이 -sSL 안에 있으면 True
+            letter = tl[1]
+            for tk in toks:
+                if re.fullmatch(r"-[a-z]+", tk) and letter in tk[1:]:
+                    return True
+    return False
 
 
 def corrective_command(cmd: str, out) -> tuple[str, str] | None:
@@ -41,7 +55,7 @@ def corrective_command(cmd: str, out) -> tuple[str, str] | None:
     반환 (교정된 명령, 사유) 또는 None(교정 없음). 결정적·보수적."""
     if not cmd:
         return None
-    binary = binary_of(cmd, strip_path=True)
+    binary = binary_of(cmd, strip_path=True, skip_wrappers=True)
     text = ((getattr(out, "stdout", "") or "") + "\n"
             + (getattr(out, "stderr", "") or "")).lower()
     if not text.strip():

@@ -60,7 +60,7 @@ def technique_of(cmd: str) -> tuple[str, str] | None:
     """명령 → (ATT&CK ID, 이름) 또는 None(분류 안 함). 바이너리 기준(경로 제거)."""
     if not cmd:
         return None
-    return _BINARY.get(binary_of(cmd, strip_path=True))
+    return _BINARY.get(binary_of(cmd, strip_path=True, skip_wrappers=True))
 
 
 def coverage(findings) -> list[tuple[str, str]]:

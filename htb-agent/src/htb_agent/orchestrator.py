@@ -1335,7 +1335,10 @@ class Orchestrator(FootholdMixin):
             return ""
         self.audit.event("hypothesis_signal", hypothesis=hid, cmd=f.command, result=res,
                          status=h.status, misses=h.misses)
-        if res == "miss" and h.misses == report.plan.replan_after:
+        if res == "miss" and h.misses == report.plan.budget(h):
+            # 임계는 가설별 가변 예산(budget(h))으로 — focus()/stuck() 과 일관. 고정 replan_after
+            # 를 쓰면 저예산 가설은 focus 제외가 먼저 와 경고가 영영 안 뜨고, 고영향 가설은
+            # stuck 전에 조기 경고가 떠 불일치가 생긴다(감사 F1).
             self.audit.event("hypothesis_stuck", hypothesis=hid, misses=h.misses)
             if not self.quiet:
                 from . import ui
@@ -2028,7 +2031,9 @@ class Orchestrator(FootholdMixin):
         if ws is None or not getattr(ws, "imported", None):
             return
         import os as _os
-        seen: set[str] = set()
+        # 재개 복원분(이미 투입된 export-first 명령)도 skip 집합에 포함 — 재개 시 file/strings/nm
+        # 중복 재실행 방지(감사 F2). _gate/_attempt 는 seen_cmds 를 보지 않으므로 여기서 거른다.
+        seen: set[str] = {f.command for f in report.enum_findings}
         for rel in list(ws.imported)[:10]:   # 파일 수 상한(과다 첨부 방어)
             full = _os.path.join(ws.root, rel)
             for cmd in reversing.export_first_commands(full):

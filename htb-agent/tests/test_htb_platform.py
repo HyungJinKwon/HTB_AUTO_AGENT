@@ -90,5 +90,55 @@ check("HTB 대역 + VPN 있음 → 통과", ok2 is True)
 ok3, m3 = H.vpn_preflight("192.168.1.5", detect=lambda: [])
 check("HTB 대역 아님 → 판단 보류(통과·무경고)", ok3 is True and m3 == "")
 
+print("\n=== 네트워크 장애(URLError) → HtbError(run 크래시 방지·감사 H4) ===")
+import urllib.error  # noqa: E402
+
+
+def _boom(*a, **k):
+    raise urllib.error.URLError("Connection refused")
+
+
+_orig = H.urllib.request.urlopen
+H.urllib.request.urlopen = _boom
+try:
+    c_net = H.HtbClient(token="SUPERSECRET")   # 실제 _urllib_post 경로(http 미주입)
+    net_raised = False
+    net_msg = ""
+    try:
+        c_net.submit_flag(1, "HTB{x}")
+    except H.HtbError as e:
+        net_raised, net_msg = True, str(e)
+    except urllib.error.URLError:
+        net_raised = False   # URLError 가 새어나오면 실패(크래시 경로)
+    check("URLError → HtbError 로 승격(uncaught 아님)", net_raised)
+    check("네트워크 오류 메시지에도 토큰 미노출", "SUPERSECRET" not in net_msg)
+finally:
+    H.urllib.request.urlopen = _orig
+
+print("\n=== submit-flags 안전 필터: exploit-derived 만 신뢰(감사 T1) ===")
+from types import SimpleNamespace  # noqa: E402
+
+
+def _prov(kind, value, verdict):
+    return SimpleNamespace(kind=kind, value=value, verdict=verdict)
+
+
+_report = SimpleNamespace(flag_provenance=[
+    _prov("user", "HTB{exploit1}", "exploit-derived"),
+    _prov("root", "HTB{exploit2}", "exploit-derived"),
+    _prov("user", "HTB{local}", "local-derived"),
+    _prov("user", "HTB{reason}", "reasoning-only"),
+    _prov("root", "HTB{looked}", "looked-up"),
+    _prov("user", "HTB{unver}", "unverified"),
+])
+_trusted = H.trusted_exploit_flags(_report)
+check("exploit-derived 2건만 신뢰 집합에",
+      _trusted == {("user", "HTB{exploit1}"), ("root", "HTB{exploit2}")})
+check("local/reasoning/looked-up/unverified 전부 제외",
+      all(v not in {x[1] for x in _trusted}
+          for v in ["HTB{local}", "HTB{reason}", "HTB{looked}", "HTB{unver}"]))
+check("flag_provenance 없는 report → 빈 집합(안전)",
+      H.trusted_exploit_flags(SimpleNamespace()) == set())
+
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

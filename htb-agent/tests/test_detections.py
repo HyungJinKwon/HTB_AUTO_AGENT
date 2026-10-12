@@ -86,5 +86,26 @@ check("Sigma yaml 블록", "```yaml" in full)
 check("MISP json 블록", "```json" in full)
 check("triage bash 블록", "```bash" in full)
 
+print("\n=== Sigma YAML 이스케이프(감사 H2) — 작은따옴표 미이스케이프 시 파싱 불가 ===")
+s89 = detections.sigma_rules(rep(detected_cwe=["CWE-89"]))[0]
+# CWE-89 키워드 `' or '1'='1` 은 작은따옴표가 두 개로('') 이스케이프돼야 유효 YAML.
+check("SQLi 키워드 작은따옴표 doubling('' )", "'' or ''1''=''1'" in s89)
+# 모든 키워드 라인('      - '...'')의 작은따옴표 수가 짝수(여는/닫는 + 내부 doubling)여야 함.
+_kw_lines = [ln for ln in s89.splitlines() if ln.strip().startswith("- '")]
+check("모든 키워드 라인 작은따옴표 짝수(균형)", all(ln.count("'") % 2 == 0 for ln in _kw_lines))
+check("원형 미이스케이프(' or '1'='1')가 그대로 남지 않음", "- '' or '1'='1'" not in s89)
+
+print("\n=== Suricata content 이스케이프(감사 H3) — | ; 미이스케이프 시 적재 불가 ===")
+s78 = detections.suricata_rules(rep(detected_cwe=["CWE-78"]))[0]
+check("세미콜론은 |3B| 로 hex-escape(;id → |3B|id)", "|3B|id" in s78)
+check("파이프는 |7C| 로 hex-escape(|nc → |7C|nc)", "|7C|nc" in s78)
+check("원형 ';id' content 가 그대로 남지 않음", '"' + ";id" not in s78 and ';id"' not in s78)
+# 원형 파이프로 시작하는 content 가 없어야 함(|7C| 이스케이프는 content:"|7C|..., 원형은 content:"|nc)
+check("원형 '|nc' content 가 그대로 남지 않음", 'content:"|nc' not in s78)
+# content 안의 모든 파이프는 |HH| 쌍 — 규칙 전체 파이프 개수가 짝수여야 적재 가능.
+check("Suricata 룰 파이프 개수 짝수(hex 구분자 균형)", s78.count("|") % 2 == 0)
+# `$(` 같은 비특수 출력가능 문자는 그대로 유지(과도한 이스케이프 아님)
+check("$( 는 그대로 유지(비특수 문자)", "$(" in s78)
+
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
