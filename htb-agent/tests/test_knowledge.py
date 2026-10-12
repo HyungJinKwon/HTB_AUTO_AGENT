@@ -115,5 +115,14 @@ if os.path.isdir("knowledge"):
 else:
     check("knowledge 디렉터리 없음 — 스킵(비레포 실행)", True)
 
+print("\n=== _lowered_notes 캐시: 중간 원소 교체도 감지(감사 A-LOW8) ===")
+kb2 = KnowledgeBase(rules=[], notes=["alpha sqlinjection tips", "beta ssh notes"])
+_ = kb2.relevant_notes(["sqlinjection"])          # 캐시 워밍(두 노트 lower 캐시)
+kb2.notes[0] = "gamma kerberoasting steps"        # 마지막이 아닌 원소를 in-place 교체(길이 불변)
+r = kb2.relevant_notes(["kerberoasting"])
+check("교체된 노트 내용이 관련도 검색에 반영(stale 캐시 아님)",
+      any("kerberoasting" in n for n in r))
+check("교체로 사라진 내용은 노트에 없음", not any("sqlinjection" in n for n in kb2.notes))
+
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

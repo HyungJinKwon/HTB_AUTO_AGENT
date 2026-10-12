@@ -172,9 +172,11 @@ class KnowledgeBase:
 
     def _lowered_notes(self) -> list[str]:
         """노트 소문자 사본 캐시. RAG 는 라운드마다 호출되므로 매번 수백 KB 를
-        lower() 하지 않는다. 노트가 추가/교체되면(길이·마지막 원소 변화) 재구성."""
+        lower() 하지 않는다. 시그니처는 '모든 노트의 id 튜플' — 추가·교체·중간 원소 치환까지
+        감지한다(감사 A-LOW8: 과거 (len, id(notes[-1])) 는 마지막이 아닌 원소 교체 시 stale).
+        id() 호출만 하므로 lower() 대비 무시 가능한 비용."""
         cache = getattr(self, "_lower_cache", None)
-        sig = (len(self.notes), id(self.notes[-1]) if self.notes else None)
+        sig = tuple(id(n) for n in self.notes)
         if cache is None or cache[0] != sig:
             cache = (sig, [n.lower() for n in self.notes])
             self._lower_cache = cache

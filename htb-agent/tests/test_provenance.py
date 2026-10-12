@@ -17,6 +17,21 @@ check("curl → exploit-derived", p.verdict == "exploit-derived")
 p = pv.classify("root", "HTB{y}", "nxc smb t -u a -p b -x 'type root.txt'", "privesc")
 check("nxc → exploit-derived", p.verdict == "exploit-derived")
 
+print("\n=== classify: 래퍼(sudo/proxychains) 뒤 실도구 인식(감사 D-#6) ===")
+p = pv.classify("root", "HTB{z}", "sudo nmap -sV t")
+check("sudo nmap → exploit-derived(래퍼 건너뜀)", p.verdict == "exploit-derived")
+p = pv.classify("user", "HTB{z}", "proxychains curl http://t/flag")
+check("proxychains curl → exploit-derived", p.verdict == "exploit-derived")
+
+print("\n=== classify: 알 수 없는 도구 → exploit-derived(의도된 설계·감사 D-#6 검토) ===")
+# 공세형 에이전트는 커스텀 익스·sshpass 래핑·발판 셸 등 목록 밖 도구로 대상에서 플래그를
+# 읽는 경우가 흔하다 — 실제 공략 유래로 본다. 로컬 조회(cat 등)·입력값·외부자료만 제외.
+p = pv.classify("user", "HTB{w}", "sshpass -p pw ssh u@t cat user.txt")
+check("sshpass 래핑 미지도구 → exploit-derived(genuine)", p.verdict == "exploit-derived" and p.genuine)
+# 단, 로컬 조회는 'local 먼저' 검사로 여전히 local-derived(신뢰 제외)
+p = pv.classify("user", "HTB{w}", "cat /root/root.txt")
+check("로컬 조회는 미지도구 규칙보다 우선 → local-derived", p.verdict == "local-derived")
+
 print("\n=== classify: 로컬/지식 → local-derived ===")
 p = pv.classify("user", "HTB{x}", "cat /home/u/user.txt")
 check("cat → local-derived(사람 확인)", p.verdict == "local-derived" and "사람 확인" in p.label)

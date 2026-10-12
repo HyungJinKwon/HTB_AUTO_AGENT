@@ -47,6 +47,14 @@ r3 = results_verify.corrective_command("curl -s http://10.129.1.5/",
     RO("c", "HTTP/1.1 301 Moved Permanently\nLocation: https://10.129.1.5/"))
 check("교정본에 -L 삽입", r3 and r3[0] == "curl -L -s http://10.129.1.5/")
 
+print("\n=== 규칙: 303/307/308 리다이렉트도 → -L(감사 A-LOW9) ===")
+r303 = results_verify.corrective_command("curl -s http://10.129.1.5/",
+    RO("c", "HTTP/1.1 303 See Other\nLocation: /next"))
+check("303 See Other → -L 삽입", r303 and r303[0] == "curl -L -s http://10.129.1.5/")
+r308 = results_verify.corrective_command("curl -s http://10.129.1.5/",
+    RO("c", "HTTP/1.1 308 Permanent Redirect\nLocation: /next"))
+check("308 Permanent Redirect → -L 삽입", r308 and r308[0] == "curl -L -s http://10.129.1.5/")
+
 print("\n=== no-op: 교정 근거 없는 출력 ===")
 check("정상 출력엔 교정 없음",
       results_verify.corrective_command("nmap 10.129.1.5", RO("x", "22/tcp open ssh")) is None)

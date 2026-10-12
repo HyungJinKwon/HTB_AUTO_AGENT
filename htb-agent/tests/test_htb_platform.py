@@ -82,6 +82,15 @@ except H.HtbError:
     empty = True
 check("빈 플래그 → HtbError·미호출", empty and s5.calls == [])
 
+print("\n=== 잘못된 머신 ID → HtbError(크래시 방지·감사 A-LOW7) ===")
+s_bad = Stub()
+bad_raised = False
+try:
+    H.HtbClient(token="T", http=s_bad).submit_flag("not-an-int", "HTB{x}")
+except H.HtbError:
+    bad_raised = True
+check("비정수 머신 ID → HtbError·http 미호출", bad_raised and s_bad.calls == [])
+
 print("\n=== VPN 프리플라이트(로컬·조언) ===")
 ok, m = H.vpn_preflight("10.129.1.5", detect=lambda: [])
 check("HTB 대역 + VPN 없음 → 경고", ok is False and "VPN" in m)

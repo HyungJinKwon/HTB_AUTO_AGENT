@@ -2,6 +2,44 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.24.0] — 2026-10-12
+
+### 수정(Fixed) — 감사 잔여 LOW 항목·방어적 하드닝 일괄 반영
+2.23.0 에서 확정 HIGH/MED 를 처리한 뒤 남겨둔 LOW·방어 항목을 '가능한 전부' 반영(테스트 선작성).
+
+- **[A-LOW7] HTB 머신 ID 비정수 크래시**: `submit_flag`/`spawn_machine` 의 `int(machine_id)` 가
+  비정수 입력에서 `ValueError` 로 터지던 것 → `_as_machine_id` 로 `HtbError` 승격(호출부 흡수).
+- **[A-LOW8] RAG 노트 캐시 stale**: `_lowered_notes` 시그니처가 `(len, id(마지막))` 이라 중간
+  원소 in-place 교체 시 소문자 캐시가 갱신 안 됨 → '모든 노트 id 튜플'로 교체(모든 치환 감지).
+- **[A-LOW9] 리다이렉트 교정 누락**: Results Verifier 의 `-L` 규칙 정규식 `30[1278]` → `30[12378]`
+  (303 See Other·307·308 포함).
+- **[A-LOW10] VPN 대역 데드 엔트리**: `_HTB_RANGES` 의 `"10.10.1"`(이미 `"10.10."` 부분집합) 제거.
+- **[B-F5] 변형학습 통계 오염**: `_enum_round` 가 `enum_findings[-1]` 로 기록해 출력구동 교정
+  발화 시 교정본을 변형결과로 오기록하던 것 → `enum_findings[before]`(원본 변형)으로.
+- **[B-F4] 마감 무한 연장 방지**: `_time_up` 의 slept(백오프 대기) 제외에 상한 추가 — 지속적
+  네트워크 장애에도 마감 연장은 '예산 1회분'(time_budget 분)까지만(총 실행 ≤ 2×예산).
+- **[B-F3] 루프-후 스테이지 예외 → 상태 유실 방지**: 준비·평가·심판 스테이지(_prepare_*·
+  _assess_flags·_run_judge 등)에서 예기치 못한 예외가 `_persist` 를 건너뛰어 재개 상태를 통째로
+  잃던 것 → 예외를 감사 로그에 남기고(침묵 금지) PHASE 4(저장)로 진행.
+- **[D-#7] 무인 자율에서 gate-judge ASK 가 멈추던 것**: `--auto`/`--autonomous` + `--gate-judge`
+  에서 ASK 판정이 입력 프롬프트로 정지하던 것 → `judging_approver(interactive=False)` 로 ASK→스킵
+  (보수적 거부). '최소 y/n' 자율성 유지. 사람 있는 수동/스마트 모드는 기존대로 대화형 확인.
+- **[D-#6] provenance 래퍼 인식**: `classify` 가 `binary_of(skip_wrappers=True)` 로 `sudo nmap`·
+  `proxychains curl` 의 실제 도구를 인식(이전엔 래퍼를 바이너리로 오인). **미지 도구 → exploit-derived
+  는 검토 후 의도대로 유지**(커스텀 익스·sshpass 래핑·발판 셸 직독이 흔하며 실제 공략 유래 —
+  로컬 조회/입력값/외부자료만 신뢰 제외, HTB 는 정답만 수락해 조작 제출 위험 없음). 근거 주석 명문화.
+- **[C-minor] 일관성**: `ClaudeProvider.slept_sec = 0.0` 명시(라우터 Deadline pause getattr 일관).
+
+### 테스트(Tests)
+- 강화: provenance(래퍼·의도 유지)·gate_judge(무인 ASK→스킵)·results_verify(303/308)·
+  htb_platform(비정수 ID)·knowledge(중간 원소 교체 캐시)·hypothesis_ev(정확값·감쇠 방향)·
+  detections(triage 실제 라인). 전체 **130 스위트 | 2895 passed, 0 failed**.
+
+### 비고 — 반영하지 않은 항목(정직성 §3)
+- **[B-F6]** 출력구동 교정본이 원본이 LLM finding 이어도 `enum_findings` 에 기록되는 점: 집계가
+  약간 오도되나 예산·정렬·상태에 영향 없음(정보 수준). 라우팅 변경은 `llm_findings` zip 정합을
+  건드려 위험 대비 이득이 낮아 **의도적으로 보류**.
+
 ## [2.23.0] — 2026-10-12
 
 ### 수정(Fixed) — 4-에이전트 적대적 감사 후속(누락·오류·개선 일괄 반영)

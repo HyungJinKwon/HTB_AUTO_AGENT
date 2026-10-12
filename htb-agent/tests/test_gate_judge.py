@@ -90,6 +90,17 @@ finally:
     approval.interactive_approver = orig
 check("ASK → interactive 로 위임", res == "INTERACTIVE_CALLED")
 
+# 무인 자율(interactive=False): ASK 가 입력 프롬프트로 멈추지 않고 보수적으로 스킵(거부)
+# — '최소 y/n' 자율성 유지(감사 D-#7). interactive_approver 는 호출되지 않아야 한다.
+_called = []
+approval.interactive_approver = lambda c, v, s: _called.append(c) or "SHOULD_NOT_RUN"
+try:
+    res_auto = gate_judge.judging_approver(base_true, Router("ASK"), interactive=False)(
+        "nmap x", VREP_OK, SRES_AUTO)
+finally:
+    approval.interactive_approver = orig
+check("무인 자율 ASK → 스킵(False)·프롬프트 안 함", res_auto is False and _called == [])
+
 print("\n=== 완화 불가 핵심(감사 T2): base 가 거부하면 ALLOW 판정도 뒤집지 못한다 ===")
 # base 가 자동승인(auto_allowed)이라도 vrep/sres 조건을 통과시킨 뒤 base 가 최종 False 를
 # 낼 수 있는 경로는 없지만, '심판이 base 거부를 ALLOW 로 뒤집지 못함'을 직접 못박는다.

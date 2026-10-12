@@ -31,6 +31,14 @@ class HtbError(RuntimeError):
     """HTB 통합 오류(토큰 미설정·API 실패 등). 메시지에 토큰을 넣지 않는다."""
 
 
+def _as_machine_id(value) -> int:
+    """머신 ID 를 int 로 — 비정수면 HtbError(크래시 대신 호출부의 except HtbError 로 흡수)."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise HtbError(f"잘못된 머신 ID(정수 필요): {value!r}") from None
+
+
 def clamp_difficulty(value) -> int:
     """HTB 난이도 투표는 10~100(10 단위). 범위 밖/비정수는 보정(기본 30)."""
     try:
@@ -93,13 +101,13 @@ class HtbClient:
             raise HtbError("빈 플래그 — 제출하지 않음")
         return self._post("machine/own", {
             "flag": flag.strip(),
-            "id": int(machine_id),
+            "id": _as_machine_id(machine_id),
             "difficulty": clamp_difficulty(difficulty),
         })
 
     def spawn_machine(self, machine_id) -> dict:
         """머신 스폰 — POST vm/spawn. 반환: HTB 응답(dict)."""
-        return self._post("vm/spawn", {"machine_id": int(machine_id)})
+        return self._post("vm/spawn", {"machine_id": _as_machine_id(machine_id)})
 
 
 def trusted_exploit_flags(report) -> set[tuple[str, str]]:
@@ -111,7 +119,7 @@ def trusted_exploit_flags(report) -> set[tuple[str, str]]:
 
 
 # ── VPN 프리플라이트(로컬·비파괴) ───────────────────────────────────────
-_HTB_RANGES = ("10.10.", "10.129.", "10.10.1")   # HTB Labs 대역(참고)
+_HTB_RANGES = ("10.10.", "10.129.")   # HTB Labs 대역(참고). "10.10.1" 은 "10.10." 의 부분집합이라 제거(감사 A-LOW10)
 
 
 def vpn_preflight(target: str, detect: Callable[[], list[str]] | None = None) -> tuple[bool, str]:

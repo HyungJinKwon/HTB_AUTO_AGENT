@@ -8,6 +8,9 @@ from .base import LLMProvider, LLMResponse, Tier
 
 class ClaudeProvider(LLMProvider):
     name = "claude"
+    # 라우터의 Deadline pause(_time_up slept 제외)용 — Claude 백엔드는 자체 백오프 대기를
+    # 누적하지 않으므로 0.0 고정(일관성: 라우터가 getattr 로 읽되 명시 제공). 감사 C-minor.
+    slept_sec = 0.0
     # 티어별 모델 — 비용/성능 균형
     models = {
         Tier.CHEAP: "claude-haiku-5-5",

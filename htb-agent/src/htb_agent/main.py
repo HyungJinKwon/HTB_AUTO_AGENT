@@ -537,9 +537,12 @@ def select_approver(*, manual: bool, auto: bool, autonomous: bool,
     else:
         approver = smart_approver
     # [T2-f] 승인 게이트 LLM 폴백 심판 — 자동승인될 명령만 강화(완화 불가·fail-safe). 반드시 마지막.
+    # 무인 자율(--auto/--autonomous)에선 ASK 판정이 입력 프롬프트로 멈추지 않도록 interactive=False
+    # (ASK→스킵) — '최소 y/n' 목표 유지(감사 D-#7). 수동/스마트(사람 있음)는 ASK→대화형 확인.
     if gate_judge and llm_router is not None:
         from .gate_judge import judging_approver
-        approver = judging_approver(approver, llm_router)
+        approver = judging_approver(approver, llm_router,
+                                    interactive=not (auto or autonomous) or manual)
     return approver
 
 

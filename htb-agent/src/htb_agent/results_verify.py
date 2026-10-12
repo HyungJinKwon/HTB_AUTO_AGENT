@@ -77,7 +77,7 @@ def corrective_command(cmd: str, out) -> tuple[str, str] | None:
 
     # 3) curl: 3xx 리다이렉트인데 따라가지 않음 → -L(따라가기)
     if binary == "curl" and not _has_token(cmd, "-L", "--location"):
-        if re.search(r"\b30[1278]\b", text) and ("location:" in text or "moved" in text
+        if re.search(r"\b30[12378]\b", text) and ("location:" in text or "moved" in text
                                                   or "redirect" in text):
             return _insert_flag(cmd, "-L"), "curl: 리다이렉트(3xx) → -L(따라가기)"
 

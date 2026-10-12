@@ -57,7 +57,8 @@ check("MISP JSON 직렬화 가능", isinstance(json.dumps(ev), str))
 
 print("\n=== host-triage: 읽기 전용(파괴 명령 없음) ===")
 ts = detections.host_triage_script(rep())
-check("조회 명령 포함(id·ss)", "id" in ts and "ss -tlnp" in ts)
+check("조회 명령 포함(실제 라인 id·uname·ss)",
+      "id; uname -a" in ts and "ss -tlnp" in ts)
 # 명령 위치 기준(앞 공백) — 'perm -4000' 의 'rm' 같은 부분문자열 오탐 방지
 destructive = [" rm ", " chmod ", " chown ", " mkfs", " dd if=", "curl http",
                "wget http", "nc -e", " kill "]
