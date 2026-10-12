@@ -1,10 +1,11 @@
 # HTB 에이전트 — 런타임 의존성
-# 현재 코어는 Python 표준 라이브러리만 사용(외부 의존성 없음).
+# 코어는 Python 표준 라이브러리만으로 동작한다(외부 의존성 없이 규칙 기반 전체 파이프라인 수행).
 #
-# 아래는 다음 단계(LLM 추상화)에서 사용 예정 — 필요 시 주석 해제:
-# anthropic>=1.0       # Claude API 백엔드
-# ollama>=0.3          # 로컬 모델 백엔드
-# pyyaml>=6.0          # config.yaml 파싱
+# 아래는 '선택적' 기능 의존성이다. 미설치 시 해당 기능만 조용히 비활성화되고 코어는 그대로 돈다
+# (import 를 지연·가드 처리). 쓰려면 주석을 해제하거나 개별 설치한다:
+# anthropic>=1.0       # Claude API 백엔드(--llm claude). 없으면 Claude 티어 비활성
+# ollama>=0.3          # 로컬 모델 백엔드(--llm ollama). 없으면 로컬 LLM 비활성
+# pyyaml>=6.0          # config.yaml(YAML) 파싱. 없으면 안내 후 JSON(.json)/CLI 로 대체
 #
 # 시스템 도구(nmap, bloodhound, s3scanner 등)는 pip 가 아닌
 # scripts/install_tools.sh 로 설치합니다.

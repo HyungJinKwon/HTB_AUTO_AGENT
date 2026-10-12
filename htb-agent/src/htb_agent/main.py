@@ -1260,7 +1260,8 @@ def _main(argv: list[str] | None = None, runner=None) -> int:
 
     # 단독 명령은 하나만, 타겟 없이 — 조합 시 조용히 하나만 실행되던 문제 방지
     standalone = [flag for flag, v in (
-        ("--doctor", args.doctor or args.llm_test), ("--setup-llm", args.setup_llm),
+        ("--doctor" if args.doctor else "--llm-test", args.doctor or args.llm_test),
+        ("--setup-llm", args.setup_llm),
         ("--install-missing", args.install_missing is not None),
         ("--revshell", args.revshell), ("--cloud", args.cloud),
         ("--privesc", args.privesc), ("--crack", args.crack), ("--ingest", args.ingest),
