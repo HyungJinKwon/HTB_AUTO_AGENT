@@ -211,6 +211,9 @@ def build_parser() -> argparse.ArgumentParser:
     g_mode.add_argument("--gate-judge", action="store_true", dest="gate_judge",
                    help="옵트인(기본 OFF): 자동승인될 명령을 LLM 심판이 ALLOW/ASK/DENY 로 "
                         "재검토해 더 엄격하게만 조정(완화 불가·오류 시 기존 동작). LLM 필요")
+    g_mode.add_argument("--max-restarts", type=int, default=0, dest="max_restarts",
+                   metavar="N", help="옵트인(기본 0=끔): 미처리 예외로 죽으면 저장 지점부터 "
+                        "--resume 로 최대 N회 자동 재시작(무인 완주 보조). 사용자 중단은 제외")
     g_kb.add_argument("--no-enrich", action="store_true",
                    help="CVE/CWE 자동 수집(NVD/GitHub) 비활성")
     g_kb.add_argument("--learn-gaps", action="store_true", dest="learn_gaps",
@@ -820,7 +823,16 @@ def _run_target(args, cfg, knowledge_dir, runner) -> int:
                                 web_learner=web_learner,
                                 state_store=store, resume=args.resume, audit=audit)
     try:
-        report = orchestrator.run()
+        max_restarts = max(0, int(getattr(args, "max_restarts", 0) or 0))
+        if max_restarts:
+            from .relaunch import run_with_relaunch
+
+            def _on_restart(n: int, cap: int, exc: Exception) -> None:
+                print(ui.mark_warn(f"예외로 중단 — 저장 지점부터 재시작 {n}/{cap}: "
+                                   f"{type(exc).__name__}: {exc}"), file=sys.stderr)
+            report = run_with_relaunch(orchestrator, max_restarts, log=_on_restart)
+        else:
+            report = orchestrator.run()
     finally:
         if sandbox is not None:
             sandbox.stop()
