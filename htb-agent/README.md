@@ -421,6 +421,10 @@ cd htb-agent && python3 tests/run_all.py     # 전체 스위트(끝에 '총 N �
 | `--judge` | 옵트인(기본 OFF): 종료 시 LLM-심판이 '공략 달성' 주장이 증거로 뒷받침되는지 별도 채점(조언만 — 규칙 판정·목표 달성을 덮지 않음). LLM 필요 |
 | `--gate-judge` | 옵트인(기본 OFF): 자동승인될 명령을 LLM 심판이 ALLOW/ASK/DENY 로 재검토해 더 엄격하게만 조정(완화 불가·오류 시 기존 동작). LLM 필요 |
 | `--max-restarts` `N` | 옵트인(기본 0=끔): 미처리 예외로 죽으면 저장 지점부터 --resume 로 최대 N회 자동 재시작(무인 완주 보조). 사용자 중단은 제외 |
+| `--htb-machine-id` `ID` | HTB 머신 ID(--htb-spawn/--submit-flags 에 필요) |
+| `--htb-spawn` | 옵트인: 실행 전 HTB 머신 스폰(vm/spawn). HTB_TOKEN env + --htb-machine-id 필요 |
+| `--submit-flags` | 옵트인: 공략으로 획득한 플래그를 HTB 에 자동 제출(machine/own). HTB_TOKEN env + --htb-machine-id 필요(권한 확인 자산 한정 §4) |
+| `--htb-difficulty` `N` | 플래그 제출 시 난이도 투표(10~100, 기본 30) |
 | `--no-enrich` | CVE/CWE 자동 수집(NVD/GitHub) 비활성 |
 | `--learn-gaps` | 자율 지식 획득: 풀이 중 모르는 기술을 권위 출처에서 자동 학습해 KB 에 즉시 반영(allowlist·P1 유지). autonomous 모드에선 기본 활성 |
 | `--no-learn-gaps` | 자율 지식 획득 비활성(autonomous 모드에서도 끔) |

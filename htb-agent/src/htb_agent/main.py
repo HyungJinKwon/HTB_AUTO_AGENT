@@ -214,6 +214,15 @@ def build_parser() -> argparse.ArgumentParser:
     g_mode.add_argument("--max-restarts", type=int, default=0, dest="max_restarts",
                    metavar="N", help="옵트인(기본 0=끔): 미처리 예외로 죽으면 저장 지점부터 "
                         "--resume 로 최대 N회 자동 재시작(무인 완주 보조). 사용자 중단은 제외")
+    g_mode.add_argument("--htb-machine-id", type=int, default=0, dest="htb_machine_id",
+                   metavar="ID", help="HTB 머신 ID(--htb-spawn/--submit-flags 에 필요)")
+    g_mode.add_argument("--htb-spawn", action="store_true", dest="htb_spawn",
+                   help="옵트인: 실행 전 HTB 머신 스폰(vm/spawn). HTB_TOKEN env + --htb-machine-id 필요")
+    g_mode.add_argument("--submit-flags", action="store_true", dest="submit_flags",
+                   help="옵트인: 공략으로 획득한 플래그를 HTB 에 자동 제출(machine/own). "
+                        "HTB_TOKEN env + --htb-machine-id 필요(권한 확인 자산 한정 §4)")
+    g_mode.add_argument("--htb-difficulty", type=int, default=30, dest="htb_difficulty",
+                   metavar="N", help="플래그 제출 시 난이도 투표(10~100, 기본 30)")
     g_kb.add_argument("--no-enrich", action="store_true",
                    help="CVE/CWE 자동 수집(NVD/GitHub) 비활성")
     g_kb.add_argument("--learn-gaps", action="store_true", dest="learn_gaps",
@@ -822,6 +831,24 @@ def _run_target(args, cfg, knowledge_dir, runner) -> int:
                                 learner=learner, learn_gaps=learn_gaps,
                                 web_learner=web_learner,
                                 state_store=store, resume=args.resume, audit=audit)
+    # [G1] HTB 통합(opt-in) — VPN 프리플라이트(조언) + 선택적 머신 스폰(실행 전)
+    if args.target:
+        from . import htb_platform
+        _ok_vpn, _vmsg = htb_platform.vpn_preflight(args.target)
+        if _vmsg:
+            print((ui.mark_ok if _ok_vpn else ui.mark_warn)(_vmsg))
+        if getattr(args, "htb_spawn", False):
+            _client = htb_platform.HtbClient()
+            if not args.htb_machine_id:
+                print(ui.mark_warn("--htb-spawn 에는 --htb-machine-id 필요 — 스폰 생략"))
+            elif not _client.has_token:
+                print(ui.mark_warn("HTB_TOKEN env 미설정 — 스폰 생략"))
+            else:
+                try:
+                    _client.spawn_machine(args.htb_machine_id)
+                    print(ui.mark_ok(f"HTB 머신 {args.htb_machine_id} 스폰 요청됨"))
+                except htb_platform.HtbError as e:
+                    print(ui.mark_warn(f"HTB 스폰 실패: {e}"))
     try:
         max_restarts = max(0, int(getattr(args, "max_restarts", 0) or 0))
         if max_restarts:
@@ -841,6 +868,28 @@ def _run_target(args, cfg, knowledge_dir, runner) -> int:
     print("\n" + report.summary())
     if llm_router is not None and llm_router.calls:
         print("\n" + llm_router.cost_summary())
+
+    # [G1] 플래그 자동제출(opt-in) — '공략 유래'(exploit-derived) 플래그만(미끼·로컬 유래 제외)
+    if getattr(args, "submit_flags", False):
+        from . import htb_platform
+        _client = htb_platform.HtbClient()
+        if not args.htb_machine_id or not _client.has_token:
+            print(ui.mark_warn("--submit-flags: --htb-machine-id + HTB_TOKEN env 필요 — 제출 생략"))
+        else:
+            _trusted = {(p.kind, p.value) for p in report.flag_provenance
+                        if p.verdict == "exploit-derived"}
+            _n = 0
+            for f in report.flags:
+                if (f.kind, f.value) not in _trusted:
+                    continue
+                try:
+                    _client.submit_flag(args.htb_machine_id, f.value, args.htb_difficulty)
+                    print(ui.mark_ok(f"HTB 제출됨: {f.kind} 플래그"))
+                    _n += 1
+                except htb_platform.HtbError as e:
+                    print(ui.mark_warn(f"HTB 제출 실패({f.kind}): {e}"))
+            if not _n:
+                print(ui.dim("제출할 공략 유래 플래그 없음(미끼·로컬·추론 유래는 제출 안 함)"))
 
     # 8) 라이트업 생성(선택)
     if args.writeup is not None:

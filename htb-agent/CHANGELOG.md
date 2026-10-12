@@ -2,6 +2,22 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.22.0] — 2026-10-12
+
+### 추가(Added) — G1. HTB 통합: VPN 프리플라이트 + 플래그 자동제출 + 머신 스폰 (opt-in)
+라인레벨 감사의 redcat2 'HTB 부트스트랩' 축. **전부 opt-in**, 당신 HTB 계정 토큰으로 **권한 확인
+CTF 자산**에만 쓴다(§4). 해커톤 '최소 y/n' 목표에 직결.
+- **`htb_platform.py` 신설**:
+  - `HtbClient.submit_flag`(POST `machine/own` `{flag,id,difficulty}`)·`spawn_machine`(POST
+    `vm/spawn` `{machine_id}`) — 엔드포인트는 공개 클라이언트(pyhackthebox) 기준, `HTB_API_BASE`
+    로 덮어쓰기 가능. http 계층 주입 가능(테스트는 네트워크 없이 요청 구성만 검증).
+  - `vpn_preflight` — 대상이 HTB 대역인데 tun/tap 미탐지면 조언(로컬·비파괴).
+  - `clamp_difficulty`(10~100, 10단위).
+- **CLI**: `--htb-machine-id`·`--htb-spawn`(실행 전)·`--submit-flags`(실행 후)·`--htb-difficulty`.
+- **안전**: 토큰은 `HTB_TOKEN` env 에서만 읽고 **로그·오딧·오류 메시지에 절대 노출 안 함**.
+  제출은 **공략 유래(exploit-derived) 플래그만**(미끼·로컬·추론 유래 제외). 전부 기본 OFF.
+- 신규 `test_htb_platform.py` **19건**. 전체 **128 스위트 | 2846 passed, 0 failed**.
+
 ## [2.21.0] — 2026-10-12
 
 ### 추가(Added) — G2. export-first 정적 리버싱 (redcat2 doctrine/60 이식)
