@@ -2,6 +2,22 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.14.0] — 2026-10-12
+
+### 추가(Added) — T1-a. 출력구동 Results Verifier (실행 후 명령 교정·재시도)
+라인레벨 감사에서 확인된 AutoPentester 핵심 축 미반영분. `command_fixer.py` 가 실행 *전*
+타겟만 복구한다면, 이제 실행 *후* 출력/오류를 보고 '거의 맞았는데 한 끗 빠진' 명령을
+결정적 규칙으로 교정해 1회 재시도한다(불완전 명령으로 한 번의 시도를 통째로 버리는 낭비 감축).
+- **`results_verify.py` 신설**: `corrective_command(cmd, out)` — 고신뢰 소수 규칙만.
+  (1) nmap 호스트 다운/필터 응답 → `-Pn`, (2) curl https 자가서명·검증실패 → `-k`,
+  (3) curl 3xx 리다이렉트 → `-L`. 애매하면 교정 안 함(과잉 재시도 방지).
+- **오케스트레이터 결선**: `_process` 끝에서 `_maybe_corrective_retry` — 교정본을 **3관문에
+  재투입**(생성 전용). 유한·예산보호: 원 명령당 1회(`_verify_retried`), 전역 상한 8회
+  (`_verify_budget_left`), 교정본은 KB 열거 예산 비계상(budgeted=False)·재귀 금지
+  (corrective=True), 시간 소진 시 생략.
+- 신규 `test_results_verify.py` **13건**(규칙·멱등·재투입·재귀방지·예산상한). 전체
+  **120 스위트 | 2729 passed, 0 failed**.
+
 ## [2.13.0] — 2026-10-11
 
 ### 추가(Added) — T1-b. 가설 기대값(EV) 점수화 (redcat2 confidence×impact÷cost 이식)
