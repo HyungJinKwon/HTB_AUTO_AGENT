@@ -2,6 +2,17 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.20.0] — 2026-10-12
+
+### 추가(Added) — auto-relaunch 래퍼 (redcat2 run.sh MAX_RESTARTS 이식, opt-in)
+라인레벨 감사의 redcat2 '크래시→저장 지점 재시작' 축. 무인 자율 실행 중 미처리 예외로 죽으면
+저장된 상태에서 `--resume` 으로 이어 재시작한다(완주 보조).
+- **`relaunch.py` 신설**: `run_with_relaunch(orchestrator, max_restarts)` — 예외 시 `resume=True`
+  로 전환해 저장 지점부터 재시도(가벼운 백오프·상한). KeyboardInterrupt/SystemExit 은 재시작
+  없이 전파(의도적 종료 존중). 상한으로 bound(결정적 크래시는 N회 후 전파 — 무한루프 없음).
+- CLI `--max-restarts N`(기본 **0=끔** — 버그를 재시작으로 가리지 않도록 opt-in).
+- 신규 `test_relaunch.py` **10건**. 전체 **126 스위트 | 2816 passed, 0 failed**.
+
 ## [2.19.0] — 2026-10-12
 
 ### 추가(Added) — T2-f. 승인 게이트 LLM 폴백 심판 (opt-in·강화 전용, ARTEX intercept.Judge)
