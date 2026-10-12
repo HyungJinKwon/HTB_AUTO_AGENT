@@ -116,5 +116,14 @@ rp = OrchestrationReport(target=T); rp.manual_suggestions = items
 sm = rp.summary()
 check("요약 화면에 종류별 제목·안내", "바로 적용하는 법" in sm and "→ --cred" in sm)
 
+print("\n=== 초보자 안내 보강(검토 후속) ===")
+guide = M._start_guide()
+check("시작 화면에 안전 경계 안심 문구", "위험한 건 '생성'만" in guide and "실행은 사람이 결정" in guide)
+_p = M.build_parser()
+_help = {a.dest: (a.help or "") for a in _p._actions}
+check("--catch-revshell 도움말에 '언제 쓰나'", "웹 RCE 로 발판이 안 잡힐 때" in _help.get("catch_revshell", ""))
+check("--gate-judge 도움말에 '언제 쓰나'", "자동 모드에서 더 신중하게" in _help.get("gate_judge", ""))
+check("--htb-machine-id 도움말에 머신 ID 위치 안내", "URL 끝 숫자" in _help.get("htb_machine_id", ""))
+
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

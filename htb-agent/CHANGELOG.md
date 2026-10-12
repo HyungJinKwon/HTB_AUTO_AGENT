@@ -2,6 +2,46 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.29.0] — 2026-10-12
+
+### 변경(Changed) — 최적화·안정화·가독성·초보자 친화 재검토(3-에이전트) 후속
+3개 독립 리뷰 에이전트(최적화·안정화 / 가독성·구조 / 초보자 UX)가 전체를 교차검토. 대부분
+이미 양호(핫패스 캐시·방어 가드·결정성·믹스인 분해·시작 가이드)로 확인됐고, 확정 개선만 반영.
+
+#### 최적화(Perf)
+- **`_run_vuln` 반복 전체 코퍼스 재스캔 제거**: 스윕당 6~10회+ 호출되며 매번 배너·스크립트·전
+  finding 출력을 join + 정규식 스캔(CVE/CWE 추출·웹앱 핑거프린트)했다. 결과가 멱등이므로 입력
+  코퍼스 크기(`len(enum), len(llm), len(host.ports)`)가 지난 호출과 같으면 조기 반환. finding
+  출력은 생성 시점에 채워져 개수 키가 변이를 놓치지 않는다.
+- **`repetition.signature` 캐시**: 게이트마다 후보·과거 명령 서명을 재계산(shlex.split+정규식)하던
+  것에 `functools.lru_cache(4096)` — 순수 함수라 안전.
+
+#### 가독성(Readability)
+- **死코드 제거**: 호출부 0인 `orchestrator._flag_in_external_notes`(flag_assess 모듈 함수를
+  `classify_flag` 가 직접 호출) 삭제 + `flag_assess.py` 헤더의 stale 주석 정정.
+
+#### 초보자 친화(UX)
+- **HTB 연동 막다른 길 복구 안내**: `--htb-spawn`/`--submit-flags` 의 "HTB_TOKEN 미설정 — 생략"
+  메시지에 토큰 발급처(HTB 프로필 → App Tokens)·`export HTB_TOKEN=<토큰>`·머신 ID 위치(머신
+  페이지 URL 끝 숫자) 안내 추가. `--htb-machine-id` 도움말에도 위치 명시.
+- **신규 플래그 도움말에 '언제 쓰나'**: `--catch-revshell`("웹 RCE 로 발판이 안 잡힐 때")·
+  `--gate-judge`("자동 모드에서 더 신중하게") 앞머리 추가.
+- **시작 화면 안심 문구**: 인자 없이 실행 시 `_start_guide` 끝에 "권한이 확인된 대상에서만 ·
+  위험한 건 '생성'만 하고 실행은 사람이 결정" 한 줄 추가.
+- VPN 미탐지 경고에 `sudo openvpn <파일>.ovpn` 즉시 복구 명령, 리포트의 PtH 에 "(Pass-the-Hash,
+  해시 그대로 재사용)" 해설.
+
+### 테스트(Tests)
+- `test_knowledge.py` TF-IDF 캐시(2.28.0)·`test_beginner.py` 시작 안내/플래그 WHEN 보강.
+  전체 **133 스위트 | 2957 passed, 0 failed**.
+
+### 검토 — 정상 확인 / 보류
+- 안정화: broad except 는 전부 best-effort/서킷브레이커 경계(audit 로깅)·리소스 누수/무한 성장
+  없음·결정성 유지 — 변경 불필요(에이전트 교차확인).
+- 보류(범위 큰 순수 리팩터, 별도 제안): `report_view.render_summary`(244줄)를 `_html_*` 처럼
+  섹션 헬퍼로 분해, `main._run_target` 출력 꼬리 `_emit_outputs` 추출 — 동작 불변·테스트 커버리지
+  부분적이라 골든-출력 가드와 함께 독립 PR 로 진행 권장.
+
 ## [2.28.0] — 2026-10-12
 
 ### 변경(Changed) — 최적화·안정화·가독성 검토 후속

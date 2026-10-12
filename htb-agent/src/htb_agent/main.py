@@ -206,20 +206,21 @@ def build_parser() -> argparse.ArgumentParser:
                    help="옵트인(기본 OFF): 확보한 평문 자격으로 SSH 접속해 플래그 읽기·권한상승 "
                         "열거를 게이트를 거쳐 자동 실행(권한 확인 대상 전용)")
     g_mode.add_argument("--catch-revshell", action="store_true", dest="catch_revshell",
-                   help="옵트인(기본 OFF): --exploit-exec 발판 단계에서 준비된 리버스셸 payload 의 "
-                        "콜백을 소켓 리스너로 수신해 발판 세션화(공격자 IP/포트 확보 시). 성립 검증 "
-                        "통과분만 인정. 소켓 수신은 RCE 실행 표면 — 권한 확인 대상 전용")
+                   help="옵트인(기본 OFF): 웹 RCE 로 발판이 안 잡힐 때 리버스셸로 발판 잡기 — "
+                        "--exploit-exec 발판 단계에서 준비된 리버스셸 payload 의 콜백을 소켓 "
+                        "리스너로 수신해 발판 세션화(공격자 IP/포트 확보 시). 성립 검증 통과분만 "
+                        "인정. 소켓 수신은 RCE 실행 표면 — 권한 확인 대상 전용")
     g_mode.add_argument("--judge", action="store_true", dest="judge",
                    help="옵트인(기본 OFF): 종료 시 LLM-심판이 '공략 달성' 주장이 증거로 "
                         "뒷받침되는지 별도 채점(조언만 — 규칙 판정·목표 달성을 덮지 않음). LLM 필요")
     g_mode.add_argument("--gate-judge", action="store_true", dest="gate_judge",
-                   help="옵트인(기본 OFF): 자동승인될 명령을 LLM 심판이 ALLOW/ASK/DENY 로 "
-                        "재검토해 더 엄격하게만 조정(완화 불가·오류 시 기존 동작). LLM 필요")
+                   help="옵트인(기본 OFF): 자동 모드에서 더 신중하게 — 자동승인될 명령을 LLM 심판이 "
+                        "ALLOW/ASK/DENY 로 재검토해 더 엄격하게만 조정(완화 불가·오류 시 기존 동작). LLM 필요")
     g_mode.add_argument("--max-restarts", type=int, default=0, dest="max_restarts",
                    metavar="N", help="옵트인(기본 0=끔): 미처리 예외로 죽으면 저장 지점부터 "
                         "--resume 로 최대 N회 자동 재시작(무인 완주 보조). 사용자 중단은 제외")
     g_mode.add_argument("--htb-machine-id", type=int, default=0, dest="htb_machine_id",
-                   metavar="ID", help="HTB 머신 ID(--htb-spawn/--submit-flags 에 필요)")
+                   metavar="ID", help="HTB 머신 ID(--htb-spawn/--submit-flags 에 필요) — 머신 페이지 URL 끝 숫자")
     g_mode.add_argument("--htb-spawn", action="store_true", dest="htb_spawn",
                    help="옵트인: 실행 전 HTB 머신 스폰(vm/spawn). HTB_TOKEN env + --htb-machine-id 필요")
     g_mode.add_argument("--submit-flags", action="store_true", dest="submit_flags",
@@ -313,6 +314,9 @@ def _start_guide() -> str:
         ui.dim("CTF 문제:      assassin chall.host:1337 --platform ctf"),
         ui.dim("이어서 하기:   assassin 10.129.x.x --resume"),
         ui.dim("전체 옵션:     assassin --help    ·    1쪽 안내: docs/QUICKSTART.md"),
+        "",
+        ui.dim("권한이 확인된 대상에서만 · 리버스셸·권한상승·크래킹 등 위험한 건 '생성'만 하고 "
+               "실행은 사람이 결정합니다"),
     ], style="navy")
 
 
@@ -868,7 +872,8 @@ def _run_target(args, cfg, knowledge_dir, runner) -> int:
             if not args.htb_machine_id:
                 print(ui.mark_warn("--htb-spawn 에는 --htb-machine-id 필요 — 스폰 생략"))
             elif not _client.has_token:
-                print(ui.mark_warn("HTB_TOKEN env 미설정 — 스폰 생략"))
+                print(ui.mark_warn("HTB_TOKEN env 미설정 — 스폰 생략 "
+                                   "(HTB 프로필 → App Tokens 에서 발급 후: export HTB_TOKEN=<토큰>)"))
             else:
                 try:
                     _client.spawn_machine(args.htb_machine_id)
@@ -900,7 +905,9 @@ def _run_target(args, cfg, knowledge_dir, runner) -> int:
         from . import htb_platform
         _client = htb_platform.HtbClient()
         if not args.htb_machine_id or not _client.has_token:
-            print(ui.mark_warn("--submit-flags: --htb-machine-id + HTB_TOKEN env 필요 — 제출 생략"))
+            print(ui.mark_warn(
+                "--submit-flags: --htb-machine-id + HTB_TOKEN env 필요 — 제출 생략 "
+                "(토큰: HTB 프로필 → App Tokens → export HTB_TOKEN=<토큰> · 머신 ID: 머신 페이지 URL 끝 숫자)"))
         else:
             _trusted = htb_platform.trusted_exploit_flags(report)
             _n = 0

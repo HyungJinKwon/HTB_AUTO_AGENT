@@ -54,7 +54,7 @@ class PreflightReport:
         rows = [ui.mark_ok(i) for i in self.info]
         rows += [ui.mark_warn(w) for w in self.warnings]
         vpn = ui.ok(", ".join(self.vpn_ips)) if self.vpn_ips \
-            else ui.warn("미탐지 — HTB VPN 연결/수동지정 필요")
+            else ui.warn("미탐지 — HTB면 'sudo openvpn <파일>.ovpn' 후 재시도(CTF/로컬은 불필요)")
         rows.append(ui.kv("VPN IP", vpn, 8))
         return ui.panel("환경 프리플라이트", rows, style="accent")
 

@@ -4,8 +4,8 @@
 재채점(confidence)하는 로직을 Orchestrator 밖 자유 함수로 떼어낸다. 전부 **분석·판정 전용**
 (실행·발사 없음). self 상태 의존을 명시 인자(workspace·kb)로 바꿔 단위 검증을 가능케 한다.
 
-Orchestrator 의 `_classify_flag`/`_flag_in_external_notes`/`_assess_flags` 는 이 함수들로
-위임하는 얇은 래퍼로 남는다(행위 보존).
+Orchestrator 의 `_classify_flag`/`_assess_flags` 는 이 함수들로 위임하는 얇은 래퍼로 남는다
+(행위 보존). `flag_in_external_notes` 는 `classify_flag` 가 모듈 함수로 직접 호출한다.
 """
 
 from __future__ import annotations

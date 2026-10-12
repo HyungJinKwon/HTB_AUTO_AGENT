@@ -1412,6 +1412,13 @@ class Orchestrator(FootholdMixin):
     def _run_vuln(self, report: OrchestrationReport, host: NmapHost, target: str) -> None:
         """관측 코퍼스(배너·스크립트·enum/LLM 출력)에서 CVE/CWE·버전 매칭을 탐지해 리포트·월드에
         반영한다. 스윕 중 반복 호출되며(분석·명령 생성이 '확인 취약점'을 보도록) 결과는 누적·멱등."""
+        # [최적화] 입력 코퍼스가 지난 호출과 같으면 재스캔 생략. _run_vuln 은 스윕당 6~10회+
+        # 호출되며 매번 전 코퍼스를 join + 정규식 스캔(멱등). finding 의 output/raw_output 은
+        # 생성 시점(_attempt)에 채워지므로 '개수' 키가 in-place 변이를 놓치지 않는다(새 결과=새 finding).
+        fp = (len(report.enum_findings), len(report.llm_findings), len(host.ports))
+        if getattr(self, "_vuln_fp", None) == fp:
+            return
+        self._vuln_fp = fp
         # 관측 코퍼스: 배너 + 스크립트 + enum/LLM 출력
         corpus_parts = list(host.hostscripts.values())
         banners: list[str] = []
@@ -2198,10 +2205,6 @@ class Orchestrator(FootholdMixin):
             # [A5] 플래그 리니지에 출처 명령을 실어 둔다(유래 추적·writeup 설명).
             self.world.add_flag(hit.kind, hit.value, source=getattr(prov, "command", "") or "")
         return True
-
-    def _flag_in_external_notes(self, value: str) -> bool:
-        # [S4-3(2)] 로직은 flag_assess.flag_in_external_notes 로 분리 — 얇은 위임(행위 보존).
-        return flag_assess.flag_in_external_notes(value, self.kb)
 
     def _diagnose(self, report: OrchestrationReport, finding: EnumFinding, out) -> None:
         """실패를 원인별로 분류해 finding 비고에 덧붙이고 report.blockers 에 기록한다.
