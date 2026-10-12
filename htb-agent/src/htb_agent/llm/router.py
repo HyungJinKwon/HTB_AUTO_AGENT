@@ -220,6 +220,11 @@ class LLMRouter:
         self.total_cache_read = 0
         self.total_cost = 0.0
 
+    @property
+    def slept_sec(self) -> float:
+        """[T2-e] 프로바이더가 재시도 백오프로 대기한 누적 시간(시간 예산서 제외용). 없으면 0."""
+        return float(getattr(self.provider, "slept_sec", 0.0) or 0.0)
+
     def cost_summary(self) -> str:
         return (f"LLM 호출 {self.calls}회, 입력 {self.total_prompt} "
                 f"(캐시읽기 {self.total_cache_read}) / 출력 {self.total_completion} 토큰, "
@@ -497,6 +502,11 @@ class HybridRouter:
     def total_cost(self) -> float:
         """두 백엔드의 누적 추정 비용 합(비용 상한 판정용)."""
         return sum(r.total_cost for r in (self.local, self.strong) if r is not None)
+
+    @property
+    def slept_sec(self) -> float:
+        """[T2-e] 두 백엔드가 재시도 백오프로 대기한 누적 시간 합(시간 예산서 제외용)."""
+        return sum(r.slept_sec for r in (self.local, self.strong) if r is not None)
 
     @property
     def calls(self) -> int:

@@ -2,6 +2,18 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.18.0] — 2026-10-12
+
+### 추가(Added) — T2-e. Deadline pause/resume (LLM 재시도 대기 시간 예산서 제외)
+라인레벨 감사(BoxPwnr Deadline)에서 확인된 실질 공백. `_time_up()` 이 단조시계 절대비교만 해서,
+LLM 일시 장애로 재시도 백오프 대기가 길면 '실제 작업' 시간이 줄어도 예산이 소진됐다. 이제
+재시도로 '대기'한 시간만큼 마감을 뒤로 민다(일시 네트워크 블립이 작업 시간을 깎지 않게).
+- `ollama_provider.slept_sec` — 재시도 백오프 대기 누적. `LLMRouter.slept_sec`(provider 보고)·
+  `HybridRouter.slept_sec`(두 백엔드 합) 프로퍼티(total_cost 와 동형).
+- `orchestrator._time_up` — `clock >= deadline + slept_sec` 로 대기 시간 제외(예산 무제한이면
+  무관·불변). 상한은 재시도 백오프 cap 으로 bound(폭주 없음).
+- 신규 `test_deadline_pause.py` **11건**. 전체 **124 스위트 | 2792 passed, 0 failed**.
+
 ## [2.17.0] — 2026-10-12
 
 ### 추가(Added) — T2-b 기법 taxonomy(ATT&CK) + T2-c TF-IDF 코사인 관련도
