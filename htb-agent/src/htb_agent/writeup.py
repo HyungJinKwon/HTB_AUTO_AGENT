@@ -295,9 +295,12 @@ def _blue_team(host) -> str:
 
 
 def _defense_mirror(report) -> str:
-    """취약점별 탐지·완화 미러(공격↔방어). defense 모듈에 위임(생성 전용)."""
-    from . import defense
-    return defense.render_markdown(report)
+    """취약점별 탐지·완화 미러(공격↔방어) + 배포형 탐지 산출물(Sigma/Suricata/Navigator/MISP/
+    triage). defense·detections 모듈에 위임(생성 전용)."""
+    from . import defense, detections
+    mirror = defense.render_markdown(report)
+    deploy = detections.render_markdown(report)
+    return mirror + "\n\n**배포형 탐지 산출물** (ARTEX detections 식 — 검증 후 사용):\n\n" + deploy
 
 
 def generate_writeup(report, machine_name: str = "<머신명>",
