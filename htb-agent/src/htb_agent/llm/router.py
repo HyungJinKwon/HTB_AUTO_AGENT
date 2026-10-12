@@ -301,6 +301,21 @@ class LLMRouter:
                                          resp.cache_creation_tokens)
         return resp.text.strip()
 
+    def gate_verdict(self, command: str, tier: Tier | None = None) -> str:
+        """[T2-f] 승인 게이트 LLM 심판 — 명령을 ALLOW/ASK/DENY 로 판정(강화 전용·opt-in).
+        싼 티어로 짧게. 비용은 집계하되 규칙 판정을 대체하지 않는다(approver 가 강화에만 사용)."""
+        from ..gate_judge import GATE_SYSTEM, build_gate_user, parse_verdict
+        resp = self.provider.complete(GATE_SYSTEM, build_gate_user(command),
+                                      tier or Tier.CHEAP, max_tokens=16)
+        self.calls += 1
+        self.total_prompt += resp.prompt_tokens
+        self.total_completion += resp.completion_tokens
+        self.total_cache_read += resp.cache_read_tokens
+        self.total_cost += estimate_cost(resp.model, resp.prompt_tokens,
+                                         resp.completion_tokens, resp.cache_read_tokens,
+                                         resp.cache_creation_tokens)
+        return parse_verdict(resp.text)
+
     @staticmethod
     def _analyst_user_prompt(context: dict, target: str) -> str:
         lines = [f"타겟: {target}"]
@@ -584,6 +599,11 @@ class HybridRouter:
         """[A6] 심판도 강력 모델 우선(판정 품질), 실패 시 로컬 폴백. advisory."""
         out, _ = self._try("judge", Tier.STRONG, context, target, tier or Tier.STRONG)
         return out or ""
+
+    def gate_verdict(self, command: str, tier: Tier | None = None) -> str:
+        """[T2-f] 승인 게이트 심판 — 싼 티어 우선·폴백. 판정 불가면 'ALLOW'(fail-safe)."""
+        out, _ = self._try("gate_verdict", tier or Tier.CHEAP, command)
+        return out if out in ("ALLOW", "ASK", "DENY") else "ALLOW"
 
     def routing_summary(self) -> str:
         s = self.stats

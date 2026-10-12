@@ -2,6 +2,19 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.19.0] — 2026-10-12
+
+### 추가(Added) — T2-f. 승인 게이트 LLM 폴백 심판 (opt-in·강화 전용, ARTEX intercept.Judge)
+라인레벨 감사에서 ARTEX 의 '룰 미매칭 도구콜 운영안전 심판(ALLOW/ASK/DENY)' 미반영 확인.
+이를 승인제에 **강화 전용·fail-safe** 로 이식한다 — 보안 게이트를 **더 엄격하게만** 만든다.
+- **`gate_judge.py` 신설**: `judging_approver(base, router)` 가 **규칙이 이미 자동승인할 명령에만**
+  LLM 심판(`gate_verdict` → ALLOW/ASK/DENY)을 물어, DENY=차단·ASK=사람확인으로 조정. 규칙이
+  거부/사람확인을 요구한 명령(검증 실패·범위 밖·동적 코드)은 **심판을 호출조차 안 함**(완화 불가).
+  심판 오류·모호 응답·라우터 없음 → 기존 자동승인 유지(fail-safe, 일시 LLM 장애가 진행 막지 않음).
+- `LLMRouter.gate_verdict`/`HybridRouter.gate_verdict`(싼 티어·폴백). CLI `--gate-judge`(기본 OFF).
+- 프롬프트 인젝션 하드닝(명령 문자열 안 지시문 불복). 가장 엄격 판정 우선(DENY>ASK>ALLOW).
+- 신규 `test_gate_judge.py` **14건**. 전체 **125 스위트 | 2806 passed, 0 failed**.
+
 ## [2.18.0] — 2026-10-12
 
 ### 추가(Added) — T2-e. Deadline pause/resume (LLM 재시도 대기 시간 예산서 제외)
