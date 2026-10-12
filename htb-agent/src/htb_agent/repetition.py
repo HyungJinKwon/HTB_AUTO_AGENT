@@ -15,6 +15,7 @@ AutoPentester 류가 말하는 'Repetition Identifier'를 이 도구의 승인�
 """
 from __future__ import annotations
 
+import functools
 import re
 from dataclasses import dataclass, field
 
@@ -25,6 +26,7 @@ from .util import binary_of
 _VALUE_FLAG = re.compile(r"^-")
 
 
+@functools.lru_cache(maxsize=4096)
 def signature(cmd: str) -> str:
     """명령의 '종류' 서명. 바이너리 + 플래그 이름들(값 제외, 정렬). 대상/워드리스트 등
     가변 토큰은 무시 → 사실상 동일한 시도를 같은 서명으로 묶는다."""
