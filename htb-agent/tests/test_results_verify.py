@@ -47,6 +47,14 @@ r3 = results_verify.corrective_command("curl -s http://10.129.1.5/",
     RO("c", "HTTP/1.1 301 Moved Permanently\nLocation: https://10.129.1.5/"))
 check("교정본에 -L 삽입", r3 and r3[0] == "curl -L -s http://10.129.1.5/")
 
+print("\n=== 규칙: 303/307/308 리다이렉트도 → -L(감사 A-LOW9) ===")
+r303 = results_verify.corrective_command("curl -s http://10.129.1.5/",
+    RO("c", "HTTP/1.1 303 See Other\nLocation: /next"))
+check("303 See Other → -L 삽입", r303 and r303[0] == "curl -L -s http://10.129.1.5/")
+r308 = results_verify.corrective_command("curl -s http://10.129.1.5/",
+    RO("c", "HTTP/1.1 308 Permanent Redirect\nLocation: /next"))
+check("308 Permanent Redirect → -L 삽입", r308 and r308[0] == "curl -L -s http://10.129.1.5/")
+
 print("\n=== no-op: 교정 근거 없는 출력 ===")
 check("정상 출력엔 교정 없음",
       results_verify.corrective_command("nmap 10.129.1.5", RO("x", "22/tcp open ssh")) is None)
@@ -93,6 +101,27 @@ orc2._verify_budget_left = 0   # 예산 소진 상태
 orc2._attempt(rep2, rep2.enum_findings, f"nmap {T}", "enum")
 check("예산 0 이면 교정 재투입 안 함",
       f"nmap -Pn {T}" not in [f.command for f in rep2.enum_findings])
+
+print("\n=== 삽입 위치: env-prefix·래퍼 뒤 삽입(감사 M3/M4) ===")
+# env-prefix(PROXY=1 nmap): 첫 토큰(PROXY=1) 뒤가 아니라 '실제 바이너리' 뒤에 삽입돼야 함.
+rp = results_verify.corrective_command("PROXY=1 nmap 10.129.1.5",
+    RO("x", "host seems down\nNmap done"))
+check("env-prefix 보존·바이너리 뒤 삽입", rp and rp[0] == "PROXY=1 nmap -Pn 10.129.1.5")
+# 래퍼(sudo): 래퍼를 바이너리로 오인하지 않고 nmap 을 인식·교정, 삽입도 nmap 뒤.
+rs = results_verify.corrective_command("sudo nmap 10.129.1.5",
+    RO("x", "host seems down\nNmap done"))
+check("sudo 래퍼 뒤 nmap 인식·교정", rs and rs[0] == "sudo nmap -Pn 10.129.1.5")
+# proxychains 래퍼 + curl TLS
+rpc = results_verify.corrective_command("proxychains curl -s https://10.129.1.5/",
+    RO("c", stderr="self signed certificate"))
+check("proxychains 래퍼 뒤 curl 인식·교정",
+      rpc and rpc[0] == "proxychains curl -k -s https://10.129.1.5/")
+
+print("\n=== 멱등: 결합형 단축플래그 인식(감사 M5) ===")
+# curl -sSL 은 이미 -L 포함(-sSL 의 L) → 리다이렉트여도 -L 중복 삽입 안 함.
+ri = results_verify.corrective_command("curl -sSL http://10.129.1.5/",
+    RO("c", "HTTP/1.1 301 Moved Permanently\nLocation: https://x/"))
+check("-sSL 에 -L 포함 인식 → 중복 교정 안 함", ri is None)
 
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

@@ -4,21 +4,52 @@ from __future__ import annotations
 
 import shlex
 
+# 실제 도구 앞에 붙는 래퍼(그 자체는 도구가 아님) — skip_wrappers=True 일 때만 건너뛴다.
+# 래퍼의 선행 옵션(-u user 등)도 함께 건너뛴다. 여기 없는 토큰을 만나면 즉시 바이너리로 본다.
+_WRAPPERS = frozenset({"sudo", "doas", "proxychains", "proxychains4", "stdbuf", "nice", "ionice"})
 
-def binary_of(command: str, strip_path: bool = False) -> str:
+
+def binary_of(command: str, strip_path: bool = False, skip_wrappers: bool = False) -> str:
     """
     명령에서 실제 바이너리 토큰을 추출(선행 환경변수 할당 NAME=VALUE 는 건너뜀).
     strip_path=True 면 경로를 제거한 basename 반환.
+    skip_wrappers=True 면 sudo/proxychains 등 래퍼(+그 선행 옵션)를 건너뛰고 실제 도구를 반환.
     """
     try:
         toks = shlex.split(command)
     except ValueError:
         toks = command.split()
-    for t in toks:
+    i = 0
+    while i < len(toks):
+        t = toks[i]
         if "=" in t and not t.startswith("-"):
+            i += 1
+            continue
+        if skip_wrappers and t.rsplit("/", 1)[-1] in _WRAPPERS:
+            i += 1
+            while i < len(toks) and toks[i].startswith("-"):   # 래퍼 자체 옵션 건너뜀
+                i += 1
             continue
         return t.rsplit("/", 1)[-1] if strip_path else t
     return ""
+
+
+def binary_index(toks: list[str], skip_wrappers: bool = True) -> int:
+    """토큰 리스트에서 실제 바이너리 토큰의 인덱스를 찾는다(env-prefix·래퍼 건너뜀).
+    없으면 len(toks) 반환. `_insert_flag` 처럼 '바이너리 바로 뒤'가 필요한 곳에서 쓴다."""
+    i = 0
+    while i < len(toks):
+        t = toks[i]
+        if "=" in t and not t.startswith("-"):
+            i += 1
+            continue
+        if skip_wrappers and t.rsplit("/", 1)[-1] in _WRAPPERS:
+            i += 1
+            while i < len(toks) and toks[i].startswith("-"):
+                i += 1
+            continue
+        return i
+    return len(toks)
 
 
 def network_blocked() -> bool:

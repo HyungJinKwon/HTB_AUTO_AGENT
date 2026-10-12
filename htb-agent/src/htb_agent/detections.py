@@ -101,9 +101,15 @@ def attack_techniques(report) -> list[tuple[str, str, str]]:
     return out
 
 
+def _yaml_sq(s: str) -> str:
+    """YAML 작은따옴표 스칼라 이스케이프 — 내부 작은따옴표는 두 개로('' ). 미이스케이프 시
+    `' or '1'='1` 같은 키워드가 파싱 불가 YAML 을 만든다(Sigma 적재 실패)."""
+    return s.replace("'", "''")
+
+
 def _sigma_yaml(title: str, cwe: str, keywords: tuple[str, ...]) -> str:
     tech = _CWE_ATTACK.get(cwe, ("", ""))
-    kw = "\n".join(f"      - '{k}'" for k in keywords)
+    kw = "\n".join(f"      - '{_yaml_sq(k)}'" for k in keywords)
     tags = f"attack.{tech[0].lower()}" if tech[0] else "attack.t1190"
     return (
         f"title: {title}\n"
@@ -123,6 +129,19 @@ def sigma_rules(report) -> list[str]:
             for cwe in _cwes(report) if cwe in _CWE_SIGMA]
 
 
+def _suricata_content(s: str) -> str:
+    """Suricata content 문자열 이스케이프. `"` `;` `\\` `|` 및 비출력 바이트는 `|HH|`(hex)로.
+    미이스케이프 시 `|nc ` 의 `|`(hex 구분자)·`;` 가 규칙을 적재 불가로 만든다."""
+    out: list[str] = []
+    for ch in s:
+        o = ord(ch)
+        if 0x20 <= o < 0x7F and ch not in '"\\;|':
+            out.append(ch)
+        else:
+            out.append(f"|{o:02X}|")
+    return "".join(out)
+
+
 def suricata_rules(report) -> list[str]:
     """HTTP content 매칭 Suricata 규칙. sid 는 로컬 범위(1000000+)."""
     rules: list[str] = []
@@ -132,7 +151,7 @@ def suricata_rules(report) -> list[str]:
         if not sig:
             continue
         msg, keys = sig
-        content = "".join(f' content:"{k}"; nocase;' for k in keys)
+        content = "".join(f' content:"{_suricata_content(k)}"; nocase;' for k in keys)
         rules.append(
             f'alert http any any -> $HOME_NET any (msg:"ASSASSIN {cwe} {msg}";'
             f' flow:established,to_server; http.uri;{content}'

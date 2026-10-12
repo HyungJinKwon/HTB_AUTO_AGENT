@@ -35,7 +35,9 @@ check("cost하 → 2*2/1=4.0", abs(H("H1", cost="하").ev - 4.0) < 1e-9)
 check("impact상·cost하 → 2*3/1=6.0", abs(H("H1", impact="상", cost="하").ev - 6.0) < 1e-9)
 
 print("\n=== misses 감쇠(완전 막히기 전 신선한 각도 우선) ===")
-check("misses=1 → 2/1.5", abs(H("H1").ev - 2/1.5 * 1) > 0 and abs(H("H1", misses=1).ev - (2/1.5)) < 1e-9)
+check("misses=0 → 2.0(감쇠 없음)", abs(H("H1").ev - 2.0) < 1e-9)
+check("misses=1 → 2/1.5(정확값)", abs(H("H1", misses=1).ev - (2 / 1.5)) < 1e-9)
+check("misses=1 은 misses=0 보다 EV 낮음(감쇠 방향)", H("H1", misses=1).ev < H("H1").ev)
 check("misses 클수록 EV 감소", H("H1", misses=1).ev > H("H1", misses=3).ev)
 
 print("\n=== focus(): EV 높은 순, 동률은 ID ===")

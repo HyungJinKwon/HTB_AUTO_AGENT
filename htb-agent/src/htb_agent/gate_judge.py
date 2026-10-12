@@ -49,9 +49,12 @@ def parse_verdict(text: str) -> str:
     return "ALLOW"
 
 
-def judging_approver(base, router):
+def judging_approver(base, router, interactive: bool = True):
     """기존 approver 를 감싸, '자동승인될 명령'에만 LLM 심판을 물어 강화한다(완화 불가).
-    base: (command, vrep, sres)->bool, router: gate_verdict 를 가진 LLM 라우터."""
+    base: (command, vrep, sres)->bool, router: gate_verdict 를 가진 LLM 라우터.
+    interactive: 사람이 붙어 있는가(기본 True). False(무인 자율 --auto/--autonomous)면 ASK 판정은
+    입력 프롬프트로 멈추지 않고 **보수적으로 건너뛴다(거부)** — '최소 y/n' 자율성 유지(감사 D-#7).
+    어느 쪽이든 강화 전용: 심판은 자동승인을 더 엄격하게만(ASK→확인/스킵, DENY→차단) 바꾼다."""
     def approver(command, vrep, sres) -> bool:
         # 검증 실패 → 기존대로(거부). 심판 호출 안 함.
         if not getattr(vrep, "ok", False):
@@ -67,6 +70,8 @@ def judging_approver(base, router):
         if verdict == "DENY":
             return False
         if verdict == "ASK":
+            if not interactive:
+                return False   # 무인 자율: 위험 가능성 명령을 사람 없이 자동 실행하지 않고 스킵
             from .approval import interactive_approver
             return interactive_approver(command, vrep, sres)
         return base(command, vrep, sres)   # ALLOW → 기존 자동승인

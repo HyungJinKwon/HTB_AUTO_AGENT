@@ -18,13 +18,13 @@ import shutil
 import sys
 
 from . import __version__
-from .approval import interactive_approver
+from .approval import interactive_approver, smart_approver
 from .environment import detect_vpn_ips, preflight
 from .knowledge import KnowledgeBase
 from .orchestrator import _FIXED_POINT_CAP, Orchestrator
 from .profiles import JEOPARDY_CATEGORIES
 from .scope_guard import ScopeGuard, ScopeViolation
-from .tools.recon import auto_approve_in_scope
+from .tools.recon import auto_approve_contained, auto_approve_in_scope
 from .tools.runner import SubprocessRunner
 
 _HELP_EPILOG = """\
@@ -517,6 +517,35 @@ def _print_kb_sync(r, verbose: bool = False) -> None:
         print(ui.dim(f"     ✗ {name} — {reason}"))
 
 
+def select_approver(*, manual: bool, auto: bool, autonomous: bool,
+                    contained: bool, gate_judge: bool, llm_router):
+    """승인자(approver) 최종 선택 — 실행기(runner)의 contained 여부까지 반영한 '한 곳'.
+
+    우선순위: --manual(안전) > (auto|autonomous)+contained 자동승인 > (auto|autonomous)
+    범위내 자동승인 > 스마트(범위 밖만 확인). 그 다음 **맨 마지막에** gate-judge 를 덧씌운다
+    (opt-in·강화 전용·완화 불가). 과거엔 gate-judge 래핑 뒤에 contained 자동승인이 **덮어써서**
+    자율+샌드박스에서 gate-judge 가 조용히 죽는 버그가 있었다 — 선택을 한 함수로 모아 차단."""
+    # 모듈 전역 승인자를 참조한다(테스트가 monkeypatch 로 교체·관측 가능).
+    from .tools.recon import Approver
+    approver: Approver
+    if manual:                                   # --manual 은 autonomous 보다 우선(안전)
+        approver = interactive_approver
+    elif (autonomous or auto) and contained:     # 자율+egress 강제 샌드박스 → 자동승인
+        approver = auto_approve_contained
+    elif auto or autonomous:                      # 자율(비contained) → 범위내 자동승인
+        approver = auto_approve_in_scope
+    else:
+        approver = smart_approver
+    # [T2-f] 승인 게이트 LLM 폴백 심판 — 자동승인될 명령만 강화(완화 불가·fail-safe). 반드시 마지막.
+    # 무인 자율(--auto/--autonomous)에선 ASK 판정이 입력 프롬프트로 멈추지 않도록 interactive=False
+    # (ASK→스킵) — '최소 y/n' 목표 유지(감사 D-#7). 수동/스마트(사람 있음)는 ASK→대화형 확인.
+    if gate_judge and llm_router is not None:
+        from .gate_judge import judging_approver
+        approver = judging_approver(approver, llm_router,
+                                    interactive=not (auto or autonomous) or manual)
+    return approver
+
+
 def _run_target(args, cfg, knowledge_dir, runner) -> int:
     """타겟 1개에 대한 전체 실행 경로(프로파일→가드→오케스트레이터→리포트/내보내기).
     main() 에서 분리 — 단독 명령 디스패치와 분리해 CLI 진입부를 얇게 유지."""
@@ -708,20 +737,11 @@ def _run_target(args, cfg, knowledge_dir, runner) -> int:
                 else ui.ok("인터넷 검색(HTB 라이트업 차단 · 미해석 공백)")), 10) + "\n")
 
     # 7) 오케스트레이션 (유한 단계: RECON→PROFILE→ENUM→(LLM)→REPORT)
-    # 승인 모드: --auto(완전자동) / --manual(완전수동) / 기본=스마트(범위밖만 확인)
-    from .approval import smart_approver
+    # 승인 모드: --auto(완전자동) / --manual(완전수동) / 기본=스마트(범위밖만 확인).
+    # 실제 선택은 실행기(contained 여부)가 정해진 뒤 select_approver 로 '한 번에' 결정한다
+    # (gate-judge 가 contained 자동승인에 덮이던 버그 차단).
     from .tools.recon import Approver
     approver: Approver
-    if args.manual:                               # --manual 은 autonomous 보다 우선(안전)
-        approver = interactive_approver
-    elif args.auto or args.autonomous:            # autonomous → 범위내 자동승인
-        approver = auto_approve_in_scope
-    else:
-        approver = smart_approver
-    # [T2-f] 승인 게이트 LLM 폴백 심판(opt-in) — 자동승인될 명령만 강화(완화 불가·fail-safe).
-    if getattr(args, "gate_judge", False) and llm_router is not None:
-        from .gate_judge import judging_approver
-        approver = judging_approver(approver, llm_router)
     from .approval import interactive_observer
     observer = interactive_observer if (args.observe and runner is None) else None
 
@@ -799,9 +819,10 @@ def _run_target(args, cfg, knowledge_dir, runner) -> int:
     if args.autonomous and not getattr(runner, "contained", False):
         print(ui.mark_warn("완전자율인데 egress 강제 샌드박스가 없음 — 스크립트 작성·동적 실행은 "
                            "수동 제안으로 남습니다(권장: --sandbox docker, 또는 --sandbox vm --vm-confine)"))
-    if (args.autonomous or args.auto) and not args.manual and getattr(runner, "contained", False):
-        from .tools.recon import auto_approve_contained
-        approver = auto_approve_contained
+    approver = select_approver(
+        manual=bool(args.manual), auto=bool(args.auto), autonomous=bool(args.autonomous),
+        contained=bool(getattr(runner, "contained", False)),
+        gate_judge=bool(getattr(args, "gate_judge", False)), llm_router=llm_router)
     orchestrator = Orchestrator(guard, runner or SubprocessRunner(), kb, approver,
                                 workspace=workspace,
                                 auto_poc=args.auto_poc,
@@ -876,8 +897,7 @@ def _run_target(args, cfg, knowledge_dir, runner) -> int:
         if not args.htb_machine_id or not _client.has_token:
             print(ui.mark_warn("--submit-flags: --htb-machine-id + HTB_TOKEN env 필요 — 제출 생략"))
         else:
-            _trusted = {(p.kind, p.value) for p in report.flag_provenance
-                        if p.verdict == "exploit-derived"}
+            _trusted = htb_platform.trusted_exploit_flags(report)
             _n = 0
             for f in report.flags:
                 if (f.kind, f.value) not in _trusted:

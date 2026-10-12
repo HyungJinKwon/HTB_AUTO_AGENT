@@ -2,6 +2,80 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.24.0] — 2026-10-12
+
+### 수정(Fixed) — 감사 잔여 LOW 항목·방어적 하드닝 일괄 반영
+2.23.0 에서 확정 HIGH/MED 를 처리한 뒤 남겨둔 LOW·방어 항목을 '가능한 전부' 반영(테스트 선작성).
+
+- **[A-LOW7] HTB 머신 ID 비정수 크래시**: `submit_flag`/`spawn_machine` 의 `int(machine_id)` 가
+  비정수 입력에서 `ValueError` 로 터지던 것 → `_as_machine_id` 로 `HtbError` 승격(호출부 흡수).
+- **[A-LOW8] RAG 노트 캐시 stale**: `_lowered_notes` 시그니처가 `(len, id(마지막))` 이라 중간
+  원소 in-place 교체 시 소문자 캐시가 갱신 안 됨 → '모든 노트 id 튜플'로 교체(모든 치환 감지).
+- **[A-LOW9] 리다이렉트 교정 누락**: Results Verifier 의 `-L` 규칙 정규식 `30[1278]` → `30[12378]`
+  (303 See Other·307·308 포함).
+- **[A-LOW10] VPN 대역 데드 엔트리**: `_HTB_RANGES` 의 `"10.10.1"`(이미 `"10.10."` 부분집합) 제거.
+- **[B-F5] 변형학습 통계 오염**: `_enum_round` 가 `enum_findings[-1]` 로 기록해 출력구동 교정
+  발화 시 교정본을 변형결과로 오기록하던 것 → `enum_findings[before]`(원본 변형)으로.
+- **[B-F4] 마감 무한 연장 방지**: `_time_up` 의 slept(백오프 대기) 제외에 상한 추가 — 지속적
+  네트워크 장애에도 마감 연장은 '예산 1회분'(time_budget 분)까지만(총 실행 ≤ 2×예산).
+- **[B-F3] 루프-후 스테이지 예외 → 상태 유실 방지**: 준비·평가·심판 스테이지(_prepare_*·
+  _assess_flags·_run_judge 등)에서 예기치 못한 예외가 `_persist` 를 건너뛰어 재개 상태를 통째로
+  잃던 것 → 예외를 감사 로그에 남기고(침묵 금지) PHASE 4(저장)로 진행.
+- **[D-#7] 무인 자율에서 gate-judge ASK 가 멈추던 것**: `--auto`/`--autonomous` + `--gate-judge`
+  에서 ASK 판정이 입력 프롬프트로 정지하던 것 → `judging_approver(interactive=False)` 로 ASK→스킵
+  (보수적 거부). '최소 y/n' 자율성 유지. 사람 있는 수동/스마트 모드는 기존대로 대화형 확인.
+- **[D-#6] provenance 래퍼 인식**: `classify` 가 `binary_of(skip_wrappers=True)` 로 `sudo nmap`·
+  `proxychains curl` 의 실제 도구를 인식(이전엔 래퍼를 바이너리로 오인). **미지 도구 → exploit-derived
+  는 검토 후 의도대로 유지**(커스텀 익스·sshpass 래핑·발판 셸 직독이 흔하며 실제 공략 유래 —
+  로컬 조회/입력값/외부자료만 신뢰 제외, HTB 는 정답만 수락해 조작 제출 위험 없음). 근거 주석 명문화.
+- **[C-minor] 일관성**: `ClaudeProvider.slept_sec = 0.0` 명시(라우터 Deadline pause getattr 일관).
+
+### 테스트(Tests)
+- 강화: provenance(래퍼·의도 유지)·gate_judge(무인 ASK→스킵)·results_verify(303/308)·
+  htb_platform(비정수 ID)·knowledge(중간 원소 교체 캐시)·hypothesis_ev(정확값·감쇠 방향)·
+  detections(triage 실제 라인). 전체 **130 스위트 | 2895 passed, 0 failed**.
+
+### 비고 — 반영하지 않은 항목(정직성 §3)
+- **[B-F6]** 출력구동 교정본이 원본이 LLM finding 이어도 `enum_findings` 에 기록되는 점: 집계가
+  약간 오도되나 예산·정렬·상태에 영향 없음(정보 수준). 라우팅 변경은 `llm_findings` zip 정합을
+  건드려 위험 대비 이득이 낮아 **의도적으로 보류**.
+
+## [2.23.0] — 2026-10-12
+
+### 수정(Fixed) — 4-에이전트 적대적 감사 후속(누락·오류·개선 일괄 반영)
+직전까지 만든 전 산출물(가설 EV·Results Verifier·배포형 탐지·TF-IDF·gate-judge·auto-relaunch·
+리버싱·HTB 통합)을 4개 독립 리뷰 에이전트가 READ-ONLY 교차검증. 확정 결함만 테스트 선작성으로 수정.
+
+- **[H1·安] gate-judge 가 자율+샌드박스에서 무력화되던 버그**: `--gate-judge` 래핑 뒤에 contained
+  자동승인(`auto_approve_contained`)이 **재대입돼 강화 게이트가 조용히 죽던** 경로. 승인자 선택을
+  `main.select_approver` **단일 함수**로 모아 실행기(contained) 확정 뒤 gate-judge 를 **맨 마지막에**
+  덧씌우도록 구조적으로 차단. (`test_approver_select.py` 회귀 — 심판 DENY 가 자동승인을 실제 차단함을 검증.)
+- **[H2] Sigma 룰 YAML 깨짐**: SQLi 키워드 `' or '1'='1` 의 작은따옴표 미이스케이프로 파싱 불가
+  YAML 생성 → SIEM 적재 실패. 작은따옴표 doubling(`''`) 이스케이프.
+- **[H3] Suricata 룰 적재 불가**: `|nc `·`;id` 의 `|`(hex 구분자)·`;` 미이스케이프. content 특수바이트를
+  `|HH|` hex-escape(`_suricata_content`).
+- **[H4] HTB 통합 네트워크 장애 시 크래시**: `_urllib_post` 가 `HTTPError` 만 잡아 `URLError`/타임아웃이
+  `except HtbError` 를 뚫고 run 전체를 죽임. `URLError`/`TimeoutError`/`OSError` → `HtbError` 승격(토큰 미노출).
+- **[M1] 가설 '막힘' 임계 불일치**: 경고/audit 임계가 고정 `replan_after` 였는데 `stuck()`/`focus()` 는
+  가설별 `budget(h)` 사용 → 저예산 가설은 경고가 영영 안 뜸. 임계를 `budget(h)` 로 통일.
+- **[M2] 재개 시 오프라인 정적분석 중복 재실행**: `_analyze_offline_files` 가 복원 finding 을 안 봐서
+  file/strings/nm 를 재실행. 복원분을 skip 집합에 포함(생성 전용이라 안전경계는 무관, 낭비 제거).
+- **[M3/M4] Results Verifier 교정 위치·래퍼**: `_insert_flag` 가 env-prefix(`PROXY=1 nmap`)·래퍼
+  (`sudo`/`proxychains`) 뒤가 아닌 첫 토큰 뒤에 삽입하던 것 → 실제 바이너리 뒤로. `binary_of` 에
+  `skip_wrappers` 옵션 추가(교정·기법 라벨이 `sudo nmap` 도 인식).
+- **[M5] 교정 멱등성**: `_has_token` 이 결합형 단축플래그(`-sSL` 의 `-L`)를 못 봐 `-L` 중복 삽입하던 것 수정.
+
+### 문서(Docs) — 코드와 모순되던 서술 정정(정직성 §3)
+- `ARCHITECTURE.md §9`: gate_judge(2.19.0)를 "미반영 T2-f" 로 두던 모순 → **A9 ADR 신설**(구현·적용지점 명시).
+- `RESEARCH.md`: Results Verifier "미구현"(→2.14.0 구현)·TF-IDF "코사인 아님"(→2.17.0 결선) 정정.
+- `CHANGELOG [2.13.0]`: `test_hypothesis_ev` 라벨 20→21 오기 정정(합계는 기존에도 정상).
+
+### 테스트(Tests)
+- 신규 `test_approver_select.py`(9)·`test_audit_fixes.py`(8, M1/M2 회귀). 기존 스위트 보강:
+  detections(+8, Sigma/Suricata 이스케이프)·results_verify(+4, 삽입위치·멱등)·htb_platform(+5,
+  URLError·submit-flags 안전필터)·gate_judge(+2, base 거부 완화불가 직접 검증).
+- 전체 **130 스위트 | 2883 passed, 0 failed**.
+
 ## [2.22.0] — 2026-10-12
 
 ### 추가(Added) — G1. HTB 통합: VPN 프리플라이트 + 플래그 자동제출 + 머신 스폰 (opt-in)
@@ -143,7 +217,7 @@ redcat2 교리의 **confidence×impact÷cost** 기대값을 승인제 구조에 
   가설별). `stuck()` 이 이를 사용.
 - 분석가 프롬프트·`apply_update`·`from_dict`·`context_lines` 가 impact·cost 를 주고받음.
 - **하위호환**: 전부 '중'·misses=0 이면 EV∝priority·budget==replan_after 라 기존 순서·임계와
-  동일(실행·판정 로직과 무관, 방향성만). 신규 `test_hypothesis_ev.py` **20건**. 전체
+  동일(실행·판정 로직과 무관, 방향성만). 신규 `test_hypothesis_ev.py` **21건**. 전체
   **119 스위트 | 2716 passed, 0 failed**.
 
 ## [2.12.0] — 2026-10-11

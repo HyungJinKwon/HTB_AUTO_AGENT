@@ -523,39 +523,51 @@ class Orchestrator(FootholdMixin):
         # 모든 스윕·enum 종료 시점에서 ⭐ 버전매칭 PoC 숏리스트를 최종 재평가 — 버전이 enum
         # 단계에서 늦게 확정돼 조기 평가가 '매칭 없음'으로 굳는 문제 교정. auto-poc 큐잉도 여기서
         # 확정(아래 실행 스테이지가 소비). exploit-exec 와 무관하게 제안은 항상 최신화. 생성 전용.
-        if not interrupted:
-            self._refresh_exploit_shortlist(report, host)
-        # PHASE 3.9 직전: PoC 실행(3단계) → 웹 RCE 발판 → exploit-exec 발판(1단계)
-        if self.exploit_exec and not interrupted:
-            self._exploit_run_stage(report, host)     # 3단계: PoC 실행 → 자격
-            self._foothold_stage(report, host)        # 웹 RCE 발판 → 자격수확 → 플래그
-            self._exploit_exec_stage(report, host)    # 1단계: SSH 자격 → 플래그 → privesc
+        # [감사 F3] 루프-후 생성/준비·평가 스테이지는 예기치 못한 예외가 나도 run() 밖으로
+        # 던지지 않는다 — 여기서 터지면 PHASE 4 의 _persist 가 생략돼 '지금까지 실행한 모든
+        # 진행 상태'가 통째로 유실된다(재개 불가). 예외는 감사 로그에 남겨 침묵 드롭을 피하고
+        # (정직성 §3), 리포트·저장(PHASE 4)으로 반드시 진행한다. 명령 실행 자체는 _safe_run 이
+        # 이미 흡수하므로, 여기서 잡히는 건 파싱·준비·평가 로직의 예외다.
+        try:
+            if not interrupted:
+                self._refresh_exploit_shortlist(report, host)
+            # PHASE 3.9 직전: PoC 실행(3단계) → 웹 RCE 발판 → exploit-exec 발판(1단계)
+            if self.exploit_exec and not interrupted:
+                self._exploit_run_stage(report, host)     # 3단계: PoC 실행 → 자격
+                self._foothold_stage(report, host)        # 웹 RCE 발판 → 자격수확 → 플래그
+                self._exploit_exec_stage(report, host)    # 1단계: SSH 자격 → 플래그 → privesc
 
-        # ── PHASE 3.9: 리버스쉘 자동 준비 (공격자 IP 확보 시) ──
-        self._prepare_revshells(report)
+            # ── PHASE 3.9: 리버스쉘 자동 준비 (공격자 IP 확보 시) ──
+            self._prepare_revshells(report)
 
-        # ── PHASE 3.95: AWS/S3 열거 자동 준비 (호스트명/도메인 확보 시) ──
-        # 버킷 후보·비인증 점검을 자동 생성. AWS 엔드포인트는 타겟 범위 밖이라
-        # 실행하지 않고 준비만 한다(리버스쉘과 동일한 '생성 전용' 안전 경계).
-        self._prepare_cloud(report)
+            # ── PHASE 3.95: AWS/S3 열거 자동 준비 (호스트명/도메인 확보 시) ──
+            # 버킷 후보·비인증 점검을 자동 생성. AWS 엔드포인트는 타겟 범위 밖이라
+            # 실행하지 않고 준비만 한다(리버스쉘과 동일한 '생성 전용' 안전 경계).
+            self._prepare_cloud(report)
 
-        # ── PHASE 3.96: 권한상승 플레이북 자동 준비 (OS 식별 시) ──
-        # OS 에 맞는 포스트-익스플로잇 권한상승 열거·점검 체크리스트를 자동 생성.
-        # 대상 셸 안에서 실행하는 명령이라 에이전트는 준비만(생성 전용) 한다.
-        self._prepare_privesc(report, prof)
+            # ── PHASE 3.96: 권한상승 플레이북 자동 준비 (OS 식별 시) ──
+            # OS 에 맞는 포스트-익스플로잇 권한상승 열거·점검 체크리스트를 자동 생성.
+            # 대상 셸 안에서 실행하는 명령이라 에이전트는 준비만(생성 전용) 한다.
+            self._prepare_privesc(report, prof)
 
-        # ── PHASE 3.97: 해시 크래킹 자동 준비 (출력/볼트에서 해시 수집 시) ──
-        # 캡처된 해시를 식별해 john/hashcat 명령을 자동 생성. 크래킹은 무겁고
-        # 워드리스트가 필요해 에이전트는 준비만(생성 전용) 한다.
-        self._prepare_crack(report)
+            # ── PHASE 3.97: 해시 크래킹 자동 준비 (출력/볼트에서 해시 수집 시) ──
+            # 캡처된 해시를 식별해 john/hashcat 명령을 자동 생성. 크래킹은 무겁고
+            # 워드리스트가 필요해 에이전트는 준비만(생성 전용) 한다.
+            self._prepare_crack(report)
 
-        # 적대적 재검증(skeptic): 포착된 플래그를 '독립 재현' 관점에서 재채점해 확신도를
-        # 보고에 싣고, 단일 출처면 독립 재읽기 명령을 수동 제안으로 남긴다(생성 전용 — 실행 아님).
-        self._assess_flags(report)
+            # 적대적 재검증(skeptic): 포착된 플래그를 '독립 재현' 관점에서 재채점해 확신도를
+            # 보고에 싣고, 단일 출처면 독립 재읽기 명령을 수동 제안으로 남긴다(생성 전용 — 실행 아님).
+            self._assess_flags(report)
 
-        # [A6] LLM-심판(opt-in·advisory) — 증거가 '공략 달성'을 뒷받침하는지 별도 LLM 채점.
-        # 규칙 판정(goal_reached·provenance)을 덮지 않고 조언만 싣는다(report.judge_verdict).
-        self._run_judge(report, target)
+            # [A6] LLM-심판(opt-in·advisory) — 증거가 '공략 달성'을 뒷받침하는지 별도 LLM 채점.
+            # 규칙 판정(goal_reached·provenance)을 덮지 않고 조언만 싣는다(report.judge_verdict).
+            self._run_judge(report, target)
+        except KeyboardInterrupt:
+            interrupted = True
+            report.status = "interrupted"
+            self.audit.event("interrupted", stage="post-loop")
+        except Exception as e:   # noqa: BLE001 — 저장 보장 위해 흡수하되 감사에 남김(재개 상태 보존)
+            self.audit.event("post_stage_error", error=f"{type(e).__name__}: {e}")
 
         # ── PHASE 4: REPORT ──
         report.status = "interrupted" if interrupted else "done"
@@ -751,6 +763,11 @@ class Orchestrator(FootholdMixin):
         if deadline is None:
             return False
         slept = float(getattr(self.llm_router, "slept_sec", 0.0) or 0.0)
+        # [감사 F4] 마감 연장 상한 — 지속적 백오프가 시간 예산을 무한정 늘리지 못하게, slept 는
+        # 최대 '예산 1회분'(time_budget 분)까지만 반영한다(총 실행 ≤ 2×예산).
+        cap = float(getattr(self, "time_budget", 0) or 0) * 60.0
+        if cap > 0 and slept > cap:
+            slept = cap
         return self._clock() >= deadline + slept
 
     def _refresh_analysis(self, report: OrchestrationReport, prof: ProfileResult,
@@ -917,7 +934,10 @@ class Orchestrator(FootholdMixin):
                 before = len(report.enum_findings)
                 self._attempt(report, report.enum_findings, vcmd, phase)
                 if len(report.enum_findings) > before:
-                    self._record_variant_outcome(base_cmd, report.enum_findings[-1])
+                    # [감사 F5] 변형학습은 '원본 변형'(enum_findings[before])으로 기록한다.
+                    # 출력구동 교정이 발화하면 뒤에 교정본이 append 돼 [-1] 이 교정본을 가리켜,
+                    # base↔교정본 조합으로 fragment 통계가 오염됐다.
+                    self._record_variant_outcome(base_cmd, report.enum_findings[before])
         else:
             # 병렬: 게이트(순차)→runner.run(동시)→처리(순차) 후 변형학습 기록
             gated = self._attempt_batch(report, report.enum_findings,
@@ -1335,7 +1355,10 @@ class Orchestrator(FootholdMixin):
             return ""
         self.audit.event("hypothesis_signal", hypothesis=hid, cmd=f.command, result=res,
                          status=h.status, misses=h.misses)
-        if res == "miss" and h.misses == report.plan.replan_after:
+        if res == "miss" and h.misses == report.plan.budget(h):
+            # 임계는 가설별 가변 예산(budget(h))으로 — focus()/stuck() 과 일관. 고정 replan_after
+            # 를 쓰면 저예산 가설은 focus 제외가 먼저 와 경고가 영영 안 뜨고, 고영향 가설은
+            # stuck 전에 조기 경고가 떠 불일치가 생긴다(감사 F1).
             self.audit.event("hypothesis_stuck", hypothesis=hid, misses=h.misses)
             if not self.quiet:
                 from . import ui
@@ -2028,7 +2051,9 @@ class Orchestrator(FootholdMixin):
         if ws is None or not getattr(ws, "imported", None):
             return
         import os as _os
-        seen: set[str] = set()
+        # 재개 복원분(이미 투입된 export-first 명령)도 skip 집합에 포함 — 재개 시 file/strings/nm
+        # 중복 재실행 방지(감사 F2). _gate/_attempt 는 seen_cmds 를 보지 않으므로 여기서 거른다.
+        seen: set[str] = {f.command for f in report.enum_findings}
         for rel in list(ws.imported)[:10]:   # 파일 수 상한(과다 첨부 방어)
             full = _os.path.join(ws.root, rel)
             for cmd in reversing.export_first_commands(full):

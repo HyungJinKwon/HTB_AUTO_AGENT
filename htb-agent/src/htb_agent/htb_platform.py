@@ -31,6 +31,14 @@ class HtbError(RuntimeError):
     """HTB 통합 오류(토큰 미설정·API 실패 등). 메시지에 토큰을 넣지 않는다."""
 
 
+def _as_machine_id(value) -> int:
+    """머신 ID 를 int 로 — 비정수면 HtbError(크래시 대신 호출부의 except HtbError 로 흡수)."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise HtbError(f"잘못된 머신 ID(정수 필요): {value!r}") from None
+
+
 def clamp_difficulty(value) -> int:
     """HTB 난이도 투표는 10~100(10 단위). 범위 밖/비정수는 보정(기본 30)."""
     try:
@@ -60,8 +68,13 @@ class HtbClient:
         try:
             with urllib.request.urlopen(req, timeout=20) as r:
                 return r.getcode(), r.read().decode("utf-8", "replace")
-        except urllib.error.HTTPError as e:
+        except urllib.error.HTTPError as e:   # 서버가 비2xx 응답(본문 보유) — 코드/본문 전달
             return e.code, e.read().decode("utf-8", "replace") if e.fp else str(e.reason)
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            # 네트워크 장애(DNS·연결실패·타임아웃) — HtbError 로 승격해 호출부의
+            # except HtbError 로 흡수(run 크래시 방지). 메시지에 토큰·요청헤더 미포함.
+            reason = getattr(e, "reason", None) or e
+            raise HtbError(f"HTB API 네트워크 오류: {type(e).__name__}: {reason}") from None
 
     def _post(self, path: str, payload: dict) -> dict:
         if not self.has_token:
@@ -88,17 +101,25 @@ class HtbClient:
             raise HtbError("빈 플래그 — 제출하지 않음")
         return self._post("machine/own", {
             "flag": flag.strip(),
-            "id": int(machine_id),
+            "id": _as_machine_id(machine_id),
             "difficulty": clamp_difficulty(difficulty),
         })
 
     def spawn_machine(self, machine_id) -> dict:
         """머신 스폰 — POST vm/spawn. 반환: HTB 응답(dict)."""
-        return self._post("vm/spawn", {"machine_id": int(machine_id)})
+        return self._post("vm/spawn", {"machine_id": _as_machine_id(machine_id)})
+
+
+def trusted_exploit_flags(report) -> set[tuple[str, str]]:
+    """외부 제출(--submit-flags)의 **유일한 안전 게이트** — '공략 유래(exploit-derived)' 로
+    판정된 플래그의 (kind, value) 집합만 반환. 미끼·로컬 유래(local-derived)·추론 입력
+    (reasoning-only)·외부 조회(looked-up)·미검증(unverified) 유래는 전부 제외한다(§4·§3)."""
+    return {(p.kind, p.value) for p in (getattr(report, "flag_provenance", []) or [])
+            if getattr(p, "verdict", "") == "exploit-derived"}
 
 
 # ── VPN 프리플라이트(로컬·비파괴) ───────────────────────────────────────
-_HTB_RANGES = ("10.10.", "10.129.", "10.10.1")   # HTB Labs 대역(참고)
+_HTB_RANGES = ("10.10.", "10.129.")   # HTB Labs 대역(참고). "10.10.1" 은 "10.10." 의 부분집합이라 제거(감사 A-LOW10)
 
 
 def vpn_preflight(target: str, detect: Callable[[], list[str]] | None = None) -> tuple[bool, str]:
