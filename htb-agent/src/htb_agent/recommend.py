@@ -86,6 +86,19 @@ def propose(report, *, max_items: int = 8, repetition=None) -> RecommendationSet
             rationale=" / ".join(why) + " — 한 경로에 매달리는 중일 수 있어 다른 서비스·도구·"
                       "경로를 사람이 선택", source="repetition", priority=3))
 
+    # 3.5) [T2-d] 궤적 드리프트 supervisor — 명령 레벨 반복(3)과 별개로, '가설 레벨'에서
+    # 막힌 가설이 쌓이고 쫓을 신선한 가설이 없으면(래빗홀) 전면 재검토를 권고(결정적·advisory).
+    plan = getattr(report, "plan", None)
+    if plan is not None and getattr(plan, "items", None):
+        stuck_h = plan.stuck()
+        foc = plan.focus()
+        if len(stuck_h) >= 2 and (foc is None or getattr(foc, "status", "") == "confirmed"):
+            recs.append(Recommendation(
+                title="가설 전면 재검토(궤적 드리프트)",
+                rationale=f"막힌 가설 {len(stuck_h)}개 + 쫓을 신선한 가설 없음 — 한 궤적에 갇혔을 "
+                          "수 있어 관측을 원점에서 다시 보고 새 가설을 세우길 권장",
+                source="supervisor", priority=2))
+
     # 4) 대기 단계(전제 미충족) — 전제 확보 안내
     for key, status in (getattr(report, "phase_status", {}) or {}).items():
         if isinstance(status, str) and status.startswith("대기"):

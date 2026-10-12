@@ -2,6 +2,20 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.16.0] — 2026-10-12
+
+### 추가(Added) — T2-a 전제 가설 가지치기 + T2-d 궤적 드리프트 supervisor
+라인레벨 감사의 MazeRunner(비선형 재계획·blocked 가지치기)·redcat2(궤적 드리프트 critic) 부분
+반영분을 **비례적·결정적**으로 보강(전면 태스크 DAG·별도 LLM critic 은 ADR A3/A4 로 미채택 —
+순효과 마이너스. 그 '핵심 축'만 기존 구조에 얹는다).
+- **[T2-a]** `Hypothesis.depends_on`(전제 가설 ID) + `HypothesisLedger.dep_blocked()`:
+  전제 가설이 '기각'되면 하류 가설을 `focus()` 에서 보류(하류 가지치기). 자기참조·미존재 ID
+  무시. `apply_update`/`from_dict` 가 depends_on 주고받음(최대 4개).
+- **[T2-d]** `recommend.propose` 에 **가설 레벨** 드리프트 권고 추가(명령 레벨 반복 권고와 별개):
+  막힌 가설이 2개 이상이고 쫓을 신선한 가설이 없으면(래빗홀) '가설 전면 재검토' advisory
+  (source=supervisor). 결정적·조언 전용 — 자동 실행/재계획 아님(사람이 선택).
+- 신규 `test_phase_prune.py` **11건**. 전체 **122 스위트 | 2762 passed, 0 failed**.
+
 ## [2.15.0] — 2026-10-12
 
 ### 추가(Added) — T1-c. 배포형 탐지 산출물 (ARTEX detections 식 블루팀 룰셋, 클린룸)
