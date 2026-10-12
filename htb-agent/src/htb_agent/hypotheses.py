@@ -77,6 +77,7 @@ class Hypothesis:
     fallback: str = ""     # 기각 시 넘어갈 대안
     impact: str = "중"     # [T1-b] 진전 기여(상/중/하) — 맞으면 공략이 얼마나 전진하나
     cost: str = "중"       # [T1-b] 노력·리스크(상/중/하) — 확인에 드는 비용(분모)
+    depends_on: list[str] = field(default_factory=list)  # [T2-a] 전제 가설 ID(이게 기각되면 보류)
     tried: list[str] = field(default_factory=list)      # 이 가설로 시도한 명령
     evidence: list[str] = field(default_factory=list)   # "명령 → 신호 일치/불일치" 한 줄씩
     hits: int = 0
@@ -180,6 +181,15 @@ class HypothesisLedger:
         cost = _COST_WEIGHT.get(h.cost, 2)
         return max(1, round(self.replan_after * imp / cost))
 
+    def dep_blocked(self, h: Hypothesis) -> bool:
+        """[T2-a] 전제(depends_on) 가설이 '기각'됐으면 이 가설은 보류(하류 가지치기).
+        MazeRunner 의 blocked 하류 prune 을 '전제 기각' 한 축으로 결정적 구현(전면 DAG 는
+        ADR A3/A4 로 미채택 — 순효과 마이너스). 자기참조·미존재 ID 는 무시."""
+        if not h.depends_on:
+            return False
+        rejected = {x.id for x in self.items if x.status == "rejected"}
+        return any(parse_id(d) in rejected and parse_id(d) != h.id for d in h.depends_on)
+
     def stuck(self) -> list[Hypothesis]:
         return [h for h in self.items
                 if h.status in ("pending", "testing") and h.misses >= self.budget(h)]
@@ -191,7 +201,8 @@ class HypothesisLedger:
         def key(h: Hypothesis):
             return (-h.ev, int(h.id[1:]) if h.id[1:].isdigit() else 99)
         stuck = {h.id for h in self.stuck()}
-        open_ = [h for h in self.items if h.status in ("testing", "pending") and h.id not in stuck]
+        open_ = [h for h in self.items if h.status in ("testing", "pending")
+                 and h.id not in stuck and not self.dep_blocked(h)]
         if open_:
             return sorted(open_, key=key)[0]
         conf = [h for h in self.items if h.status == "confirmed"]
@@ -231,6 +242,8 @@ class HypothesisLedger:
             check = _clip(it.get("check") or "")
             expected = _clip(it.get("expected") or it.get("expected_signal") or "")
             fallback = _clip(it.get("fallback") or "")
+            deps = [parse_id(d) for d in (it.get("depends_on") or it.get("deps") or [])
+                    if parse_id(d) and parse_id(d) != hid][:4]
             h = self.get(hid)
             if h is None:
                 if not text:
@@ -241,7 +254,8 @@ class HypothesisLedger:
                 self.items.append(Hypothesis(id=hid, text=text, priority=prio or "중",
                                              status=status or "pending", check=check,
                                              expected=expected, fallback=fallback,
-                                             impact=impact or "중", cost=cost or "중"))
+                                             impact=impact or "중", cost=cost or "중",
+                                             depends_on=deps))
                 applied += 1
                 continue
             reopened = False
@@ -253,6 +267,8 @@ class HypothesisLedger:
                 h.impact = impact
             if cost:
                 h.cost = cost
+            if deps:
+                h.depends_on = deps
             if check and check != h.check:
                 h.check, reopened = check, True
             if expected and expected != h.expected:
@@ -397,6 +413,7 @@ class HypothesisLedger:
                 fallback=_clip(it.get("fallback")),
                 impact=_norm_priority(it.get("impact")) or "중",
                 cost=_norm_priority(it.get("cost")) or "중",
+                depends_on=[parse_id(d) for d in (it.get("depends_on") or []) if parse_id(d)][:4],
                 tried=[str(c) for c in (it.get("tried") or [])][-20:],
                 evidence=[str(e) for e in (it.get("evidence") or [])][-4:],
                 hits=int(it.get("hits") or 0), misses=int(it.get("misses") or 0)))
