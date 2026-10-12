@@ -121,6 +121,11 @@ def to_dict(report) -> dict:
                           for c in j.commands]}
             for j in getattr(report, "crack_jobs", [])
         ],
+        "lateral": [
+            {"technique": c.technique, "service": c.service,
+             "command": c.command, "why": c.why}
+            for c in getattr(report, "lateral_candidates", [])
+        ],
         # 트레이스 기반 보고·평가(텍스트 요약과 동일 정보의 구조화 버전)
         "blockers": [
             {"command": cmd, "category": d.category, "label": d.label,

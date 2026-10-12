@@ -144,6 +144,8 @@ class OrchestrationReport:
     privesc_vectors: list = field(default_factory=list)    # list[privesc_analyze.PrivescVector]
     # 자동 준비된 해시 크래킹 작업(출력/볼트에서 해시 수집 시 — 생성만, 사용자 실행)
     crack_jobs: list = field(default_factory=list)         # list[crack.CrackJob]
+    # 자동 준비된 측면 이동 후보(수확 크리덴셜/해시 → 열린 다른 서비스 재사용·PtH — 생성만, 사용자 실행)
+    lateral_candidates: list = field(default_factory=list)  # list[lateral.LateralCandidate]
     # 자율 지식 획득(모르는 기술 → 권위 출처에서 자동 학습, P1 유지)
     acquired_knowledge: list = field(default_factory=list)  # "용어 → 주제 (출처)"
     knowledge_gaps: list = field(default_factory=list)      # 미해석 공백(수동 조사 필요)
@@ -553,6 +555,11 @@ class Orchestrator(FootholdMixin):
             # OS 에 맞는 포스트-익스플로잇 권한상승 열거·점검 체크리스트를 자동 생성.
             # 대상 셸 안에서 실행하는 명령이라 에이전트는 준비만(생성 전용) 한다.
             self._prepare_privesc(report, prof)
+
+            # ── PHASE 3.965: 측면 이동 후보 자동 준비 (크리덴셜/해시 수확 시) ──
+            # 수확한 user:pass·NT 해시를 '열린 다른 서비스'(SSH/SMB/WinRM/...)에 재사용·PtH 하는
+            # 후보를 생성한다. 생성 전용 — 사용자가 권한 확인 자산에서 직접 실행(에이전트 발사 없음).
+            self._prepare_lateral(report)
 
             # ── PHASE 3.97: 해시 크래킹 자동 준비 (출력/볼트에서 해시 수집 시) ──
             # 캡처된 해시를 식별해 john/hashcat 명령을 자동 생성. 크래킹은 무겁고
@@ -1785,6 +1792,36 @@ class Orchestrator(FootholdMixin):
         attacker_ip = (str(list(self.guard.attacker_ips)[0])
                        if self.guard.attacker_ips else "")
         preparations.prepare_privesc(report, prof, attacker_ip, self.audit)
+
+    def _prepare_lateral(self, report: OrchestrationReport) -> None:
+        """수확한 크리덴셜/NT 해시를 '열린 다른 서비스' 재사용·PtH 후보로 준비(생성 전용)."""
+        from .target_shell import parse_cred
+        creds: list[tuple[str, str]] = []
+        nt_hashes: list[tuple[str, str]] = []
+        if self.world is not None:
+            for c in self.world.creds:
+                pc = parse_cred(c)
+                if pc and pc not in creds:
+                    creds.append(pc)
+                # 'user:<HASH>' 형태(평문 아님)는 NT 해시 후보로(<...> 벗겨서)
+                elif ":" in c:
+                    user, secret = c.split(":", 1)
+                    secret = secret.strip().strip("<>").strip()
+                    if user.strip() and re.fullmatch(r"[0-9a-fA-F]{32}", secret):
+                        pair = (user.strip(), secret)
+                        if pair not in nt_hashes:
+                            nt_hashes.append(pair)
+        if self.vault is not None:
+            for cred in self.vault.creds:
+                nt = getattr(cred, "nt_hash", None)
+                user = getattr(cred, "username", "") or ""
+                if nt and user:
+                    nt = nt.split(":")[-1]   # 'LM:NT' 면 NT 부분만
+                    pair = (user, nt)
+                    if pair not in nt_hashes:
+                        nt_hashes.append(pair)
+        target = str(self.guard.bound_target or self.guard.bound_host or report.target or "")
+        preparations.prepare_lateral(report, target, creds, nt_hashes, self.audit)
 
     # [S5-4] 사장 메서드 _privesc_analyze_stage 제거 — 호출부 없음. privesc 벡터 분석은
     # preparations.prepare_privesc 안에서 preparations.privesc_analyze 로 직접 수행된다.

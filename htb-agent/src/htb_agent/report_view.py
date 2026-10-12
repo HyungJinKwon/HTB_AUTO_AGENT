@@ -304,6 +304,14 @@ def render_summary(report) -> str:
             lines.append("    " + ui.dim(f"식별: {gnames}"))
             for c in j.commands:
                 lines.append("    " + ui.accent2(f"[{c.tool}] ") + c.command)
+    if getattr(report, "lateral_candidates", None):
+        lines.append("\n" + ui.heading(
+            "측면 이동 후보 (수확 크리덴셜/해시 재사용·PtH — 생성만, 사용자 실행)", "↔"))
+        _lat = report.lateral_candidates[:8]
+        for c in _lat:
+            lines.append("  " + ui.accent2(f"[{c.technique}/{c.service}] ") + c.command)
+        if len(report.lateral_candidates) > len(_lat):
+            lines.append(ui.dim(f"  … 외 {len(report.lateral_candidates) - len(_lat)}개"))
     if report.manual_suggestions:
         lines.append("\n" + ui.heading("수동 제안 — 종류별 바로 적용하는 법", "✋"))
         for title, how, items in _group_manual(report.manual_suggestions):

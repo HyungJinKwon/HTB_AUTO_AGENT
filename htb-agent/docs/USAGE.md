@@ -498,7 +498,7 @@ assassin 10.129.1.5 --cred svc:Summer2024 --exploit-exec --autonomous
 |---|---|
 | 켜는 법 | `assassin <t> --exploit-exec --auto-poc` (보통 `--autonomous --llm claude` 와 함께) |
 | 지금 도는 것 | ⭐ 버전매칭 PoC 자동 선택·발사 → (PoC 가 자격을 뱉으면) SSH 발판 → 플래그 읽기 |
-| 아직 안 도는 것 | 측면 이동(lateral) 후보 자동 추적 — **정의만, 미배선**. (웹 RCE·리버스셸 발판 세션·설정/DB 자격 수확은 배선됨 — 네트워크 실행부는 RCE 표면이라 opt-in) |
+| 측면 이동(lateral) | 수확한 크리덴셜/NT 해시를 **열린 다른 서비스**(SSH/SMB/WinRM/RDP/MSSQL/FTP/MySQL/PostgreSQL)에 재사용·PtH 하는 후보를 자동 생성(`_prepare_lateral`). **생성 전용** — 명령 문자열만, 발사 없음(사용자가 권한 확인 자산에서 실행) |
 | 발판 성립 검증 | 발판에서 `id`/`uname` 신호가 나와야 **진짜 셸**로 인정. 로그인 페이지 HTML·빈 응답 등 **헛발판은 버림** → 성립 안 하면 조용히 발판 미확보(섣부른 단정 없음) |
 | 채널 | `_acquire_session` 이 (1) 웹 RCE(`cmd=` 엔드포인트) → 실패 시 (2) **리버스셸 수신**(`--catch-revshell`, 준비된 payload 콜백을 소켓 리스너로 수신) 순으로 발판을 시도. 모두 같은 `ShellSession` 인터페이스. 리버스셸 수신은 opt-in 이라 꺼두면 소켓 블로킹 없음 |
 | 승인 | `--autonomous` 와 함께면 무프롬프트, 없으면 각 명령 y/n. 권한 확인 대상 전용 |

@@ -2,6 +2,36 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.26.0] — 2026-10-12
+
+### 추가(Added) — 측면 이동(lateral) 후보 자동 준비 (생성 전용)
+마지막 미배선 축이던 '측면 이동 후보 추적'을 배선한다. 수확한 **크리덴셜(user:pass)·NT 해시**를
+대상의 **열린 다른 서비스**에 재사용·해시전달(PtH)하는 후보를 자동 생성한다(다른 `_prepare_*`
+스테이지와 동일하게 **생성 전용** — 명령 문자열만, 에이전트 발사 없음).
+- **`lateral.py` 신설**: `generate(target, creds, nt_hashes, open_ports)` — 열린 포트를 서비스로
+  매핑(SSH/SMB/WinRM/RDP/MSSQL/FTP/MySQL/PostgreSQL)하고, 크리덴셜 재사용은 `nxc <proto>` 또는
+  네이티브 클라이언트(mysql/psql), NT 해시는 SMB/WinRM/MSSQL/RDP 에 PtH(`nxc -H`) 후보로 만든다.
+  user/pass/해시는 `shlex` 인용(주입 차단), 크리덴셜·후보 수 상한(스프레이 남발 방지).
+- **`preparations.prepare_lateral`**: 열린 서비스 + 수확 크리덴셜/해시로 후보를 만들어
+  `report.lateral_candidates` 에 담고 수동 제안으로 surface. 근거 없으면 조용히 생략(지어내지 않음).
+- **오케스트레이터 `_prepare_lateral`**: world.creds(평문 → 재사용, `user:<NT>` → PtH)·볼트 NT 해시를
+  모아 PHASE 3.965(privesc 준비 뒤)에서 준비. F3 저장-보장 블록 안이라 예외도 안전.
+- **표면화**: 터미널 리포트·JSON 내보내기(`lateral`)에 후보 노출(다른 준비 산출물과 동일 취급).
+
+### 안전(Safety)
+- 전부 **생성 전용**: 측면 이동은 노이즈·영향이 큰 스프레이라 에이전트가 자동 발사하지 않는다.
+  근거(수확 크리덴셜/해시 + 관측된 열린 서비스)가 있을 때만 후보를 만들고, 실행은 사용자 몫
+  (권한 확인 자산 전용 §4). 자격·해시는 shlex 인용으로 주입 차단.
+
+### 테스트(Tests)
+- 신규 `test_lateral.py`(24): 서비스 매핑·재사용·PtH·네이티브 클라이언트·shlex 인용·상한·근거없음
+  생략·prepare 반영·오케스트레이터 크리덴셜/해시 수집 배선. 전체 **132 스위트 | 2928 passed, 0 failed**.
+
+### 비고
+- 이로써 정찰→열거→발판(웹RCE·역쉘)→자격수확→플래그→권한상승→**측면 이동**까지 전 축이 배선됐다
+  (네트워크 실행부·스프레이는 설계상 opt-in / 생성 전용 RCE 표면으로 유지). 실 HTB 엔드투엔드
+  라이브 검증은 권한 확인 환경에서 사용자 확인 몫(§3 — 샌드박스 검증 불가).
+
 ## [2.25.0] — 2026-10-12
 
 ### 추가(Added) — 리버스셸 수신 발판 배선(`_acquire_session`) (opt-in)
