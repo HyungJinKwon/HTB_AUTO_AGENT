@@ -60,12 +60,21 @@ class FootholdMixin:
     def _exploit_exec_stage(self, report, host):
         if not self.exploit_exec or self.world is None or self.dry_run:
             return
+        import re
+
         from .target_shell import FLAG_READS, PRIVESC_ENUM, SSHTargetShell, parse_cred
         creds = []
         for c in self.world.creds:
             pc = parse_cred(c)
-            if pc and pc not in creds:
-                creds.append(pc)
+            if not pc or pc in creds:
+                continue
+            # NT 해시(32-hex)는 SSH '평문 비번'이 아니다 — PtH/lateral 경로 전용. SSH 비번
+            # 분사에 넣으면 무의미한 실패 인증만 유발하므로 건너뛴다(_prepare_lateral 과 동일 구분).
+            if re.fullmatch(r"[0-9a-fA-F]{32}", pc[1]):
+                self.audit.event("exploit_exec_skip_cred", reason="nt_hash_not_ssh_pw",
+                                 user=pc[0])
+                continue
+            creds.append(pc)
         if not creds:
             self.audit.event("exploit_exec_skip", reason="no_plaintext_cred")
             return

@@ -78,9 +78,13 @@ def corrective_command(cmd: str, out) -> tuple[str, str] | None:
             return _insert_flag(cmd, "-k"), "curl: TLS 자가서명/검증실패 → -k"
 
     # 3) curl: 3xx 리다이렉트인데 따라가지 않음 → -L(따라가기)
+    # ⚠️ egress 경계: 리다이렉트 Location 은 대상이 통제하는 값이고 scope_guard 는 정적 명령
+    # 문자열만 보므로(런타임 리다이렉트 호스트는 안 봄), -L 는 --max-redirs 로 상한을 둬
+    # 악성 리다이렉트 '체인'이 에이전트를 비스코프 호스트로 끌고 가지 못하게 한다.
     if binary == "curl" and not _has_token(cmd, "-L", "--location"):
         if re.search(r"\b30[12378]\b", text) and ("location:" in text or "moved" in text
                                                   or "redirect" in text):
-            return _insert_flag(cmd, "-L"), "curl: 리다이렉트(3xx) → -L(따라가기)"
+            cap = "" if _has_token(cmd, "--max-redirs") else " --max-redirs 2"
+            return _insert_flag(cmd, "-L" + cap), "curl: 리다이렉트(3xx) → -L(상한 따라가기)"
 
     return None

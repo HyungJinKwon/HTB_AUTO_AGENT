@@ -36,6 +36,13 @@ _MAX_CREDS = 6        # 재사용 시도할 크리덴셜 상한(스프레이 남
 _MAX_CANDIDATES = 40  # 총 후보 상한
 
 
+def _arg_safe(v: str) -> bool:
+    """명령 인자로 안전한 '수확값'인지. shlex.quote 가 셸 메타문자는 막지만, 선행 '-' 는
+    클라이언트(mysql/psql·nxc)가 '옵션'으로 오인하는 인자 인젝션이 되므로 추가로 거른다.
+    (수확 크리덴셜/해시는 대상 유래 신뢰불가 값 — 예: user `-reconnect`, `-oProxyCommand=…`.)"""
+    return bool(v) and not v.startswith("-")
+
+
 @dataclass
 class LateralCandidate:
     technique: str   # "cred-reuse" | "pass-the-hash"
@@ -58,6 +65,8 @@ def _services(open_ports) -> list[tuple[str, str | None]]:
 
 def _reuse_command(svc: str, proto: str | None, target: str, user: str, pw: str) -> str:
     """크리덴셜 재사용 후보(평문 user:pass)."""
+    if not (_arg_safe(user) and _arg_safe(pw)):
+        return ""   # 선행 '-' 인자 인젝션 방어(수확값은 신뢰불가)
     u, p, t = shlex.quote(user), shlex.quote(pw), shlex.quote(target)
     if proto:   # netexec(nxc) 지원 프로토콜 — 통일된 재사용 점검
         return f"nxc {proto} {t} -u {u} -p {p}"
@@ -70,6 +79,8 @@ def _reuse_command(svc: str, proto: str | None, target: str, user: str, pw: str)
 
 def _pth_command(svc: str, proto: str | None, target: str, user: str, nthash: str) -> str:
     """NT 해시 전달(Pass-the-Hash) 후보 — SMB/WinRM 등."""
+    if not (_arg_safe(user) and _arg_safe(nthash)):
+        return ""   # 선행 '-' 인자 인젝션 방어(수확값은 신뢰불가)
     u, t, h = shlex.quote(user), shlex.quote(target), shlex.quote(nthash)
     if proto and svc in _PTH_SVC:
         return f"nxc {proto} {t} -u {u} -H {h}"

@@ -114,5 +114,20 @@ check("NT 해시가 -p(평문)로 스프레이되지 않음",
       not any(f"-p {NTH}" in cmd for cmd in reuse_cmds))
 check("cred-reuse 는 평문(svc)만", all("svc" in cmd for cmd in reuse_cmds))
 
+print("\n=== 라이브 빌더 인자 인젝션 방어(선행 '-') ===")
+# 수확값은 대상 유래 신뢰불가 — ssh/mysql/psql/nxc 가 옵션으로 오인하지 않도록 거른다.
+inj = lateral.generate("10.129.1.5",
+                       creds=[("-reconnect", "pw"), ("-oProxyCommand=id", "x")],
+                       nt_hashes=[("-H", "a" * 32)],
+                       open_ports=[22, 3306, 5432, 445])
+inj_cmds = [c.command for c in inj]
+check("선행 '-' user/pw 재사용 후보 미생성",
+      not any("-reconnect" in c or "ProxyCommand" in c for c in inj_cmds))
+check("선행 '-' user PtH 후보 미생성", not any(c for c in inj_cmds if "-H" in c and "nxc" in c and " -u -H" in c))
+# 정상 크리덴셜은 여전히 생성(가드가 과차단 아님)
+ok = lateral.generate("10.129.1.5", creds=[("alice", "pw")], nt_hashes=[],
+                      open_ports=[3306, 5432])
+check("정상 크리덴셜은 네이티브(mysql/psql) 후보 생성", len(ok) >= 1)
+
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

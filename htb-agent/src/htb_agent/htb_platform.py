@@ -118,6 +118,15 @@ def trusted_exploit_flags(report) -> set[tuple[str, str]]:
             if getattr(p, "verdict", "") == "exploit-derived"}
 
 
+def submittable_flags(report) -> list:
+    """--submit-flags 가 실제로 제출할 플래그 목록(report.flags 중 trusted 게이트 통과분만).
+    main.py 제출 루프가 이 함수를 쓰게 해, 루프가 '다른 리스트를 돌거나 필터를 빠뜨리는'
+    배선 퇴행이 테스트로 잡히게 한다(제출은 안전상 공략 유래 플래그로만 — §4·§3)."""
+    trusted = trusted_exploit_flags(report)
+    return [f for f in (getattr(report, "flags", []) or [])
+            if (getattr(f, "kind", ""), getattr(f, "value", "")) in trusted]
+
+
 # ── VPN 프리플라이트(로컬·비파괴) ───────────────────────────────────────
 _HTB_RANGES = ("10.10.", "10.129.")   # HTB Labs 대역(참고). "10.10.1" 은 "10.10." 의 부분집합이라 제거(감사 A-LOW10)
 

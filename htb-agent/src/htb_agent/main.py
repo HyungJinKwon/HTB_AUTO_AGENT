@@ -909,11 +909,8 @@ def _run_target(args, cfg, knowledge_dir, runner) -> int:
                 "--submit-flags: --htb-machine-id + HTB_TOKEN env 필요 — 제출 생략 "
                 "(토큰: HTB 프로필 → App Tokens → export HTB_TOKEN=<토큰> · 머신 ID: 머신 페이지 URL 끝 숫자)"))
         else:
-            _trusted = htb_platform.trusted_exploit_flags(report)
             _n = 0
-            for f in report.flags:
-                if (f.kind, f.value) not in _trusted:
-                    continue
+            for f in htb_platform.submittable_flags(report):
                 try:
                     _client.submit_flag(args.htb_machine_id, f.value, args.htb_difficulty)
                     print(ui.mark_ok(f"HTB 제출됨: {f.kind} 플래그"))

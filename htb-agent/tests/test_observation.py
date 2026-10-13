@@ -120,5 +120,18 @@ hn = parse_http("HTTP/1.1 200 OK\r\n\r\n<title>FreePBX Administration</title>"
                 "<link href='assets/css/bootstrap-3.3.7.min.css'>")
 check("라이브러리 버전은 오탐 안 함(app_version 빈값)", hn.app_version == "")
 
+print("\n=== 파서 내구성(fail-closed): 비정수 portid 는 해당 포트만 skip ===")
+# 변형 XML 의 portid 가 비정수여도 int() 예외로 전체 파싱이 크래시하면 안 됨(2.31 가드).
+BAD_XML = ("""<?xml version="1.0"?><nmaprun><host><status state="up"/>"""
+           """<address addr="10.129.1.9" addrtype="ipv4"/><ports>"""
+           """<port protocol="tcp" portid=""><state state="open"/><service name="x"/></port>"""
+           """<port protocol="tcp" portid="abc"><state state="open"/><service name="y"/></port>"""
+           """<port protocol="tcp" portid="80"><state state="open"/>"""
+           """<service name="http" product="Apache"/></port></ports></host></nmaprun>""")
+bh = parse_nmap_xml(BAD_XML).first_host()
+check("비정수 portid 여도 크래시 없이 파싱", bh is not None)
+check("유효 포트(80)는 살아남음", 80 in [p.port for p in bh.ports])
+check("불량 포트는 버려짐(유효분만)", [p.port for p in bh.ports] == [80])
+
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

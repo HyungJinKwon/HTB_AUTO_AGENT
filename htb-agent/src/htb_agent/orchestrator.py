@@ -873,10 +873,8 @@ class Orchestrator(FootholdMixin):
             st.llm_findings = [fin(f) for f in report.llm_findings]
         if report.manual_suggestions:
             st.manual_suggestions = report.manual_suggestions
-        if report.detected_cve:
-            st.detected_cve = report.detected_cve
-        if report.detected_cwe:
-            st.detected_cwe = report.detected_cwe
+        # detected_cve/cwe 는 영속하지 않는다 — 재개 시 _scan_vulns 가 복원된 finding 출력에서
+        # 재도출하므로(_restore 는 읽지 않음), 저장본은 '쓰기 전용 死상태'였다(SSOT 오해 소지).
         if self.vault is not None and self.vault.creds:
             st.credentials = self.vault.to_list()
         # [S5-3] 월드 식별 상태·수집 해시 영속 — 재개 시 핑거프린트/크랙 준비가 퇴행하지 않게.
@@ -1644,7 +1642,8 @@ class Orchestrator(FootholdMixin):
             for p in ("", "admin/", "admin/config.php"):
                 if self._goal_reached(report) or self._time_up():
                     break
-                cmd = f'curl -s -L -k --max-time 10 -H "Host: {vh}" {bases[0]}/{p}'
+                # -L 는 --max-redirs 로 상한(대상 통제 리다이렉트 체인의 비스코프 egress 차단)
+                cmd = f'curl -s -L --max-redirs 2 -k --max-time 10 -H "Host: {vh}" {bases[0]}/{p}'
                 self._attempt(report, report.enum_findings, cmd, phase=phase, budgeted=False)
         # 새 관측을 즉시 반영 → 이번 스윕의 뒤 단계(web_secret·lookup)가 제품을 바로 활용.
         self._run_vuln(report, host, tgt)
@@ -2159,7 +2158,13 @@ class Orchestrator(FootholdMixin):
         """리다이렉트 출력에서 vhost 를 발견하면 타겟 IP 로 스코프 해석맵(hosts_map)에
         자동 등록한다 → 프롬프트·스킵 없이 진행. OS 이름해석(/etc/hosts)은 권한 있으면
         자동 추가, 없으면 '조용한 반복 실패' 대신 1회 또렷한 안내를 남긴다.
-        스코프는 '타겟 IP' 로만 묶으므로 범위를 넓히지 않는다(안전)."""
+        스코프는 '타겟 IP' 로만 묶으므로 범위를 넓히지 않는다(안전).
+
+        ⚠️ 신뢰 경계: 리다이렉트 Location 은 '대상이 통제하는' 값이다. 임의 외부 도메인
+        (evid.com·CDN·SSO 등)을 등록하면 scope_guard 가 그 호스트를 TARGET 으로 오분류해
+        비스코프 egress 를 auto-allow 하게 된다(대상 출력이 스코프를 넓히는 우회). 그래서
+        HTB 랩 vhost 관례(.htb/.local — scope_guard 의 특수취급과 동일)로만 자동 등록하고,
+        그 밖의 외부 도메인은 '등록하지 않고' 1회 수동 안내만 남긴다."""
         if not text or self.guard.bound_target is None:
             return
         ip = str(self.guard.bound_target)
@@ -2167,6 +2172,15 @@ class Orchestrator(FootholdMixin):
             host = m.group(1).lower().rstrip(".")
             if (not host or host in self._vhost_seen or not re.search(r"[a-z]", host)
                     or (self.hosts_map or {}).get(host)):
+                continue
+            # HTB 랩 vhost(.htb/.local)만 타겟 IP 로 자동 등록. 외부 도메인은 대상이 통제하는
+            # 리다이렉트로 스코프를 넓히지 못하도록 등록 거부 + 1회 안내(우회 차단).
+            if not (host.endswith(".htb") or host.endswith(".local")):
+                self._vhost_seen.add(host)   # 반복 안내 억제
+                self.audit.event("vhost_external_skipped", host=host)
+                report.manual_suggestions.append(
+                    f"# 리다이렉트가 외부 도메인 {host} 를 가리킴 — 스코프 자동확장 안 함"
+                    f"(대상 통제값). 권한 확인 자산이면 수동으로 범위·해석 추가 후 진행.")
                 continue
             self._vhost_seen.add(host)
             if self.hosts_map is None:

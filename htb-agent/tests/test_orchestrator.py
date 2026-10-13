@@ -250,6 +250,25 @@ check("병렬: 예외 명령은 미실행 표기", any(not f.ran for f in rep2.e
 check("병렬: 예외 유발 enum 명령이 실제 호출됨",
       any(not c.startswith("nmap") for c in rr2.calls))
 
+print("\n=== F3 persist-always: 단계 내부 예외에도 진행분 저장(재개 보존) ===")
+# 스윕/최종 취약점 단계의 미처리 예외가 _persist 를 건너뛰지 않아야 한다(재개 불변식).
+import tempfile as _tmpf
+from htb_agent.state import StateStore as _StateStore
+with _tmpf.TemporaryDirectory() as _sd:
+    _store = _StateStore(_sd)
+    _o = Orchestrator(guard(), FakeRunner(lambda c: RunOutput(c, stdout=LINUX_WEB)
+                                          if c.startswith("nmap") else RunOutput(c, stdout="ok")),
+                      kb, auto_approve_in_scope, is_tool_available=ALL_TOOLS,
+                      state_store=_store)
+    def _boom(*a, **k):
+        raise RuntimeError("boom (simulated _run_vuln failure)")
+    _o._run_vuln = _boom   # 단계 내부에서 예외 발생 모사
+    _rep = _o.run()
+    check("F3: _run_vuln 예외에도 run() 완료", _rep.status == "done")
+    check("F3: 예외에도 상태가 저장됨(재개 가능)", _store.exists("10.129.1.5"))
+    _loaded = _store.load("10.129.1.5")
+    check("F3: 저장분에 RECON 진행 포함", _loaded is not None and _loaded.host is not None)
+
 print("\n=== 자율 지식 획득(learn_gaps) — 관측 기술 자동 학습 ===")
 import os as _os, tempfile as _tmp
 from htb_agent import learn as _learn
