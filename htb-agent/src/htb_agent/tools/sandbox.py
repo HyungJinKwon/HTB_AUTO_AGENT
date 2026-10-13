@@ -40,6 +40,20 @@ class SandboxError(RuntimeError):
     """샌드박스 시작·정책 적용 실패 — 정책 없이 실행하지 않도록(fail-closed) 예외로 알린다."""
 
 
+def image_available(image: str = DEFAULT_IMAGE, exec_fn: Exec | None = None) -> bool:
+    """docker 이미지가 '이미 빌드돼 있는지'(빌드 부작용 없이 바로 쓸 수 있는지) 확인.
+    자율 모드의 샌드박스 자동선택에 쓴다 — 이미지가 없으면 빌드하지 않고 경고로 남긴다."""
+    if exec_fn is None and not shutil.which("docker"):
+        return False
+    run = exec_fn or subprocess.run
+    try:
+        p = run(["docker", "image", "inspect", image],
+                capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL)
+    except Exception:   # noqa: BLE001
+        return False
+    return getattr(p, "returncode", 1) == 0
+
+
 def _norm_cidrs(cidrs: Iterable[str]) -> list[str]:
     """허용 대역 정규화(IPv4 만). 잘못된 값은 예외 — 조용히 넓히지 않는다."""
     out: list[str] = []

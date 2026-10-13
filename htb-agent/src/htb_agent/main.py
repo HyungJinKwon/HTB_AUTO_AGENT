@@ -200,6 +200,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="완전 자동: 범위내+검증통과만 실행, 범위 밖은 조용히 건너뜀(무프롬프트)")
     g_mode.add_argument("--manual", action="store_true",
                    help="완전 수동: 모든 명령을 실행 전 확인(승인제 최대)")
+    g_mode.add_argument("--full-auto", action="store_true", dest="full_auto",
+                   help="🚀 한 플래그 완전 발사: --autonomous + --exploit-exec + --auto-poc + "
+                        "--catch-revshell 을 모두 켜고, 가능하면 egress 샌드박스를 자동 선택한다. "
+                        "⚠️ 실제 익스플로잇·PoC 발사·리버스셸 수신을 수행 — 권한이 확인된 대상 전용. "
+                        "범위 밖·파괴명령 게이트는 그대로 유지된다")
     g_mode.add_argument("--dry-run", action="store_true", dest="dry_run",
                    help="계획 미리보기: 정찰·분석은 하되 제안된 명령은 '실행하지 않고' 보여만 준다(무해 점검)")
     g_mode.add_argument("--exploit-exec", action="store_true", dest="exploit_exec",
@@ -525,6 +530,19 @@ def _print_kb_sync(r, verbose: bool = False) -> None:
         print(ui.dim(f"     ✗ {name} — {reason}"))
 
 
+def _expand_full_auto(args) -> None:
+    """--full-auto 번들을 개별 플래그로 전개한다(제자리 변경). --autonomous 를 조용히 익스
+    발사로 덮어쓰지 않도록, 실제 발사(exploit-exec/auto-poc/catch-revshell) 옵트인은 이
+    명시적 플래그로만 켠다 — 인지된 옵트인(생성 전용 경계)을 보존하기 위함. 이미 켜둔 개별
+    플래그는 유지(교집합 아님)."""
+    if not getattr(args, "full_auto", False):
+        return
+    args.autonomous = True
+    args.exploit_exec = True
+    args.auto_poc = True
+    args.catch_revshell = True
+
+
 def select_approver(*, manual: bool, auto: bool, autonomous: bool,
                     contained: bool, gate_judge: bool, llm_router):
     """승인자(approver) 최종 선택 — 실행기(runner)의 contained 여부까지 반영한 '한 곳'.
@@ -753,8 +771,30 @@ def _run_target(args, cfg, knowledge_dir, runner) -> int:
     from .approval import interactive_observer
     observer = interactive_observer if (args.observe and runner is None) else None
 
+    # 자율 모드 도구 자동설치(옵트인=--autonomous): 빠진 보안 도구를 저장소 공식 스크립트로
+    # 자동 설치해 '도구 미설치로 조용히 건너뛰기'를 줄인다. 전부 설치돼 있으면 no-op,
+    # 스크립트를 못 찾거나(설치형 wheel) 실패해도 치명적이지 않다(안내 후 그대로 진행).
+    # runner 주입(테스트·임베딩)이면 실제 실행을 호출자가 통제하므로 설치 셸아웃을 하지 않는다.
+    if args.autonomous and not args.dry_run and runner is None:
+        from . import installer
+        _irc, _imsg = installer.install_missing(None)
+        print((ui.mark_ok if _irc == 0 else ui.mark_warn)("자율 도구 준비: " + _imsg))
+
     # 7.5) 실행기 + 작업공간 — 샌드박스(docker)는 egress 방화벽을 건 뒤에만 명령을 받는다
     sandbox_kind = pick(args.sandbox, cfg.sandbox, "none")
+    # 자율 모드 샌드박스 자동선택: 사용자가 샌드박스를 명시하지 않았고(=none) docker 데몬이
+    # 떠 있으며 이미지가 '이미 빌드돼' 있으면 docker 샌드박스를 자동 선택한다. 컨테이너 방화벽이
+    # egress 를 타겟 대역으로 강제하므로 '더 격리'되는 방향(안전 완화 아님) — 이 안에서 동적·
+    # 스크립트 실행이 자동으로 돈다. 이미지가 없으면 빌드하지 않고 기존 경고를 남긴다.
+    if (args.autonomous and runner is None and args.sandbox is None
+            and pick(None, cfg.sandbox, "none") == "none"):
+        from .livebench import docker_available as _dock_ok
+        from .tools.sandbox import DEFAULT_IMAGE as _DIMG
+        from .tools.sandbox import image_available as _img_ok
+        if _dock_ok() and _img_ok(_DIMG):
+            sandbox_kind = "docker"
+            print(ui.mark_ok("자율 모드: egress 샌드박스(docker) 자동 선택 — 동적·스크립트 실행 자동화 "
+                             f"(이미지 {_DIMG})"))
     workspace = None
     import typing as _t
     sandbox: _t.Any = None   # DockerSandbox | VMSandbox | None — 공통 수명주기(start/stop)만 사용
@@ -1254,6 +1294,9 @@ def _main(argv: list[str] | None = None, runner=None) -> int:
     args = parser.parse_args(argv)
     from . import ui
     from .config import Config, ConfigError, load_config, pick
+
+    # --full-auto: 실제 발사까지 포함한 '한 플래그 완전 자동' 번들(명시적 옵트인).
+    _expand_full_auto(args)
 
     # 단독 명령은 하나만, 타겟 없이 — 조합 시 조용히 하나만 실행되던 문제 방지
     standalone = [flag for flag, v in (
