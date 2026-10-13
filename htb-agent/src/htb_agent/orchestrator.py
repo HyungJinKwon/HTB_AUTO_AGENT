@@ -229,6 +229,7 @@ class Orchestrator(FootholdMixin):
                  auto_poc: bool = False,
                  catch_revshell: bool = False,
                  poc_commands: "list[str] | None" = None,
+                 poc_dir: str = "",
                  judge: bool = False,
                  workspace=None):
         self.guard = guard
@@ -294,6 +295,9 @@ class Orchestrator(FootholdMixin):
         self._web_secret_probed: set[str] = set()     # 웹 노출 비밀/백업 열거 1회 가드(베이스별)
         self._web_fp_probed: set[str] = set()          # vhost 결정적 핑거프린트 1회 가드
         self.poc_commands = poc_commands or []
+        # 내장 익스 모듈(공개 PoC 오케스트레이션) — 사용자 선조달 PoC 디렉터리(선택) + 활성 모듈 핸들.
+        self.poc_dir = poc_dir
+        self._active_exploit_module = None   # _consider_builtin_exploit 가 매칭 시 세팅(발판 캡처용)
 
     def run(self) -> OrchestrationReport:
         # 경과 시간은 정찰부터 포함, 마감 확인은 스윕 루프에서(정찰은 유한 폴백으로 별도 관리)
@@ -554,7 +558,8 @@ class Orchestrator(FootholdMixin):
             self._prepare_revshells(report)
             # PHASE 3.9 직전: PoC 실행(3단계) → 웹 RCE 발판 → exploit-exec 발판(1단계)
             if self.exploit_exec and not interrupted:
-                self._exploit_run_stage(report, host)     # 3단계: PoC 실행 → 자격
+                self._consider_builtin_exploit(report, host)  # 내장 익스 모듈 매칭 → PoC 조달·큐잉
+                self._exploit_run_stage(report, host)     # 3단계: PoC 실행 → 자격·발판 URL 캡처
                 self._foothold_stage(report, host)        # 웹 RCE 발판·리버스셸 → 자격수확 → 플래그
                 self._exploit_exec_stage(report, host)    # 1단계: SSH 자격 → 플래그 → privesc
 
@@ -1839,6 +1844,60 @@ class Orchestrator(FootholdMixin):
         attacker_ip = (str(list(self.guard.attacker_ips)[0])
                        if self.guard.attacker_ips else "")
         preparations.prepare_privesc(report, prof, attacker_ip, self.audit)
+
+    def _consider_builtin_exploit(self, report: "OrchestrationReport", host) -> None:
+        """핑거프린트된 제품/버전이 내장 익스 모듈과 매칭되면, 게이트-세이프하게 PoC 를 조달해
+        실행 큐(poc_commands)에 투입하고 발판 캡처를 활성화한다(--exploit-exec/--auto-poc 옵트인).
+
+        조달 순서(스코프 게이트 보존): ① 로컬 선조달분/이전 결과 → ② exploit-db(searchsploit -m,
+        로컬 무해) 조달 후 재탐색. 외부 git 는 '자동 clone 하지 않고' 1회 수동 조달 안내만 남긴다
+        (외부 호스트 접속을 게이트 우회로 자동화하지 않기 위함). 실제 PoC 실행은 _exploit_run_stage
+        가 기존 3관문으로 수행한다. 매칭 모듈은 _active_exploit_module 로 걸어 발판 URL 캡처에 쓴다.
+        인가/CTF 대상 전용(§4)."""
+        if self.world is None or self.dry_run or not (self.exploit_exec and self.auto_poc):
+            return
+        if getattr(self, "_active_exploit_module", None) is not None:
+            return   # 재진입 중복 금지(한 세션 1모듈)
+        prod = (self.world.web_product or "").strip()
+        ver = (self.world.web_version or "").strip()
+        if not prod:
+            return
+        from . import exploit_modules
+        mod = exploit_modules.match(prod, ver)
+        if mod is None:
+            return
+        extra = [self.poc_dir] if getattr(self, "poc_dir", "") else []
+        poc_path = mod.find_local_poc(extra_dirs=extra)
+        # exploit-db 에 있으면 로컬 무해 조달(searchsploit -m) 을 게이트로 실행 후 재탐색.
+        if not poc_path and mod.edb_id:
+            self._attempt(report, report.enum_findings, mod.fetch_command(), phase="access")
+            poc_path = mod.find_local_poc(extra_dirs=extra)
+        if not poc_path:
+            hint = mod.manual_stage_hint()
+            msg = (f"# 내장 익스 모듈 {mod.cve} 매칭({prod} {ver or '버전미상'}) — PoC 가 로컬에 "
+                   f"없어 자동 발사 보류. 1회 받아 두면 이후 --full-auto 가 자동 사용(인가 대상 전용):")
+            if hint:
+                msg += "\n#   ↳ " + hint
+            msg += (f"\n#   ↳ 받은 뒤 위치: 현재 디렉터리 · ~/.assassin/pocs/{mod.cve}/ "
+                    f"또는 --poc-dir 로 지정")
+            if msg not in report.manual_suggestions:
+                report.manual_suggestions.append(msg)
+            self.audit.event("builtin_exploit_poc_missing", cve=mod.cve, product=prod)
+            return
+        bases = self._web_bases(host) if host is not None else []
+        scheme = "https" if any(b.startswith("https") for b in bases) else "http"
+        lhost = (str(next(iter(self.guard.attacker_ips)))
+                 if self.guard.attacker_ips else "")
+        target = str(self.guard.bound_host or self.guard.bound_target or self.world.target)
+        inv = mod.build_invocation(poc_path, target, scheme=scheme, lhost=lhost)
+        if inv and inv not in self.poc_commands:
+            self.poc_commands.append(inv)
+        self._active_exploit_module = mod
+        self.audit.event("builtin_exploit_queued", cve=mod.cve, product=prod, version=ver,
+                         poc=poc_path, channel=mod.channel)
+        report.manual_suggestions.append(
+            f"# ⭐ 내장 익스 모듈 자동 발사 큐잉 — {mod.cve} ({mod.title}). PoC={poc_path} · "
+            f"발판 채널={mod.channel}. 실행은 게이트·옵트인 하. 인가 대상 전용.")
 
     def _prepare_lateral(self, report: OrchestrationReport) -> None:
         """수확한 크리덴셜/NT 해시를 '열린 다른 서비스' 재사용·PtH 후보로 준비(생성 전용)."""

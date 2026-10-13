@@ -178,6 +178,9 @@ def build_parser() -> argparse.ArgumentParser:
                         "(반복 가능). 권한 확인 대상 전용. 버전 대조 후 사용")
     g_mode.add_argument("--auto-poc", action="store_true", dest="auto_poc",
                     help="⭐ 버전매칭 1순위 PoC 실행계획을 자동으로 --poc 큐에 투입(권한 확인 대상 전용)")
+    g_mode.add_argument("--poc-dir", dest="poc_dir", default=None, metavar="DIR",
+                    help="내장 익스 모듈용 공개 PoC 선조달 디렉터리(선택). 2025 CVE 등 exploit-db "
+                         "미등재 PoC 를 1회 받아 두면 핑거프린트 매칭 시 --full-auto 가 자동 사용")
     g_mode.add_argument("--sandbox", choices=["none", "shell", "docker", "vm"], default=None,
                    help="명령을 '어디서' 실행할지: none=로컬 셸 비경유(기본, 파이프 불가) · "
                         "shell=로컬 bash(파이프 O, 네트워크 강제 X) · docker=Kali 컨테이너+egress 방화벽 · "
@@ -878,6 +881,7 @@ def _run_target(args, cfg, knowledge_dir, runner) -> int:
                                 catch_revshell=getattr(args, "catch_revshell", False),
                                 judge=getattr(args, "judge", False),
                                 poc_commands=args.poc_commands or [],
+                                poc_dir=getattr(args, "poc_dir", "") or "",
                                 dry_run=args.dry_run,
                                 observer=observer,
                                 max_enum=max_enum,
