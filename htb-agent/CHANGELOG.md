@@ -2,6 +2,26 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.34.0] — 2026-10-13
+
+### 수정(Fixed) — 논리적 흐름 최종 점검: 리버스셸 발판 순서 버그
+전체 파이프라인 흐름·누락 정밀 검토에서 확인된 **순서(ordering) 버그** 교정.
+- **리버스셸 수신 발판이 구조적으로 무력화되던 문제(MED)**: `run()` 에서 발판 단계
+  (`_foothold_stage`, PHASE 3.9 직전)가 `report.revshell_lhost` 를 읽는데, 그 값의
+  **유일한 writer** 인 `_prepare_revshells`(PHASE 3.9)가 발판 **뒤에** 실행됐다. 그래서
+  발판 시점엔 lhost 가 항상 "" → `_acquire_reverse_shell` 의 가드가 매번 발동해
+  `--catch-revshell` 리스너가 **한 번도 뜨지 못했다**(웹 RCE 가 아닌 리버스셸 콜백이
+  발판 벡터인 전형적 경로가 막힘). `_prepare_revshells` 를 발판 **이전**으로 이동해 교정
+  (생성 전용이라 먼저 돌아도 부작용 없음). 회귀 테스트로 run() 순서 불변식 고정
+  (기존 테스트는 report 를 미리 채워 호출해 이 순서를 못 잡았음).
+
+### 참고(Known limitations) — 정직성(§3), 이번 릴리스에서 변경 없음
+- 웹 RCE 발판 엔드포인트(`foothold._acquire_web_rce`)는 현재 FreePBX 참조머신 기준
+  (`/admin/config.php`)이며 PoC 가 RCE 를 얻은 실제 엔드포인트로 자동 배선되지는 않는다
+  (`rce_url` 은 테스트에서만 설정). 일반 머신의 웹 RCE 발판은 PoC 출력·SSH 경로가 보완.
+- 소비 스테이지 멱등 가드(`_version_probed` 등)는 영속되지 않아 `--resume` 시 읽기 전용
+  프로브가 1회 재발행된다(무해·생성 전용, 재공격 아님).
+
 ## [2.33.0] — 2026-10-13
 
 ### 추가(Added) — 게이트 유지하 최대 자동화

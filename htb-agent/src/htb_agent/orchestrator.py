@@ -546,14 +546,17 @@ class Orchestrator(FootholdMixin):
         try:
             if not interrupted:
                 self._refresh_exploit_shortlist(report, host)
+            # ── PHASE 3.9: 리버스쉘 자동 준비 (공격자 IP 확보 시) ──
+            # ⚠️ 발판 '시도 전에' 준비해야 한다 — _foothold_stage 의 리버스셸 수신 경로가
+            # report.revshell_lhost/lport 를 읽는데, 이 함수가 유일한 writer 이기 때문이다.
+            # 과거엔 발판 뒤에 준비돼 lhost 가 항상 "" → --catch-revshell 이 구조적으로
+            # 무력화됐다(생성 전용이라 발판보다 먼저 돌아도 안전·부작용 없음).
+            self._prepare_revshells(report)
             # PHASE 3.9 직전: PoC 실행(3단계) → 웹 RCE 발판 → exploit-exec 발판(1단계)
             if self.exploit_exec and not interrupted:
                 self._exploit_run_stage(report, host)     # 3단계: PoC 실행 → 자격
-                self._foothold_stage(report, host)        # 웹 RCE 발판 → 자격수확 → 플래그
+                self._foothold_stage(report, host)        # 웹 RCE 발판·리버스셸 → 자격수확 → 플래그
                 self._exploit_exec_stage(report, host)    # 1단계: SSH 자격 → 플래그 → privesc
-
-            # ── PHASE 3.9: 리버스쉘 자동 준비 (공격자 IP 확보 시) ──
-            self._prepare_revshells(report)
 
             # ── PHASE 3.95: AWS/S3 열거 자동 준비 (호스트명/도메인 확보 시) ──
             # 버킷 후보·비인증 점검을 자동 생성. AWS 엔드포인트는 타겟 범위 밖이라

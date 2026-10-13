@@ -163,5 +163,38 @@ s_v = orcV._acquire_session(report_with_revshell(), None)
 check("검증 중 OSError → None(크래시 아님)", s_v is None)
 check("검증 실패 세션은 close 됨(누수 방지)", not raised_sess.alive)
 
+print("\n=== 순서 불변식 회귀: run() 에서 revshell 준비가 발판보다 먼저 ===")
+# _prepare_revshells 는 report.revshell_lhost 의 '유일한' writer 이고 _foothold_stage 가 그걸
+# 읽으므로, run() 에서 준비가 발판보다 '먼저' 와야 catch 경로가 lhost 를 본다. 과거엔 발판 뒤에
+# 준비돼 lhost 가 항상 "" → --catch-revshell 이 구조적으로 무력화됐다(이 테스트가 그 회귀를 고정).
+import ipaddress  # noqa: E402
+
+AD_XML = (f'<?xml version="1.0"?><nmaprun><host><status state="up"/>'
+          f'<address addr="{T}"/><ports>'
+          f'<port protocol="tcp" portid="80"><state state="open"/>'
+          f'<service name="http"/></port></ports></host></nmaprun>')
+gO = ScopeGuard.from_cidr_strings()
+gO.bind_target(T)
+gO.attacker_ips.add(ipaddress.ip_address("10.10.14.9"))
+orcO = Orchestrator(gO, FakeRunner(lambda c: RunOutput(c, AD_XML) if c.startswith("nmap")
+                                   else RunOutput(c, "")),
+                    KnowledgeBase.load(), auto_approve_in_scope, is_tool_available=lambda b: True,
+                    quiet=True, exploit_exec=True, catch_revshell=True, max_sweeps=1)
+_order = []
+_origp, _origf = orcO._prepare_revshells, orcO._foothold_stage
+def _recp(rep):
+    _order.append("prepare"); return _origp(rep)
+def _recf(rep, host):
+    _order.append(("foothold", rep.revshell_lhost)); return _origf(rep, host)
+orcO._prepare_revshells = _recp
+orcO._foothold_stage = _recf
+orcO._revshell_catcher = lambda lhost, lport: None   # 콜백 없음(소켓 미접촉·안전)
+orcO.run()
+_fh = next((o for o in _order if isinstance(o, tuple) and o[0] == "foothold"), None)
+check("prepare 가 foothold 보다 먼저 호출",
+      "prepare" in _order and _fh is not None
+      and _order.index("prepare") < _order.index(_fh))
+check("foothold 시점에 revshell_lhost 가 채워짐(빈 문자열 아님)", bool(_fh and _fh[1]))
+
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
