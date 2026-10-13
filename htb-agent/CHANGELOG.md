@@ -2,6 +2,30 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.36.0] — 2026-10-13
+
+내장 익스 체인의 **마지막 수동 단계(공개 PoC git clone)를 제거**하고, CVE 모듈을 **데이터로
+확장**할 수 있게 해 다른 CVE/머신에도 적용되게 했다. 플래그 자동 탐색도 비표준 위치까지 넓혔다.
+
+### 추가(Added)
+- **공개 PoC 자동 조달(`poc_fetch.py`, 옵트인 `--fetch-pocs` — `--full-auto` 가 자동 켬)**:
+  내장 모듈이 매칭되고 로컬에 PoC 가 없으면 **레지스트리가 선언한 공개 출처에서만** 자동 조달한다
+  (`git clone --depth 1` / `searchsploit -m`). 수동 git clone 단계가 사라졌다.
+- **사용자 확장 레지스트리(`exploit_modules.load_manifest`, `--exploit-modules FILE`)**: JSON
+  매니페스트로 **코드 수정 없이** 다른 CVE/머신용 모듈(핑거프린트·취약버전·PoC 출처·실행
+  템플릿·웹셸 파서)을 추가한다. `match`/`known` 이 내장+사용자 모듈을 함께 조회.
+- **플래그 자동 탐색 강화(`flag_read`)**: user/root 직접 경로에서 못 찾으면 깊이 제한(`-maxdepth`)
+  바운디드 `find` 폴백으로 비표준 위치(`/var/www`·`/srv`·커스텀 홈 등)까지 커버. CTF single 도 동일.
+
+### 안전(Safety)
+- 조달 출처는 **레지스트리/매니페스트가 선언한 값만** 쓴다 — LLM·타겟 응답·자유입력 URL 을
+  clone 하지 않는다(주입 표면 없음). 받기만 하고 **실행은 기존 3관문**. `ASSASSIN_NO_NET=1` 이면
+  실 네트워크 조달 차단. 받은 공개 제3자 코드의 신뢰 가정은 운영자 책임(문서화). 전부 옵트인·
+  스코프 게이트·인가 대상 전용. 플래그 find 폴백은 깊이 제한으로 전체 디스크 스캔을 피한다.
+
+### 테스트(Tests)
+- `test_poc_fetch`(8) · `test_exploit_manifest`(9) 추가 · `test_flag_read`(+3). 전부 실 네트워크 없이 검증.
+
 ## [2.35.0] — 2026-10-13
 
 `--full-auto` 가 **핑거프린트 → 공개 익스 실행 → 웹셸 캡처 → nc 리버스셸 수신 → user 플래그 → privesc** 까지 손 안 대고 잇도록 발판 체인을 완성했다. exploit-db 에 없는 최신 CVE(예: 2025)도 내장 모듈로 자동화하되, 무기화 코드는 레포에 심지 않고 공개 PoC 를 런타임에 조달·오케스트레이션한다.
