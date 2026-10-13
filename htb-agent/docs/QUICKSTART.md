@@ -38,7 +38,7 @@ assassin --setup-llm                # (선택) Claude·로컬 LLM 연결 마법�
 | 처음 써 보기(위험한 것만 물어봄) | `assassin 10.129.1.5` |
 | 모든 명령을 보며 배우기 | `assassin 10.129.1.5 --manual` |
 | 해커톤: 최대 자율 + 시간 제한 | `assassin 10.129.1.5 --autonomous --time-budget 45 --writeup --html` |
-| 🚀 완전 자동 루트 시도(발판·플래그까지) | `assassin 10.129.1.5 --autonomous --llm claude --exploit-exec --auto-poc --html --json` |
+| 🚀 완전 자동 루트 시도(발판·플래그까지) | `assassin 10.129.1.5 --full-auto --llm claude --html --json` |
 | LLM 두뇌 붙이기(처음 한 번) | `assassin --setup-llm` → 이후 `assassin 10.129.1.5` 만으로 사용 |
 | LLM 연결 다시 확인 | `assassin --llm-test` |
 | LLM 직접 지정(비용 상한) | `assassin 10.129.1.5 --llm hybrid --max-cost 2` |
@@ -46,9 +46,11 @@ assassin --setup-llm                # (선택) Claude·로컬 LLM 연결 마법�
 | 중단한 곳부터 이어서 | 같은 명령 + `--resume` (Ctrl+C 로 멈춰도 저장됨) |
 | 자격증명을 넣어 자동으로 채우기 | `--cred 사용자:비밀번호` |
 
-> **완전 자동 루트 한 줄의 플래그 뜻** — `--autonomous`(무프롬프트 완전자동) ·
-> `--llm claude`(Claude 두뇌, 먼저 `assassin --setup-llm`) · `--exploit-exec`(발판 **실제 실행** 켜기,
-> 기본 OFF) · `--auto-poc`(버전에 맞는 ⭐ 1순위 PoC 자동 선택·발사) · `--html`/`--json`(결과 저장).
+> **완전 자동 루트 한 줄의 플래그 뜻** — `--full-auto`(한 플래그 번들: `--autonomous` +
+> `--exploit-exec` + `--auto-poc` + `--catch-revshell`, 가능하면 egress 샌드박스 자동 선택 →
+> 발판 **실제 실행**·PoC 발사·리버스셸 수신까지. 기본 OFF, 명시적 옵트인) ·
+> `--llm claude`(Claude 두뇌, 먼저 `assassin --setup-llm`) · `--html`/`--json`(결과 저장).
+> (개별로 켜려면 `--autonomous --exploit-exec --auto-poc` 처럼 풀어 써도 동일.)
 > **권한이 확인된 대상에서만.** 발판이 실제로 성립해야 자격수확·플래그로 이어지고, 성립 안 하면
 > 조용히 발판 미확보로 끝납니다(헛발판 안 잡음). 자세히는 [USAGE.md §10.2](USAGE.md).
 

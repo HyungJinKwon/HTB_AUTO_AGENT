@@ -507,10 +507,17 @@ assassin 10.129.1.5 --cred svc:Summer2024 --exploit-exec --autonomous
 
 ```bash
 # 🚀 완전 자동 루트 시도(초보자용 한 줄): 정찰→버전→⭐PoC 자동선택→발판→플래그 + 결과물 저장
-assassin 10.129.1.5 --autonomous --llm claude --exploit-exec --auto-poc --html --json
+assassin 10.129.1.5 --full-auto --llm claude --html --json
 ```
-플래그 뜻 — `--autonomous`(무프롬프트 완전자동) · `--llm claude`(Claude 두뇌) · `--exploit-exec`(발판
-실제 실행 켜기) · `--auto-poc`(⭐ PoC 자동 선택·발사) · `--html`/`--json`(대시보드·기계판독 결과 저장).
+플래그 뜻 — `--full-auto`(**한 플래그 번들**: `--autonomous` + `--exploit-exec` + `--auto-poc` +
+`--catch-revshell` 를 한 번에 켜고, docker 이미지가 이미 빌드돼 있으면 egress 샌드박스를 자동 선택.
+⚠️ 실제 익스·PoC 발사·리버스셸 수신 — 권한 확인 대상 전용) · `--llm claude`(Claude 두뇌) ·
+`--html`/`--json`(대시보드·기계판독 결과 저장).
+
+> 익스 발사 옵트인은 일반 `--autonomous` 에 묻지 않고 이 명시적 `--full-auto`(또는 개별
+> `--exploit-exec`/`--auto-poc`/`--catch-revshell`)로만 켠다 — `--autonomous` 단독은 열거·생성까지만
+> 하고 실제 발사는 하지 않는다('인지된 옵트인' 보존). 풀어 쓰면
+> `--autonomous --exploit-exec --auto-poc --catch-revshell` 와 동일.
 
 > ⚠️ 권한이 확인된 대상(HTB·인가된 진단)에서만. 자격·대상 모두 범위 가드의 통제를 받는다.
 

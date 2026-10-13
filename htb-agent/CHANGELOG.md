@@ -2,6 +2,15 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.34.1] — 2026-10-13
+
+### 문서(Docs) — `--full-auto` 문서 동기화
+2.33 에서 추가한 `--full-auto` 번들이 README 에만 반영되고 QUICKSTART·USAGE 의
+'완전 자동 루트 한 줄' 예시는 구형 4-플래그 콤보로 남아 있던 불일치를 교정.
+세 문서 모두 `--full-auto`(= `--autonomous`+`--exploit-exec`+`--auto-poc`+`--catch-revshell`,
+샌드박스 자동선택) 한 줄로 통일하고, "`--autonomous` 단독은 실제 발사 안 함(인지된 옵트인)"
+설명을 함께 명시. 코드 변경 없음(문서 전용).
+
 ## [2.34.0] — 2026-10-13
 
 ### 수정(Fixed) — 논리적 흐름 최종 점검: 리버스셸 발판 순서 버그
