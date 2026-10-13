@@ -178,6 +178,16 @@ def build_parser() -> argparse.ArgumentParser:
                         "(반복 가능). 권한 확인 대상 전용. 버전 대조 후 사용")
     g_mode.add_argument("--auto-poc", action="store_true", dest="auto_poc",
                     help="⭐ 버전매칭 1순위 PoC 실행계획을 자동으로 --poc 큐에 투입(권한 확인 대상 전용)")
+    g_mode.add_argument("--poc-dir", dest="poc_dir", default=None, metavar="DIR",
+                    help="내장 익스 모듈용 공개 PoC 디렉터리(선택, 기본 ~/.assassin/pocs). 받은 PoC "
+                         "를 여기서 찾고, --fetch-pocs 로 자동 조달 시 여기로 받는다")
+    g_mode.add_argument("--fetch-pocs", action="store_true", dest="fetch_pocs",
+                    help="옵트인(--full-auto 가 자동 켬): 내장 익스 모듈이 매칭되고 로컬에 PoC 가 "
+                         "없으면 '레지스트리가 선언한 공개 출처'에서 자동 조달(git/searchsploit). "
+                         "임의 URL 아님(주입 방지)·받기만 함(실행은 3관문). 인가 대상 전용")
+    g_mode.add_argument("--exploit-modules", dest="exploit_modules", default=None, metavar="FILE",
+                    help="사용자 익스 모듈 매니페스트(JSON). 코드 수정 없이 CVE 모듈(핑거프린트·"
+                         "취약버전·PoC 출처·실행템플릿·웹셸 파서)을 추가해 다른 CVE/머신에 적용")
     g_mode.add_argument("--sandbox", choices=["none", "shell", "docker", "vm"], default=None,
                    help="명령을 '어디서' 실행할지: none=로컬 셸 비경유(기본, 파이프 불가) · "
                         "shell=로컬 bash(파이프 O, 네트워크 강제 X) · docker=Kali 컨테이너+egress 방화벽 · "
@@ -541,6 +551,7 @@ def _expand_full_auto(args) -> None:
     args.exploit_exec = True
     args.auto_poc = True
     args.catch_revshell = True
+    args.fetch_pocs = True        # 내장 모듈 매칭 시 공개 PoC 자동 조달(레지스트리 출처만)
 
 
 def select_approver(*, manual: bool, auto: bool, autonomous: bool,
@@ -871,6 +882,16 @@ def _run_target(args, cfg, knowledge_dir, runner) -> int:
         manual=bool(args.manual), auto=bool(args.auto), autonomous=bool(args.autonomous),
         contained=bool(getattr(runner, "contained", False)),
         gate_judge=bool(getattr(args, "gate_judge", False)), llm_router=llm_router)
+    # 사용자 익스 모듈 매니페스트(선택) — 코드 수정 없이 다른 CVE/머신 모듈을 데이터로 추가.
+    _em_file = getattr(args, "exploit_modules", None)
+    if _em_file:
+        from . import exploit_modules as _em
+        try:
+            _n = _em.load_manifest(_em_file)
+            print(f"[+] 사용자 익스 모듈 {_n}건 로드: {_em_file}")
+        except (OSError, ValueError) as e:
+            print(f"[!] 익스 모듈 매니페스트 로드 실패({_em_file}): {e}")
+
     orchestrator = Orchestrator(guard, runner or SubprocessRunner(), kb, approver,
                                 workspace=workspace,
                                 auto_poc=args.auto_poc,
@@ -878,6 +899,8 @@ def _run_target(args, cfg, knowledge_dir, runner) -> int:
                                 catch_revshell=getattr(args, "catch_revshell", False),
                                 judge=getattr(args, "judge", False),
                                 poc_commands=args.poc_commands or [],
+                                poc_dir=getattr(args, "poc_dir", "") or "",
+                                fetch_pocs=getattr(args, "fetch_pocs", False),
                                 dry_run=args.dry_run,
                                 observer=observer,
                                 max_enum=max_enum,

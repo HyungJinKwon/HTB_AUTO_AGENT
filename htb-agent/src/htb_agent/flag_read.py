@@ -20,15 +20,28 @@ ROOT_READS = [
     "cat /root/root.txt 2>/dev/null",
     "cat /root/Desktop/root.txt 2>/dev/null",
 ]
+# 직접 경로에서 못 찾을 때의 '바운디드' 폴백(깊이 제한 — 전체 디스크 스캔 방지). 비표준 위치에
+# 둔 플래그(예: /var/www·커스텀 홈)를 잡는다. read_flags 가 user+root 를 이미 찾으면 조기 종료라
+# 이 폴백은 '직접 경로가 비었을 때만' 실질적으로 돈다.
+USER_FALLBACK = [
+    "find /home /var/www /srv /opt -maxdepth 4 -name user.txt -exec cat {} + 2>/dev/null",
+]
+ROOT_FALLBACK = [
+    "find /root -maxdepth 4 -name root.txt -exec cat {} + 2>/dev/null",
+]
+# CTF single 플래그 흔한 위치 + 바운디드 폴백.
+SINGLE_READS = [
+    "cat flag.txt 2>/dev/null", "cat /flag* 2>/dev/null", "cat ~/flag.txt 2>/dev/null",
+    "find / -maxdepth 4 \\( -name 'flag*.txt' -o -name 'flag' \\) -exec cat {} + 2>/dev/null",
+]
 
 
 def flag_read_commands(flag_kind: str = "boot2root") -> list[str]:
-    """발판 셸에서 돌릴 플래그 읽기 명령 목록(생성 전용 — 실행 아님).
-    single(CTF) 이면 user/root 구분 없이 흔한 위치 몇 곳."""
+    """발판 셸에서 돌릴 플래그 읽기 명령 목록(생성 전용 — 실행 아님). 직접 경로 → 바운디드 폴백 순.
+    single(CTF) 이면 user/root 구분 없이 흔한 위치 + 바운디드 find."""
     if flag_kind == "single":
-        return ["cat flag.txt 2>/dev/null", "cat /flag* 2>/dev/null",
-                "cat ~/flag.txt 2>/dev/null"]
-    return [*USER_READS, *ROOT_READS]
+        return list(SINGLE_READS)
+    return [*USER_READS, *ROOT_READS, *USER_FALLBACK, *ROOT_FALLBACK]
 
 
 def read_flags(session, flag_kind: str = "boot2root",

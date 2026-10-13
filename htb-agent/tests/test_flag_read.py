@@ -37,6 +37,12 @@ print("=== flag_read_commands ===")
 check("boot2root → user+root 읽기 명령", any("user.txt" in c for c in flag_read_commands())
       and any("root.txt" in c for c in flag_read_commands()))
 check("single → flag 읽기", any("flag" in c for c in flag_read_commands("single")))
+check("boot2root → 바운디드 find 폴백 포함(비표준 위치 커버)",
+      any("find" in c and "user.txt" in c for c in flag_read_commands())
+      and any("find" in c and "root.txt" in c for c in flag_read_commands()))
+check("single → 바운디드 find 폴백 포함", any("find" in c for c in flag_read_commands("single")))
+check("폴백은 깊이 제한(maxdepth) — 전체 스캔 아님",
+      all("-maxdepth" in c for c in flag_read_commands() if c.strip().startswith("find")))
 
 print("\n=== read_flags (채널 무관) ===")
 # user.txt·root.txt 를 가진 발판(리버스셸이든 웹RCE든 인터페이스만 보면 동일)
