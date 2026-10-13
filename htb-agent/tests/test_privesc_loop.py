@@ -120,5 +120,36 @@ except Exception:
     ok = False
 check("OSError 삼키고 안전 종료", ok and not orc4.world.has_access("root"))
 
+print("\n=== 자격 재사용(sudo -S 비번) → root 전이 + root.txt ===")
+PW = "S3cretPW"
+def cred_reuse_responder(cmd):
+    # sudo -S 비번 입력으로 id → uid=0, root.txt 직독 → 플래그. (일반 sudo -l 엔 gtfo 없음)
+    if "sudo -S" in cmd and "root.txt" in cmd:
+        return ROOTFLAG + "\n"
+    if "sudo -S" in cmd and "id" in cmd:
+        return "uid=0(root) gid=0(root) groups=0(root)"
+    if "root.txt" in cmd or "user.txt" in cmd or "flag" in cmd:
+        return ""
+    if "sudo -n -l" in cmd or cmd.startswith("id;"):
+        return "uid=1000(user) gid=1000(user)\n(no sudo gtfo here)\n"
+    return ""
+
+orc_cr = make_orc()
+orc_cr.world.add_cred(f"bob:{PW}", source="test")
+sess_cr = FakeSession(cred_reuse_responder)
+rep_cr = OrchestrationReport(target=T, flag_kind="boot2root")
+orc_cr._privesc_loop(sess_cr, rep_cr)
+check("sudo -S 자격재사용으로 root 전이", orc_cr.world.has_access("root"))
+check("root.txt 플래그 기록(sudo 직독 포함)", rep_cr.root_flag == ROOTFLAG)
+check("sudo -S 명령이 세션에서 실행됨", any("sudo -S" in c for c in sess_cr.cmds))
+
+print("\n=== NT 해시만 있는 자격 → sudo -S 시도 안 함(평문 아님) ===")
+orc_nt = make_orc()
+orc_nt.world.add_cred("admin:" + "a" * 32, source="test")   # 32-hex NT 해시
+sess_nt = FakeSession(lambda c: "uid=0(root)" if "sudo -S" in c else "")
+rep_nt = OrchestrationReport(target=T, flag_kind="boot2root")
+orc_nt._privesc_loop(sess_nt, rep_nt)
+check("NT 해시는 sudo -S 비번으로 안 씀", not any("sudo -S" in c for c in sess_nt.cmds))
+
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
