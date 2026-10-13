@@ -16,7 +16,7 @@
 | 모든 명령 보며 배우기 | `assassin 10.129.1.5 --manual` |
 | 해커톤(최대 자율+시간제한) | `assassin 10.129.1.5 --autonomous --time-budget 45 --writeup --html` |
 | 샌드박스에서 실제 익스까지 | `assassin 10.129.1.5 --autonomous --sandbox docker --llm hybrid` |
-| 🚀 완전 자동 루트 시도(발판·플래그까지) | `assassin 10.129.1.5 --autonomous --llm claude --exploit-exec --auto-poc --html --json` |
+| 🚀 완전 자동 루트 시도(발판·플래그까지) | `assassin 10.129.1.5 --full-auto --llm claude --html --json` |
 | CTF/Dreamhack 문제 | `assassin chall.host:1337 --platform ctf --category web` |
 
 ### 📚 문서 안내
@@ -51,6 +51,15 @@
 > 변형 학습 + 전 자동준비(리버스쉘·클라우드·권한상승·크래킹)를 묶어 목표(flag/root)까지
 > 스스로 추진합니다. 두뇌까지 쓰려면 `--llm hybrid` 추가. **안전 경계는 유지** —
 > 범위 밖·파괴명령은 여전히 게이트. `--manual` 은 autonomous 보다 우선합니다.
+> autonomous 는 추가로 **빠진 도구를 자동 설치**(저장소 공식 스크립트)하고, **docker 이미지가
+> 이미 빌드돼 있으면 egress 샌드박스를 자동 선택**해 동적·스크립트 실행까지 무중단으로 돌립니다
+> (이미지 없으면 빌드하지 않고 경고만 — 안전 완화 아님). autonomous 자체는 **실제 익스를 발사하지
+> 않습니다**(열거·생성까지).
+>
+> **🚀 한 플래그 완전 발사(`--full-auto`)**: `--autonomous + --exploit-exec + --auto-poc +
+> --catch-revshell` 을 한 번에 켜고 가능하면 샌드박스를 자동 선택합니다. ⚠️ **실제 익스플로잇·
+> PoC 발사·리버스셸 수신**을 수행하므로 **권한이 확인된 대상 전용**입니다. (익스 발사 옵트인을
+> 일반 `--autonomous` 에 묻지 않고 이 명시적 플래그로만 켜 '인지된 옵트인'을 보존합니다.)
 >
 > **샌드박스에서 실제 익스플로잇까지(`--sandbox docker`)**: 완전자율로 파이프·스크립트·
 > 대화형 도구까지 쓰려면 egress 강제 샌드박스를 켭니다. Kali 컨테이너 안에서 `bash -c` 로
@@ -417,6 +426,7 @@ cd htb-agent && python3 tests/run_all.py     # 전체 스위트(끝에 '총 N �
 | `--vm-confine` | --sandbox vm: 접속한 VM 에 egress 방화벽(타겟 대역만)을 적용해 docker 처럼 완전자율 동적 실행을 자동 허용. 그 VM 네트워크를 타겟으로 제한하므로 전용 풀이 VM 에서만 |
 | `--auto` | 완전 자동: 범위내+검증통과만 실행, 범위 밖은 조용히 건너뜀(무프롬프트) |
 | `--manual` | 완전 수동: 모든 명령을 실행 전 확인(승인제 최대) |
+| `--full-auto` | 🚀 한 플래그 완전 발사: --autonomous + --exploit-exec + --auto-poc + --catch-revshell 을 모두 켜고, 가능하면 egress 샌드박스를 자동 선택한다. ⚠️ 실제 익스플로잇·PoC 발사·리버스셸 수신을 수행 — 권한이 확인된 대상 전용. 범위 밖·파괴명령 게이트는 그대로 유지된다 |
 | `--dry-run` | 계획 미리보기: 정찰·분석은 하되 제안된 명령은 '실행하지 않고' 보여만 준다(무해 점검) |
 | `--exploit-exec` | 옵트인(기본 OFF): 확보한 평문 자격으로 SSH 접속해 플래그 읽기·권한상승 열거를 게이트를 거쳐 자동 실행(권한 확인 대상 전용) |
 | `--catch-revshell` | 옵트인(기본 OFF): 웹 RCE 로 발판이 안 잡힐 때 리버스셸로 발판 잡기 — --exploit-exec 발판 단계에서 준비된 리버스셸 payload 의 콜백을 소켓 리스너로 수신해 발판 세션화(공격자 IP/포트 확보 시). 성립 검증 통과분만 인정. 소켓 수신은 RCE 실행 표면 — 권한 확인 대상 전용 |
