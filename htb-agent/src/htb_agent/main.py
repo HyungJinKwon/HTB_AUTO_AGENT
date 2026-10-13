@@ -33,14 +33,37 @@ _HELP_EPILOG = """\
   2) assassin --setup-llm         (선택) Claude·로컬 LLM 연결 마법사
   3) assassin 10.129.x.x          HTB 머신 풀이 시작(위험한 명령만 물어봄)
 
-자주 쓰는 예:
+자주 쓰는 예(이 5개면 거의 다 됩니다):
+  assassin 10.129.x.x                                     기본(위험한 명령만 물어봄)
+  assassin 10.129.x.x --full-auto --attacker-ip <VPN IP>  🚀 완전 자동(발판·플래그·privesc)
   assassin 10.129.x.x --manual                            모든 명령을 보며 배우기
-  assassin 10.129.x.x --autonomous --time-budget 45 --html 해커톤: 최대 자율 + 시간 제한
   assassin chall.host:1337 --platform ctf --category web  CTF 문제
   assassin 10.129.x.x --resume                            중단한 곳부터 이어서
 
+이 도움말은 '자주 쓰는 옵션'만 보여 줍니다.  고급·전문 옵션 전체는:  assassin --help-all
 자세한 안내: docs/QUICKSTART.md (1쪽) · docs/USAGE.md
 """
+
+# 기본 `-h` 에 노출할 '자주 쓰는' 옵션(dest). 나머지(고급·전문)는 숨기고 `--help-all` 에서만
+# 보인다 — 옵션 자체는 전부 그대로 동작한다(표시만 정리). 초보자 혼란(87개 → ~20개) 감소.
+_COMMON_DESTS = {
+    "target",
+    "help", "help_all", "version", "doctor", "setup_llm", "llm_test",
+    "platform", "category", "attacker_ips", "creds", "cred_file",
+    "full_auto", "auto", "manual", "dry_run", "resume",
+    "llm", "writeup", "json_out", "html_out",
+}
+
+
+class _HelpAllAction(argparse.Action):
+    """--help-all: 고급 포함 '모든' 옵션을 보여 준다(기본 -h 는 자주 쓰는 것만)."""
+    def __init__(self, option_strings, dest, **kw):
+        kw.setdefault("nargs", 0)
+        super().__init__(option_strings, dest, **kw)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        build_parser(full=True).print_help()
+        parser.exit()
 
 
 class _SuggestingParser(argparse.ArgumentParser):
@@ -61,7 +84,7 @@ class _SuggestingParser(argparse.ArgumentParser):
         super().error(message)
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser(full: bool = False) -> argparse.ArgumentParser:
     p = _SuggestingParser(
         prog="assassin",
         usage="assassin <타겟> [옵션]      (처음이면: assassin --doctor)",
@@ -79,7 +102,9 @@ def build_parser() -> argparse.ArgumentParser:
     g_out = p.add_argument_group("결과물 · 기록")
     g_kb = p.add_argument_group("지식 · 학습 · 수집")
     g_tool = p.add_argument_group("단독 도구 (타겟 없이 실행 · 생성만 하는 도구 포함)")
-    g_start.add_argument("-h", "--help", action="help", help="이 도움말을 보여 주고 끝냄")
+    g_start.add_argument("-h", "--help", action="help", help="자주 쓰는 옵션 도움말(핵심만)")
+    g_start.add_argument("--help-all", action=_HelpAllAction, dest="help_all",
+                         help="고급·전문 포함 '모든' 옵션 보기")
     g_start.add_argument("--version", action="version", version=f"ASSASSIN {__version__}",
                          help="버전 표시")
     g_start.add_argument("--doctor", action="store_true",
@@ -310,6 +335,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="결과를 기계판독 JSON 으로 내보내기(경로 생략 시 <state-dir>/report_<타겟>.json)")
     g_out.add_argument("--html", nargs="?", const="__auto__", default=None, dest="html_out",
                    help="결과를 HTML 대시보드로 내보내기(블루/네이비, 경로 생략 시 <state-dir>/report_<타겟>.html)")
+    # 기본 -h 는 '자주 쓰는' 옵션만 — 나머지는 help 를 숨긴다(옵션 자체·파싱은 그대로, --help-all 에서 표시).
+    if not full:
+        for a in p._actions:
+            if a.dest not in _COMMON_DESTS and a.help is not argparse.SUPPRESS:
+                a.help = argparse.SUPPRESS
     return p
 
 

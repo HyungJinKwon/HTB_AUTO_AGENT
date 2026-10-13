@@ -539,8 +539,11 @@ assassin 10.129.1.5 --full-auto --llm claude --html --json
 3. **user 플래그** — 발판이 서면 설정/DB 자격 수확 + `user.txt` 읽기가 자동으로 따라온다.
 4. **nc 리버스셸 수신(`--catch-revshell`)** — 리스너를 백그라운드로 띄우고 웹셸로 리버스셸 payload 를
    쏴 콜백을 수신(수동 `nc -lvnp 4444` 과정 자동화). 성립하면 더 안정적인 셸로 승격, 실패해도 웹 발판 유지.
-5. **privesc 폐루프** — 발판 세션 위에서 열거→HIGH 벡터 랭킹→one-shot 상승→`uid=0`→`root.txt` 를 자동 시도
-   (웹셸/리버스셸 발판 모두. 표준 GTFOBins 경로 밖이면 생성 전용 제안으로 남긴다).
+5. **privesc 폐루프(root 자동화)** — 발판 세션 위에서 ⑴ **자격 재사용**(수확한 평문 비번을
+   `sudo -S` 로 넣어 전체권한 sudo 시도) ⑵ 열거→**GTFOBins HIGH 벡터**(php·node·gdb·find·vim·
+   tar·taskset·busybox·dash… sudo/SUID/capability) one-shot 상승 → `uid=0` 확인 → `/root/root.txt`
+   직독까지 자동. 웹셸/리버스셸 발판 모두. **표준 경로 밖(DB UDF·커널 LPE 등)은 자동 발사하지 않고
+   생성 전용 제안으로 남긴다**(정직성 §3). `assassin --help-all` 로 전체 옵션 확인.
 
 | 항목 | 내용 |
 |---|---|

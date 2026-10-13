@@ -36,22 +36,34 @@ check("3단계 안내(doctor·setup-llm·타겟)", "assassin --doctor" in err an
       and "assassin 10.129.x.x" in err)
 check("옵션 목록 벽 없음", "--max-parallel" not in err and "usage:" not in err)
 
-print("\n=== 도움말: 그룹 · 짧은 사용법 · 예시 ===")
+print("\n=== 도움말: 2단 구성(기본=핵심만, --help-all=전체) ===")
 h = M.build_parser().format_help()
 check("짧은 사용법", h.startswith("usage: assassin <타겟> [옵션]"))
-for g in ("시작하기", "대상 · 플랫폼", "실행 방식", "LLM 두뇌", "시간 · 한도", "결과물 · 기록", "단독 도구"):
-    check(f"그룹: {g}", g in h)
-check("시작하기가 맨 앞", h.index("시작하기") < h.index("대상 · 플랫폼") < h.index("단독 도구"))
-check("예시(epilog)", "처음 사용하는 순서" in h and "--autonomous --time-budget 45" in h)
+# 기본 -h: 옵션이 보이는 초보자 핵심 그룹 헤딩만 뜬다
+for g in ("시작하기", "대상 · 플랫폼", "실행 방식", "LLM 두뇌", "결과물 · 기록"):
+    check(f"기본 그룹: {g}", g in h)
+check("시작하기가 맨 앞", h.index("시작하기") < h.index("대상 · 플랫폼"))
+check("핵심 플래그 노출(--full-auto)", "--full-auto" in h)
+check("--help-all 안내", "--help-all" in h)
+check("기본엔 고급 옵션 숨김(--max-parallel·--sandbox 벽 제거)",
+      "--max-parallel" not in h and "--sandbox" not in h)
+check("예시(epilog)", "처음 사용하는 순서" in h and "--full-auto" in h)
+
+# --help-all: 고급 포함 '모든' 그룹·옵션
+hf = M.build_parser(full=True).format_help()
+for g in ("시간 · 한도", "단독 도구", "지식 · 학습 · 수집"):
+    check(f"--help-all 그룹: {g}", g in hf)
+check("--help-all 에 고급 옵션 전체", "--max-parallel" in hf and "--sandbox" in hf)
 
 print("\n=== 오타 옵션 → 가장 가까운 실제 옵션 제안(초보자) ===")
 _, _, err_typo = run(["10.129.1.5", "--prt"])
 check("오타 옵션에 '혹시' 제안", "혹시" in err_typo and "--help" in err_typo)
 _, _, err_far = run(["10.129.1.5", "--zzzzzzzz"])
 check("전혀 다른 오타엔 과한 제안 안 함", "혹시" not in err_far)
-check("도움말 문구 한국어", "show this help" not in h and "이 도움말" in h)
-check("읽기 쉬운 자리표시(USER:PASS·CIDR·IP)", "--cred USER:PASS" in h and "--range CIDR" in h
-      and "--attacker-ip IP" in h)
+check("도움말 문구 한국어(영문 기본값 아님)",
+      "show this help" not in h and "자주 쓰는 옵션" in h)
+check("읽기 쉬운 자리표시(cred·attacker-ip)",
+      "--cred USER:PASS" in h and "--attacker-ip IP" in h)
 
 print("\n=== 범위 오류 → 바로 고칠 수 있는 힌트(범위 판단은 그대로) ===")
 code, _, err = run(["8.8.8.8", "--no-save", "--no-audit", "--offline"])

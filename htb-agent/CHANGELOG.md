@@ -2,6 +2,28 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.37.0] — 2026-10-13
+
+루트 플래그 자동화의 '표준 경로' 커버리지를 넓히고, 옵션이 많아 헷갈리던 CLI 도움말을 2단으로 정리했다.
+
+### 추가(Added)
+- **자격 재사용 자동 root(`_privesc_loop`)**: 수확한 평문 비번을 `sudo -S`(stdin 비번)로 넣어
+  전체권한 sudo 를 자동 시도 → `uid=0` 확인 시 `/root/root.txt` 직독. `su` 와 달리 TTY 없이
+  파이프 비번이 동작해 비대화형 발판 세션에서 신뢰도가 높다(매우 흔한 HTB 경로). NT 해시는 제외.
+- **GTFOBins 벡터 대폭 확장(`privesc_analyze`)**: php·node·lua·gdb·make·taskset·nice·stdbuf·
+  timeout·flock·setarch·xargs·busybox·dash·ash·zsh·ksh·cpulimit·ed·rvim·crontab·ssh 등 sudo/SUID
+  상승 벡터와 비대화형 one-shot 추가 → 표준 privesc 자동 커버리지 확대.
+- **CLI 도움말 2단 구성**: 기본 `assassin -h` 는 자주 쓰는 ~20개만, 고급·전문 전체는 `--help-all`.
+  옵션 자체·파싱·동작은 전부 그대로(표시만 정리). epilog 를 '이 5개면 거의 다 됩니다'로 갱신.
+
+### 안전(Safety)
+- 자동 root 확대는 **표준 상승 경로(sudo/SUID/capability·자격 재사용)**에 한한다. 비표준 체인
+  (DB UDF·커널 LPE 등)은 여전히 자동 발사하지 않고 열거·제안으로 남긴다(정직성 §3). 모든 상승은
+  **이미 획득한 셸** 위에서, 옵트인·스코프 게이트 하에서만. sudo -S 시도는 비번당 1회·최대 5개로 제한.
+
+### 테스트(Tests)
+- `test_privesc_loop`(+4: sudo -S 자격재사용·NT 해시 제외) · `test_beginner_ux`(2단 도움말) 갱신.
+
 ## [2.36.0] — 2026-10-13
 
 내장 익스 체인의 **마지막 수동 단계(공개 PoC git clone)를 제거**하고, CVE 모듈을 **데이터로
