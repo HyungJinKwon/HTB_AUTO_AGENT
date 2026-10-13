@@ -230,6 +230,7 @@ class Orchestrator(FootholdMixin):
                  catch_revshell: bool = False,
                  poc_commands: "list[str] | None" = None,
                  poc_dir: str = "",
+                 fetch_pocs: bool = False,
                  judge: bool = False,
                  workspace=None):
         self.guard = guard
@@ -297,7 +298,10 @@ class Orchestrator(FootholdMixin):
         self.poc_commands = poc_commands or []
         # 내장 익스 모듈(공개 PoC 오케스트레이션) — 사용자 선조달 PoC 디렉터리(선택) + 활성 모듈 핸들.
         self.poc_dir = poc_dir
+        # 공개 PoC 자동 조달(옵트인) — 레지스트리 선언 출처에서만. --full-auto 가 켠다.
+        self.fetch_pocs = fetch_pocs
         self._active_exploit_module = None   # _consider_builtin_exploit 가 매칭 시 세팅(발판 캡처용)
+        self._poc_fetch_fn = None            # 테스트/대체 주입(실 네트워크 없이 조달 흉내)
 
     def run(self) -> OrchestrationReport:
         # 경과 시간은 정찰부터 포함, 마감 확인은 스윕 루프에서(정찰은 유한 폴백으로 별도 관리)
@@ -1872,6 +1876,18 @@ class Orchestrator(FootholdMixin):
         if not poc_path and mod.edb_id:
             self._attempt(report, report.enum_findings, mod.fetch_command(), phase="access")
             poc_path = mod.find_local_poc(extra_dirs=extra)
+        # 로컬에 없고 '옵트인(fetch_pocs)' 이면 레지스트리 선언 출처에서 자동 조달(git/searchsploit).
+        # 받기만 하고(스코프 게이트와 독립한 도구 행위), 실행은 아래 _exploit_run_stage 가 3관문으로.
+        if not poc_path and getattr(self, "fetch_pocs", False):
+            from . import poc_fetch
+            cache = self.poc_dir or poc_fetch.default_cache_dir()
+            fetched = poc_fetch.fetch_module_poc(
+                mod, cache, fetch_fn=getattr(self, "_poc_fetch_fn", None), audit=self.audit)
+            if fetched:
+                poc_path = fetched
+                report.manual_suggestions.append(
+                    f"# 공개 PoC 자동 조달됨 — {mod.cve}: {fetched} (출처: 레지스트리 선언. "
+                    f"받은 제3자 공개 코드이며 실행은 3관문을 거침. 인가 대상 전용)")
         if not poc_path:
             hint = mod.manual_stage_hint()
             msg = (f"# 내장 익스 모듈 {mod.cve} 매칭({prod} {ver or '버전미상'}) — PoC 가 로컬에 "
