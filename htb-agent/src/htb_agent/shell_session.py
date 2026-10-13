@@ -214,5 +214,16 @@ class WebRceSession(ShellSession):
         self.last_rc = rc
         return body
 
+    def fire(self, cmd: str) -> str:
+        """프레이밍/완료대기 없이 명령을 '쏘기만' 한다(fire-and-forget). 리버스셸 트리거처럼
+        응답을 기다릴 필요가 없는(또는 응답이 영영 안 오는) 명령용. http_fn 미주입/요청오류면
+        조용히 '' 반환(실행 표면 degrade — 호출측이 리스너 수신으로 성립을 판정)."""
+        if self._http_fn is None:
+            return ""
+        try:
+            return self._http_fn(self.build_request(cmd)) or ""
+        except Exception:   # noqa: BLE001 — fire-and-forget: 연결거부/타임아웃 삼키고 degrade
+            return ""
+
     def close(self) -> None:
         self.state = ShellState.CLOSED

