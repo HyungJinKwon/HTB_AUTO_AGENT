@@ -2,6 +2,38 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.35.0] — 2026-10-13
+
+`--full-auto` 가 **핑거프린트 → 공개 익스 실행 → 웹셸 캡처 → nc 리버스셸 수신 → user 플래그 → privesc** 까지 손 안 대고 잇도록 발판 체인을 완성했다. exploit-db 에 없는 최신 CVE(예: 2025)도 내장 모듈로 자동화하되, 무기화 코드는 레포에 심지 않고 공개 PoC 를 런타임에 조달·오케스트레이션한다.
+
+### 추가(Added)
+- **내장 익스 모듈 레지스트리(`exploit_modules.py`)**: CVE별 (핑거프린트 매칭·취약버전
+  범위·공개 PoC 조달 방법·실행 인자 템플릿·출력→웹셸 URL 파서) 메타데이터. 시드로
+  **CVE-2025-57819**(FreePBX < 16.0.89 pre-auth RCE) 등록. searchsploit 가 못 찾는 신규
+  CVE 의 자동화 공백을 메운다. `--poc-dir` 로 선조달 PoC 디렉터리 지정.
+- **PoC 출력→웹셸 URL 캡처(`exploit_run.harvest_foothold`)**: PoC 가 드롭한 웹셸 URL 을
+  파싱해 `rce_url`+cmd 스펙(param/method/inject)으로 세팅 → `_acquire_web_rce` 가 그 채널로
+  발판을 세운다. 발판이 서면 user 플래그 읽기가 자동으로 따라온다.
+- **내장 모듈 자동 조달·큐잉(`_consider_builtin_exploit`)**: 매칭 시 게이트-세이프하게 PoC 를
+  조달(로컬/`searchsploit -m`)해 실행 큐에 투입. 외부 git 는 자동 clone 하지 않고 1회 수동
+  조달 안내만(스코프 게이트 보존).
+- **웹 RCE → 리버스셸 자동 업그레이드(`_maybe_upgrade_revshell`)**: nc 리스너를 백그라운드로
+  띄우고 웹셸로 리버스셸 payload 를 쏴 콜백을 수신(오늘의 `nc -lvnp 4444` 수동 과정 자동화).
+  성립 시 더 안정적인 리버스셸로 승격, 실패 시 웹 세션 유지(무손실).
+- **privesc 폐루프 일반화(`_privesc_loop`)**: SSH 전용이던 열거→HIGH 벡터 랭킹→one-shot
+  상승→uid=0→root.txt 폐루프를 웹셸/리버스셸 발판 세션에도 적용.
+
+### 안전(Safety)
+- 전부 **기본 OFF·명시적 옵트인**(`--full-auto`, 개별 `--exploit-exec`/`--auto-poc`/
+  `--catch-revshell`). 스코프 게이트(인가 대상 전용)·3관문·감사로그는 모든 경로에서 그대로.
+  내장 모듈은 **무기화된 익스 코드를 레포에 벤더링하지 않고** 공개 PoC 를 런타임 조달한다
+  (대량 악용 표면 비생성). 실행은 '이미 획득한 셸' 또는 게이트를 거친 PoC 호출로만.
+- 생성 전용 기본값은 유지하되, 옵트인 시 실제 익스 체인을 자동 실행한다(인가/CTF 대상 §4).
+
+### 테스트(Tests)
+- `test_exploit_modules`(21) · `test_foothold_capture`(9) · `test_builtin_exploit_wiring`(11) ·
+  `test_revshell_upgrade`(14) · `test_privesc_loop`(9) 추가. 전부 실 네트워크/소켓 없이 주입으로 검증.
+
 ## [2.34.1] — 2026-10-13
 
 ### 문서(Docs) — `--full-auto` 문서 동기화

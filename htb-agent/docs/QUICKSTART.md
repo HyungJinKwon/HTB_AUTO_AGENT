@@ -53,6 +53,11 @@ assassin --setup-llm                # (선택) Claude·로컬 LLM 연결 마법�
 > (개별로 켜려면 `--autonomous --exploit-exec --auto-poc` 처럼 풀어 써도 동일.)
 > **권한이 확인된 대상에서만.** 발판이 실제로 성립해야 자격수확·플래그로 이어지고, 성립 안 하면
 > 조용히 발판 미확보로 끝납니다(헛발판 안 잡음). 자세히는 [USAGE.md §10.2](USAGE.md).
+>
+> **내장 익스 모듈(최신 CVE 자동화)** — 핑거프린트가 수록 CVE(예: FreePBX CVE-2025-57819)와 맞으면
+> `--full-auto` 가 공개 PoC 조달→웹셸 캡처→`--attacker-ip` 로 **nc 리버스셸 수신**→user 플래그→privesc
+> 까지 잇습니다. exploit-db 미등재 PoC 는 1회 받아 `--poc-dir <경로>` 로 주면 이후 자동. 무기 코드는
+> 레포에 없고 공개 PoC 를 런타임 조달합니다(인가 대상 전용). 자세히는 [USAGE.md §10.4](USAGE.md).
 
 ## 3. 화면 읽는 법
 

