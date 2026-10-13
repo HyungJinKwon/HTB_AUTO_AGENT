@@ -149,5 +149,20 @@ check("local/reasoning/looked-up/unverified 전부 제외",
 check("flag_provenance 없는 report → 빈 집합(안전)",
       H.trusted_exploit_flags(SimpleNamespace()) == set())
 
+print("\n=== submittable_flags: 제출 루프 배선(report.flags ∩ trusted) ===")
+# main.py 제출 루프가 쓰는 헬퍼 — 실제로 제출될 플래그만 반환하는지(배선 퇴행 방지).
+def _flag(kind, value):
+    return SimpleNamespace(kind=kind, value=value)
+_report2 = SimpleNamespace(
+    flag_provenance=_report.flag_provenance,
+    flags=[_flag("user", "HTB{exploit1}"), _flag("root", "HTB{exploit2}"),
+           _flag("user", "HTB{local}"), _flag("user", "HTB{reason}")])
+_sub = H.submittable_flags(_report2)
+check("제출 대상은 exploit-derived 2건뿐",
+      {f.value for f in _sub} == {"HTB{exploit1}", "HTB{exploit2}"})
+check("local/reasoning 유래는 제출 목록에서 제외",
+      not any(f.value in {"HTB{local}", "HTB{reason}"} for f in _sub))
+check("flags 없는 report → 빈 목록(안전)", H.submittable_flags(SimpleNamespace()) == [])
+
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

@@ -2,6 +2,39 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.32.0] — 2026-10-13
+
+### 안전(Safety) — 4-에이전트 교차감사: 스코프 egress 경계 강화
+독립 4-에이전트(정확성·안전경계·테스트문서·가독성) 재감사에서 **두 에이전트가 교차 확인**한
+최상위 이슈 교정. 생성 전용 RCE·HTB_TOKEN 비로깅·3관문은 재검증 결과 무결.
+- **vhost 자동등록 신뢰 경계(MED)**: 대상이 통제하는 리다이렉트 Location 의 **임의 외부
+  도메인**을 `hosts_map` 에 타겟 IP 로 자동 등록하면 scope_guard 가 그 호스트를 TARGET 으로
+  오분류해 **비스코프 egress 를 auto-allow** 하던 우회를 차단. HTB 랩 관례(`.htb`/`.local`)로만
+  자동 등록하고 외부 도메인은 등록 거부 + 1회 수동 안내(`_maybe_register_vhost`).
+- **curl `-L` 리다이렉트 egress 상한(MED)**: scope_guard 는 정적 명령 문자열만 보므로 런타임
+  리다이렉트 호스트를 못 본다. 생성·교정 양쪽에서 `-L` 에 `--max-redirs 2` 를 동반해 악성
+  리다이렉트 '체인'이 에이전트를 비스코프 호스트로 끌고 가지 못하게 상한(`orchestrator`·
+  `results_verify`). 완전 격리는 여전히 egress-contained 샌드박스에서 보장.
+- **라이브 lateral 빌더 인자 인젝션 방어(LOW-MED)**: 실제 파이프라인이 쓰는 `lateral.generate`
+  의 네이티브 클라이언트(mysql/psql) 경로가 선행 `-` 수확값을 옵션으로 오인하던 것을 `_arg_safe`
+  가드로 차단(2.31 에서 `cred_sources` 에만 있던 가드를 라이브 경로로 이식).
+
+### 수정(Fixed)
+- **NT 해시를 SSH 평문 비번으로 분사(LOW)**: `_exploit_exec_stage` 가 각괄호 없는 32-hex
+  NT 해시를 SSH password 로 분사하던 것을 PtH 전용으로 건너뛰도록 교정(`foothold.py`,
+  `_prepare_lateral` 과 동일 구분).
+- **write-only 死상태 제거(LOW)**: `SessionState.detected_cve/detected_cwe` 는 `_persist` 가
+  쓰기만 하고 `_restore` 가 읽지 않는(재개 시 재도출) 상태라 SSOT 오해를 유발 → 필드·쓰기 제거
+  (`state.py`·`orchestrator.py`). 구버전 상태 JSON 과 호환(from_dict 가 미지 필드 무시).
+- **문서 정직성**: `requirements.txt` 의 `ollama>=0.3` 주석이 pip 패키지 설치로 로컬 LLM 이
+  켜진다는 오해를 주던 것을 정정 — 코드는 stdlib urllib 로 Ollama **서버** HTTP API 를 호출하며
+  pip 패키지는 쓰지 않음(§3).
+
+### 추가(Added) — 회귀 테스트
+- 외부 도메인 리다이렉트 **미등록·미승인**(vhost 신뢰 경계), `-L` **--max-redirs 상한** 동반,
+  비정수 `portid` **fail-closed skip**, lateral 선행 `-` 인자 인젝션 방어, NT 해시 SSH 분사 제외,
+  F3 **persist-always**(`_run_vuln` 예외에도 상태 저장), `submittable_flags` 제출 루프 배선.
+
 ## [2.31.0] — 2026-10-12
 
 ### 수정(Fixed) — 최종본 전수 감사(5-에이전트) 교정 배치

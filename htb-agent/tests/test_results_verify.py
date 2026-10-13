@@ -45,15 +45,21 @@ check("-k 이미 있으면 교정 안 함", results_verify.corrective_command(
 print("\n=== 규칙: curl 3xx 리다이렉트 → -L ===")
 r3 = results_verify.corrective_command("curl -s http://10.129.1.5/",
     RO("c", "HTTP/1.1 301 Moved Permanently\nLocation: https://10.129.1.5/"))
-check("교정본에 -L 삽입", r3 and r3[0] == "curl -L -s http://10.129.1.5/")
+check("교정본에 -L 삽입(리다이렉트 상한 포함)",
+      r3 and r3[0] == "curl -L --max-redirs 2 -s http://10.129.1.5/")
+check("egress 경계: -L 에 --max-redirs 상한 동반", r3 and "--max-redirs" in r3[0])
 
 print("\n=== 규칙: 303/307/308 리다이렉트도 → -L(감사 A-LOW9) ===")
 r303 = results_verify.corrective_command("curl -s http://10.129.1.5/",
     RO("c", "HTTP/1.1 303 See Other\nLocation: /next"))
-check("303 See Other → -L 삽입", r303 and r303[0] == "curl -L -s http://10.129.1.5/")
+check("303 See Other → -L 삽입", r303 and r303[0] == "curl -L --max-redirs 2 -s http://10.129.1.5/")
 r308 = results_verify.corrective_command("curl -s http://10.129.1.5/",
     RO("c", "HTTP/1.1 308 Permanent Redirect\nLocation: /next"))
-check("308 Permanent Redirect → -L 삽입", r308 and r308[0] == "curl -L -s http://10.129.1.5/")
+check("308 Permanent Redirect → -L 삽입", r308 and r308[0] == "curl -L --max-redirs 2 -s http://10.129.1.5/")
+# 이미 --max-redirs 가 있으면 중복 추가하지 않음
+rcap = results_verify.corrective_command("curl -s --max-redirs 5 http://10.129.1.5/",
+    RO("c", "HTTP/1.1 301 Moved\nLocation: https://10.129.1.5/"))
+check("기존 --max-redirs 중복 추가 안 함", rcap and rcap[0].count("--max-redirs") == 1)
 
 print("\n=== no-op: 교정 근거 없는 출력 ===")
 check("정상 출력엔 교정 없음",

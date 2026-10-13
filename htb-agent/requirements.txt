@@ -3,9 +3,12 @@
 #
 # 아래는 '선택적' 기능 의존성이다. 미설치 시 해당 기능만 조용히 비활성화되고 코어는 그대로 돈다
 # (import 를 지연·가드 처리). 쓰려면 주석을 해제하거나 개별 설치한다:
-# anthropic>=1.0       # Claude API 백엔드(--llm claude). 없으면 Claude 티어 비활성
-# ollama>=0.3          # 로컬 모델 백엔드(--llm ollama). 없으면 로컬 LLM 비활성
+# anthropic>=1.0       # Claude API 백엔드(--llm claude). 미설치 시 Claude 티어 비활성
 # pyyaml>=6.0          # config.yaml(YAML) 파싱. 없으면 안내 후 JSON(.json)/CLI 로 대체
+#
+# 참고: 로컬 Ollama 백엔드(--llm ollama)는 pip 패키지가 아니라 'Ollama 서버'가 필요하다.
+# 코드는 표준 라이브러리 urllib 로 HTTP API 를 직접 호출하므로 'pip install ollama' 는 불필요.
+# 서버 설치는 scripts/install_tools.sh / 'doctor' 안내(https://ollama.com) 참고.
 #
 # 시스템 도구(nmap, bloodhound, s3scanner 등)는 pip 가 아닌
 # scripts/install_tools.sh 로 설치합니다.

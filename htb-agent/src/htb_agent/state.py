@@ -72,8 +72,6 @@ class SessionState:
     enum_findings: list[dict] = field(default_factory=list)
     llm_findings: list[dict] = field(default_factory=list)
     manual_suggestions: list[str] = field(default_factory=list)
-    detected_cve: list[str] = field(default_factory=list)
-    detected_cwe: list[str] = field(default_factory=list)
     credentials: list[dict] = field(default_factory=list)
     flags: list[dict] = field(default_factory=list)
     # [S5-3] 월드 식별 상태·수집 해시 — 재개 시 S0 원본증거 핑거프린트가 '손실 요약'으로
