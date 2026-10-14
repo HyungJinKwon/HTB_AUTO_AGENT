@@ -123,6 +123,15 @@ check("analyze_enum 이 extra 를 포함(docker 합산)",
       any(v.kind == "docker-group" for v in pa.analyze_enum(
           "groups=1000(user),998(docker)")))
 
+print("\n=== one-shot 유무(자동 발사 루프 필터 정합) ===")
+# 대화형 전용(_ONESHOT 없음) 고신뢰 벡터는 oneshot('id')가 비어 자동 루프에서 제외돼야 한다.
+_less = [v for v in pa.analyze_sudo("User x may run: (root) NOPASSWD: /usr/bin/less")]
+check("sudo less = high 이지만 one-shot 없음(자동 발사 제외 대상)",
+      any(v.binary == "less" and v.confidence == "high" and not v.oneshot("id") for v in _less))
+_find = [v for v in pa.analyze_sudo("(root) NOPASSWD: /usr/bin/find")]
+check("sudo find = one-shot 있음(자동 발사 대상)",
+      any(v.binary == "find" and v.oneshot("id") for v in _find))
+
 print("\n=== 생성 전용 경계(불변) 자기점검 ===")
 for mod in ("subprocess", "socket", "os", "requests", "urllib", "shutil", "pty"):
     check(f"실행/네트워크 모듈 미임포트: {mod!r}", not hasattr(pa, mod))
