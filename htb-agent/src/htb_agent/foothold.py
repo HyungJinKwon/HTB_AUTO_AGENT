@@ -44,33 +44,61 @@ class FootholdMixin:
         def _record_flag(self, report: "OrchestrationReport", hit, prov=...) -> bool: ...
         def _goal_reached(self, report: "OrchestrationReport") -> bool: ...
         def _time_up(self) -> bool: ...
+        def _attempt(self, report, findings, command, phase: str = ...) -> Any: ...
 
     def _exploit_run_stage(self, report, host):
         """3단계: 주입된 공개 PoC(--poc)를 게이트로 실행 → 자격 캡처 → world 반영."""
         if not self.exploit_exec or self.world is None or self.dry_run:
             return
+        # '완전 자동' 보장: PoC·웹 RCE 발판 채널이 흔히 요구하는 런타임 의존성(requests/urllib3)을
+        # 현재 venv 에 자동으로 갖춘다(옵트인 경로에서만, ASSASSIN_NO_NET 이면 생략). 사용자가 수동
+        # pip 설치를 하지 않아도 되게 한다 — 설치는 sys.executable(현 venv) 한정, 전역 비간섭.
+        if getattr(self, "poc_commands", None) and getattr(self, "fetch_pocs", False):
+            try:
+                from . import poc_fetch
+                poc_fetch.ensure_common_deps(audit=self.audit)
+            except (OSError, RuntimeError) as e:
+                self.audit.event("poc_dep_install", ok=False, error=f"{type(e).__name__}: {e}")
         # revshell 채널 모듈이면 PoC(리버스셸 트리거) 발사 '전에' 리스너를 선기동한다 — 트리거가
         # 리스너보다 먼저 연결돼 콜백을 놓치는 경쟁 제거(웹 채널 모듈엔 영향 없음·None 반환).
         prelisten = self._start_revshell_prelisten(report)
         for poc in getattr(self, "poc_commands", []) or []:
             if self._goal_reached(report) or self._time_up():
                 break
-            before = len(report.enum_findings)
-            self._attempt(report, report.enum_findings, poc, phase="access")
-            from .exploit_run import harvest_creds, harvest_foothold
-            mod = getattr(self, "_active_exploit_module", None)
-            for f in report.enum_findings[before:]:
-                out = f.output or ""
-                for u, p in harvest_creds(out):
-                    self.world.add_cred(f"{u}:{p}", source="PoC 출력")
-                # 발판 아티팩트 캡처: PoC 가 드롭한 웹셸 URL 을 잡아 웹 RCE 발판으로 잇는다.
-                # (한 번 잡으면 유지 — 이후 _acquire_web_rce 가 이 URL/스펙으로 세션 획득.)
-                if not getattr(self, "rce_url", ""):
-                    url = harvest_foothold(out, mod)
-                    if url:
-                        self._set_web_rce_from_capture(url, mod, report)
+            self._run_one_poc(report, poc, allow_dep_heal=True)
         # 선기동한 리스너를 거둔다(콜백 수신분은 _prelistened_revshell 로 보관 → _acquire_session 소비).
         self._finish_revshell_prelisten(prelisten)
+
+    def _run_one_poc(self, report, poc, allow_dep_heal: bool) -> None:
+        """PoC 한 줄을 3관문으로 실행 → 자격·발판 URL 캡처. 출력이 'No module named X'(PoC 의
+        미설치 파이썬 의존성)로 실패하고 allow_dep_heal 이면, 그 모듈을 현재 venv 에 자동 설치하고
+        '1회' 재실행한다(완전 자동 — 사용자 수동 pip 불필요). fetch_pocs 옵트인 + 네트워크 허용 시만."""
+        before = len(report.enum_findings)
+        self._attempt(report, report.enum_findings, poc, phase="access")
+        from .exploit_run import harvest_creds, harvest_foothold
+        mod = getattr(self, "_active_exploit_module", None)
+        missing = ""
+        for f in report.enum_findings[before:]:
+            out = f.output or ""
+            for u, p in harvest_creds(out):
+                self.world.add_cred(f"{u}:{p}", source="PoC 출력")
+            # 발판 아티팩트 캡처: PoC 가 드롭한 웹셸 URL 을 잡아 웹 RCE 발판으로 잇는다.
+            # (한 번 잡으면 유지 — 이후 _acquire_web_rce 가 이 URL/스펙으로 세션 획득.)
+            if not getattr(self, "rce_url", ""):
+                url = harvest_foothold(out, mod)
+                if url:
+                    self._set_web_rce_from_capture(url, mod, report)
+            if not missing:
+                from . import poc_fetch
+                missing = poc_fetch.missing_module(out)
+        # PoC 가 의존성 부족으로 죽었으면: 그 모듈 자동 설치 후 1회 재실행(옵트인·네트워크 허용 시).
+        if (missing and allow_dep_heal and getattr(self, "fetch_pocs", False)
+                and not getattr(self, "rce_url", "")):
+            from . import poc_fetch
+            if poc_fetch.ensure_module(missing, audit=self.audit):
+                report.manual_suggestions.append(
+                    f"# PoC 의존성 자동 설치: {missing} (현재 venv) → PoC 재실행")
+                self._run_one_poc(report, poc, allow_dep_heal=False)   # 재귀 1회(무한 방지)
 
     def _start_revshell_prelisten(self, report):
         """revshell 채널 내장/매니페스트 모듈이 큐잉됐을 때, PoC(리버스셸 트리거) 발사 '전에'

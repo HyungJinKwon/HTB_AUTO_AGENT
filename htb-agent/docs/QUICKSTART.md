@@ -15,7 +15,7 @@ sudo ./scripts/install_tools.sh     # 보안 도구 일괄 설치(Kali/Ubuntu)
 
 python3 -m venv .venv               # 가상환경(PEP 668 우회)
 source .venv/bin/activate
-pip install -e ".[claude]"          # 에이전트 + Claude 설치 → 'assassin' 생성
+pip install -e ".[claude,exploit]"  # 에이전트 + Claude + 익스 실행 의존성(requests)
 
 mkdir -p ~/.local/bin               # 어디서나 쓰도록 심링크(venv activate 불필요)
 ln -sf ~/HTB_AUTO_AGENT/htb-agent/.venv/bin/assassin  ~/.local/bin/assassin
