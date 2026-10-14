@@ -6,39 +6,23 @@
 
 ---
 
-## 0. 완전 초보자 빠른 시작 (3단계)
+## 0. 시작
+
+**설치는 한곳에서** — venv + 심링크 설치 절차는 [QUICKSTART.md §1](QUICKSTART.md)(또는 상세
+[USAGE.md §2](USAGE.md)). 이 문서는 **설치 이후의 실전 운영·트러블슈팅**에 집중한다.
 
 ```bash
-# ① 설치
-cd htb-agent && pip install -e . && sudo ./scripts/install_tools.sh
-
-# ② 환경 점검 — 도구·VPN·LLM 이 준비됐는지 한눈에 (스캔 안 함)
-assassin --doctor
-
-# ③ 첫 실행 (초록불이면 바로)
-assassin 10.129.1.5                 # HTB (VPN 연결 후)
-assassin chall.site:1337 --platform ctf   # CTF/Dreamhack
+assassin --doctor                        # ① 환경 점검(도구·VPN·LLM) — 스캔 안 함
+sudo openvpn your-lab.ovpn               # ② (HTB) tun0 → 공격자 IP 자동탐지
+assassin 10.129.1.5                      # ③ 첫 실행(HTB, 초록불이면 바로)
+assassin chall.site:1337 --platform ctf  #    CTF/Dreamhack
 ```
 
-`--doctor` 가 알려주는 대로 빠진 것만 채우면 됩니다. 막히면 아래 트러블슈팅(§4) 참고.
+`--doctor` 가 알려주는 대로 빠진 것만 채우면 된다. 막히면 아래 트러블슈팅(§4) 참고.
 
 > 설치 직후 또는 발표 전, **처음부터 끝까지 검증**하려면 [VALIDATION.md](VALIDATION.md)
 > (오프라인 흐름 → 도구/VPN → 실제 HTB 머신 → 샌드박스(docker/vm) → 라이브 벤치 → 산출물,
 > 단계별 기대 결과와 체크리스트).
-
----
-
-## 1. 빠른 시작
-
-```bash
-cd htb-agent
-sudo ./scripts/install_tools.sh          # 보안 도구 일괄 설치(또는: ... recon web smb ad)
-pip install -e .                         # 'assassin' / 'htb-agent' 명령 생성
-sudo openvpn your-lab.ovpn               # tun0 → 공격자 IP 자동탐지
-assassin 10.129.1.5                      # 승인제 포트스캔+열거 시작
-```
-
-설치 없이: `PYTHONPATH=src python3 -m htb_agent <target>`
 
 ---
 
@@ -164,5 +148,7 @@ LLM 두뇌(선택): `--llm hybrid`(Ollama+Claude) · `--llm claude` · `--llm ol
 ## 7. 안전 수칙 (요약)
 
 - 권한이 확인된 자산만. 범위 밖 금지(코드로 강제).
-- 익스플로잇·권한상승 명령은 '탐지 + 수동 제안'까지만 자동화 — 실행은 승인·판단.
+- **기본은 생성 전용** — 익스플로잇·권한상승·크래킹은 '탐지 + 수동 제안'까지만 자동화한다.
+  실제 익스 실행은 **옵트인(`--full-auto` / `--exploit-exec` / `--auto-poc` / `--catch-revshell`)**
+  으로만 켜지며, 그때도 3관문(검증·범위·승인)과 ScopeGuard(인가 대상) 하에서만 동작한다.
 - 과장 금지: OS/취약점 판정은 증거기반 확신도, 약하면 `〔추정〕` 표기.

@@ -578,6 +578,12 @@ assassin 10.129.1.5 --full-auto --attacker-ip 10.10.14.13 --llm claude --html
 assassin 10.129.1.7 --full-auto --attacker-ip 10.10.14.13 --exploit-modules ~/mods.json --llm claude
 ```
 
+> **수록된 익스 모듈 확인(`--list-exploits`)**: 타겟 없이 단독 실행하면 자동 발사 대상인 내장+사용자
+> (`--exploit-modules`) 익스 모듈 목록(CVE·제품·취약버전·PoC 출처·채널)을 보여 준다.
+> ```bash
+> assassin --list-exploits        # 수록 CVE·제품·취약버전·PoC 출처 확인(스캔 안 함)
+> ```
+>
 > **exploit-db 에 있는 CVE 는 매니페스트 없이도** `--auto-poc`(= `--full-auto` 포함)가 `searchsploit`
 > 버전매칭으로 자동 선택·발사한다. 매니페스트는 미등재/최신 CVE 보강용이다.
 >

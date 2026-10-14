@@ -2,6 +2,31 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.5] — 2026-10-14
+
+문서 전면 정리 — 연속 수정으로 흩어진 마크다운을 "한 주제=한 문서(SSOT)" 구조로 재배치.
+
+### 변경(Changed)
+- **문서 역할 분리(중복 제거→링크)**: README=현관(소개·모드표·문서지도·요약 설치·핵심특징·한계,
+  469→217행), QUICKSTART=1쪽 빠른 시작, USAGE=유일 종합 매뉴얼, OPERATIONS=실전 운영+트러블슈팅,
+  ARCHITECTURE=구조·모듈 지도. 설치·실행·모드·산출물 중복 설명을 걷어내고 SSOT 로 링크.
+- **CLI 옵션 표 생성기**: `scripts/gen_cli_docs.py` 가 `build_parser(full=True)` 로 전체 옵션을
+  렌더(고급 옵션 help 가 비full 에서 SUPPRESS 되던 문제 제거).
+
+### 수정(Fixed)
+- **README CLI 옵션 표 stale(CI 게이트 RED) 교정**: 누락돼 있던 `--list-exploits`·`--poc-dir`·
+  `--fetch-pocs`·`--exploit-modules`·`--help-all` 포함해 재생성(89행, `--check` 통과).
+- **ARCHITECTURE 모듈 지도 누락 보강**: `exploit_modules.py`·`poc_fetch.py`·`foothold.py` 3개
+  모듈과 내장 익스 모듈(CVE-2025-57819)·PoC 런타임 조달·revshell listener-first 를 반영.
+- **`--list-exploits` 문서화**(USAGE §10.4): 출시됐으나 전 문서에 없던 단독 도구를 기재.
+- **문서 정직성**: OPERATIONS 안전 요약이 "탐지+수동 제안까지만"으로 `--full-auto`(옵트인 실제
+  실행)와 모순되던 것, QUICKSTART 안전 경계 서술을 "기본 생성 전용 + 옵트인 실행"으로 정정.
+- 깨진/부정확 교차링크 정리(QUICKSTART 트러블슈팅·full-auto 섹션 참조).
+
+### 제거(Removed)
+- **`RELEASE-v2.5.1.md` 삭제**: 현재(2.39.x)보다 34 마이너 뒤처진 고아 릴리스 노트. 릴리스 기록은
+  `CHANGELOG.md` 로 일원화.
+
 ## [2.39.4] — 2026-10-14
 
 최종 마감 적대적 검토(full-auto 체인 end-to-end 추적)에서 찾은 실 결함 2건 교정 + 문서 정합.

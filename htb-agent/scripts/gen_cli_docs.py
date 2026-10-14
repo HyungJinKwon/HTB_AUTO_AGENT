@@ -22,7 +22,9 @@ README = os.path.join(ROOT, "README.md")
 
 def render_table() -> str:
     rows = ["| 옵션 | 설명 |", "|---|---|"]
-    for a in build_parser()._actions:
+    # full=True: README 표는 '전체 CLI 옵션' 레퍼런스이므로 고급 옵션도 실제 설명을 담는다
+    # (기본 -h 는 자주 쓰는 것만 보이게 비full 에서 help 를 SUPPRESS 하지만, 표에는 전부 노출).
+    for a in build_parser(full=True)._actions:
         opts = [o for o in a.option_strings if o.startswith("--")]
         if not opts or "--help" in opts:
             continue
