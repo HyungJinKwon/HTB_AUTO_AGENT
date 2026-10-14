@@ -296,7 +296,7 @@ assassin 10.129.1.5 --config config/config.example.json
 
 > **데모(네트워크·실도구 없이 전체 흐름 보기)**: `python3 scripts/demo.py`
 > · **발표용 라이브 시연**: `python3 scripts/demo.py --live [--pace 2]` — 범위 밖 바인딩 거부 →
-> 정찰·식별 → 열거 → **3관문 작동(검토 강등·범위 밖 미실행·통계)** → 지식(완성형 시작·검증 공유) → 산출의 6단계를 순서대로 보여줌
+> 정찰·식별 → 열거 → **3관문 작동(검토 강등·범위 밖 미실행·통계)** → 지식(완성형 시작·검증 공유) → 산출 → 성능 측정의 7단계를 순서대로 보여줌
 > (라이트업 저장: `python3 scripts/demo.py --write out/`). 실전 운영·트러블슈팅은
 > **[docs/OPERATIONS.md](docs/OPERATIONS.md)** 참고.
 

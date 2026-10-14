@@ -714,7 +714,7 @@ assassin --replay state/audit_10.129.1.5.jsonl    # → 같은 이름의 .html
 ```bash
 cd htb-agent
 python3 scripts/demo.py                    # 전체 흐름 요약
-python3 scripts/demo.py --live             # 발표용 6단계 시연(범위 밖 거부 → 정찰·식별 → 열거 → 3관문 → 지식 → 산출)
+python3 scripts/demo.py --live             # 발표용 7단계 시연(범위 밖 거부 → 정찰·식별 → 열거 → 3관문 → 지식 → 산출 → 성능 측정)
 python3 scripts/demo.py --live --pace 2    # 단계 사이 2초 멈춤
 python3 scripts/demo.py --write out/       # 라이트업·JSON·HTML 파일 저장
 ```
