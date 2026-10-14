@@ -2,6 +2,31 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.1] — 2026-10-14
+
+자동화·논리 흐름 적대적 검토(2 리뷰 에이전트)에서 찾은 실제 결함 수정.
+
+### 수정(Fixed)
+- **[HIGH] SSH 발판 GTFOBins 상승이 대화형 `.plan` 을 발사해 상승을 확인 못 하던 死경로 교정**:
+  `_exploit_exec_stage` 가 비대화형 `v.oneshot()` 으로 실행하도록 변경(`_privesc_loop` 과 동일 규칙).
+  SSH 채널(`sshpass ssh "<cmd>"`)에서 `sudo -i`·`find -exec /bin/sh \;` 같은 대화형 escape 는
+  EOF 로 죽어 뒤의 `id` 가 원 유저로 돌던 문제.
+- **[HIGH] 자동 CVE 모듈의 전역 레지스트리 누수 제거**: `_auto_module_from_cve` 가 전역 `_RUNTIME`
+  에 등록하지 않고 세션 로컬(`_active_exploit_module`)로만 쓴다 — 단일 프로세스 다중 타겟(livebench
+  배치)에서 A 의 PoC 가 B 로 누수·오염되던 문제 차단. 사용자 매니페스트 모듈만 전역 영속.
+- **[MED] 자동 발사 루프가 one-shot 없는 대화형 전용 고신뢰 벡터(less·nano·vi 등)를 제외**:
+  두 루프 모두 `confidence=="high" and v.oneshot("id")` 로 필터 → 프레이밍 채널에서 상승 불가·tty
+  블록·top-3 슬롯 낭비 방지(해당 벡터는 제안에는 그대로 유지).
+- **[MED] 발판 세션 degrade 가 `RuntimeError`(닫힌 세션)도 흡수**: `_foothold_stage`·`_privesc_loop`
+  의 예외를 `(OSError, RuntimeError)` 로 넓혀 이후 생성/준비 스테이지가 계속 돌게 보장.
+- **[MED] 비기본 러너에서 `searchsploit -m` 조달물 미탐지 교정**: `find_local_poc` 탐색에 러너
+  작업디렉터리(`workspace.root`)를 추가.
+- **[LOW] `module_for_cve` 미지 언어 interp/호출 일치**(`sh {poc}`) · **`parse_foothold_url` 꼬리
+  문장부호·다중 URL 과포획 제거** · **탐지-CVE 필터 `re.fullmatch`**.
+
+### 테스트(Tests)
+- `test_exploit_modules`(+2 URL 트림) · `test_privesc_analyze`(+2 one-shot 필터 정합). 기존 스위트 무회귀.
+
 ## [2.39.0] — 2026-10-14
 
 **탐지 → 자동 모듈 등록 → 익스** 루프를 닫았다. 매니페스트를 손으로 편집하지 않아도, 탐지된 CVE 를

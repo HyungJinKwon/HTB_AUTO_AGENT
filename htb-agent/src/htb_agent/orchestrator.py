@@ -1875,7 +1875,13 @@ class Orchestrator(FootholdMixin):
             mod = self._auto_module_from_cve(report, prod)
         if mod is None:
             return
+        # 탐색 경로: 지정 poc_dir + 러너 작업디렉터리(shell/sandbox 러너는 searchsploit -m 조달물을
+        # 자기 cwd=workspace.root 에 떨어뜨리므로 그걸 넣어야 직후 재탐색이 PoC 를 찾는다).
         extra = [self.poc_dir] if getattr(self, "poc_dir", "") else []
+        rc_cwd = (getattr(self.runner, "workdir", None)
+                  or getattr(getattr(self, "workspace", None), "root", None))
+        if rc_cwd:
+            extra.append(str(rc_cwd))
         poc_path = mod.find_local_poc(extra_dirs=extra)
         # exploit-db 에 있으면 로컬 무해 조달(searchsploit -m) 을 게이트로 실행 후 재탐색.
         if not poc_path and mod.edb_id:
@@ -1938,7 +1944,7 @@ class Orchestrator(FootholdMixin):
                     cves.append(c)
         lookup = getattr(self, "_cve_lookup_fn", None)
         for cve in cves[:6]:
-            if not re.match(r"(?i)CVE-\d{4}-\d+", cve):
+            if not re.fullmatch(r"(?i)CVE-\d{4}-\d{4,7}", cve):
                 continue
             try:
                 out = (lookup(cve) if lookup is not None
@@ -1948,7 +1954,10 @@ class Orchestrator(FootholdMixin):
                 continue
             mod = exploit_modules.module_for_cve(cve, product, out or "")
             if mod is not None:
-                exploit_modules.register(mod)
+                # 전역 레지스트리(_RUNTIME)에 등록하지 않는다 — 이 모듈은 '이 세션의 이 탐지' 전용이다.
+                # 전역에 넣으면 단일 프로세스 다중 타겟(livebench 배치)에서 다른 타겟으로 누수·오염된다.
+                # _consider_builtin_exploit 는 반환된 mod 를 직접 쓰고 self._active_exploit_module 로만
+                # 건다(전역 조회 불필요). 사용자 지정 모듈(load_manifest)만 전역에 영속한다.
                 self.audit.event("auto_module_from_cve", cve=cve, edb=mod.edb_id, product=product)
                 report.manual_suggestions.append(
                     f"# 탐지 CVE {cve} → exploit-db PoC 자동 모듈 등록(EDB-{mod.edb_id}, "

