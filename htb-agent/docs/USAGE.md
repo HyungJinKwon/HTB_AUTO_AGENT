@@ -539,6 +539,8 @@ assassin 10.129.1.5 --full-auto --llm claude --html --json
 3. **user 플래그** — 발판이 서면 설정/DB 자격 수확 + `user.txt` 읽기가 자동으로 따라온다.
 4. **nc 리버스셸 수신(`--catch-revshell`)** — 리스너를 백그라운드로 띄우고 웹셸로 리버스셸 payload 를
    쏴 콜백을 수신(수동 `nc -lvnp 4444` 과정 자동화). 성립하면 더 안정적인 셸로 승격, 실패해도 웹 발판 유지.
+   PoC 가 직접 리버스셸을 트리거하는 모듈(`channel: "revshell"`)은 **트리거 발사 전에 리스너를 선기동**해
+   콜백 유실(경쟁)을 막는다(listener-first).
 5. **privesc 폐루프(root 자동화)** — 발판 세션 위에서 ⑴ **자격 재사용**(수확한 평문 비번을
    `sudo -S` 로 넣어 전체권한 sudo 시도) ⑵ 열거→**GTFOBins HIGH 벡터**(php·node·gdb·find·vim·
    tar·taskset·busybox·dash… sudo/SUID/capability) ⑶ **docker 그룹**(호스트 / 마운트 chroot) one-shot

