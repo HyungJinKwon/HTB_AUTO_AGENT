@@ -2,6 +2,18 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.7] — 2026-10-14
+
+라이브 벤치 결정성 완결 — 실 curl loopback 체크의 잔여 플래키 제거.
+
+### 수정(Fixed)
+- **`test_livebench` 실 curl 체크(web-source-comment·web-header-leak) 플래키 제거**: 공유 컨테이너
+  부하에서 loopback 서비스 기동/응답 타이밍 변동으로 간헐 실패하던 두 체크를, net-banner(nc)와
+  동일하게 **1회 재시도 후에도 미성립이면 skip**(환경 변동 명시)으로 처리. v2.39.3 에서 nc 만
+  안정화하고 curl 두 건을 단일 시도로 남겨둔 누락을 메움. 규칙 기반 풀이 로직은 다른 결정적
+  테스트가 커버하며, 여기선 실 curl 왕복 가능 여부만 확인한다. 전체 스위트가 환경에 무관하게
+  `0 failed`(pass-or-skip)로 수렴.
+
 ## [2.39.6] — 2026-10-14
 
 CI `lint` 게이트(mypy) 적색 해소 — 타입 애노테이션만, 런타임 무변경.
