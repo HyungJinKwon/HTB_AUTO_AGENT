@@ -2,6 +2,26 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.0] — 2026-10-14
+
+**탐지 → 자동 모듈 등록 → 익스** 루프를 닫았다. 매니페스트를 손으로 편집하지 않아도, 탐지된 CVE 를
+로컬 exploit-db 로 해석해 런타임 익스 모듈을 자동 등록하고 기존 조달·발사·캡처 체인에 태운다.
+
+### 추가(Added)
+- **탐지 CVE → 런타임 모듈 자동 등록(`_auto_module_from_cve` + `exploit_modules.module_for_cve`)**:
+  내장/매니페스트에 매칭이 없을 때, `report.detected_cve`/`discovered_cve`/`vuln_matches` 의 CVE 를
+  `searchsploit --cve <id>` 로 해석해 exploit-db PoC(EDB-ID)가 있으면 **런타임 ExploitModule 을
+  자동 등록**하고 `_consider_builtin_exploit` 의 조달(`searchsploit -m`)·발사·웹셸 캡처 체인을 그대로
+  탄다. 사람이 `--exploit-modules` 를 편집할 필요 없이 '탐지 결과 기반 자동 추가'.
+
+### 안전(Safety)
+- 자동 등록 모듈의 PoC 출처는 **로컬 exploit-db 뿐**이다 — 임의/LLM/타겟 URL 을 쓰지 않는다(공급망
+  안전, 출처 비창작). 실행은 기존 3관문·`--exploit-exec`/`--auto-poc` 옵트인·스코프 게이트 하.
+  exploit-db 에 없는 CVE 는 자동 등록되지 않는다(매니페스트/내장 모듈로 보강).
+
+### 테스트(Tests)
+- `test_builtin_exploit_wiring`(+2: 탐지 CVE→EDB 자동 모듈 / 미해석 시 무등록). 주입형 lookup(실행 없음).
+
 ## [2.38.0] — 2026-10-14
 
 자동 커버리지를 '발판 캡처 범위'와 '표준 권한상승 벡터' 양쪽으로 넓혔다(신종 익스 창작·임의 PoC

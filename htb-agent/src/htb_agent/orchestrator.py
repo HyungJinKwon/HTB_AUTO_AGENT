@@ -302,6 +302,7 @@ class Orchestrator(FootholdMixin):
         self.fetch_pocs = fetch_pocs
         self._active_exploit_module = None   # _consider_builtin_exploit 가 매칭 시 세팅(발판 캡처용)
         self._poc_fetch_fn = None            # 테스트/대체 주입(실 네트워크 없이 조달 흉내)
+        self._cve_lookup_fn = None           # 테스트/대체 주입(searchsploit --cve 출력 흉내)
 
     def run(self) -> OrchestrationReport:
         # 경과 시간은 정찰부터 포함, 마감 확인은 스윕 루프에서(정찰은 유한 폴백으로 별도 관리)
@@ -1869,6 +1870,10 @@ class Orchestrator(FootholdMixin):
         from . import exploit_modules
         mod = exploit_modules.match(prod, ver)
         if mod is None:
+            # 탐지 결과 기반 자동 모듈화 — 내장/매니페스트에 없으면, '탐지된 CVE' 를 로컬
+            # exploit-db(searchsploit --cve)로 해석해 런타임 모듈을 자동 등록한다(출처 비창작).
+            mod = self._auto_module_from_cve(report, prod)
+        if mod is None:
             return
         extra = [self.poc_dir] if getattr(self, "poc_dir", "") else []
         poc_path = mod.find_local_poc(extra_dirs=extra)
@@ -1914,6 +1919,42 @@ class Orchestrator(FootholdMixin):
         report.manual_suggestions.append(
             f"# ⭐ 내장 익스 모듈 자동 발사 큐잉 — {mod.cve} ({mod.title}). PoC={poc_path} · "
             f"발판 채널={mod.channel}. 실행은 게이트·옵트인 하. 인가 대상 전용.")
+
+    def _auto_module_from_cve(self, report: "OrchestrationReport", product: str):
+        """탐지된 CVE(detected/discovered/vuln_matches)를 로컬 exploit-db(`searchsploit --cve`)로
+        해석해 '런타임 익스 모듈'을 자동 등록한다(없으면 None). 출처는 로컬 exploit-db 뿐 — 임의/LLM
+        URL 을 쓰지 않는다(공급망 안전). 등록된 모듈은 _consider_builtin_exploit 의 기존 조달·발사·
+        캡처 체인을 그대로 탄다. '탐지→자동 추가→익스' 루프의 마지막 조각."""
+        if not product:
+            return None
+        from . import exploit_modules
+        cves: list[str] = []
+        for c in (list(report.detected_cve) + list(getattr(report, "discovered_cve", []))):
+            if c and c not in cves:
+                cves.append(c)
+        for m in report.vuln_matches:
+            for c in getattr(m, "cve", []) or []:
+                if c and c not in cves:
+                    cves.append(c)
+        lookup = getattr(self, "_cve_lookup_fn", None)
+        for cve in cves[:6]:
+            if not re.match(r"(?i)CVE-\d{4}-\d+", cve):
+                continue
+            try:
+                out = (lookup(cve) if lookup is not None
+                       else self._safe_run(f"searchsploit --cve {cve}").stdout)
+            except Exception as e:   # noqa: BLE001 — 조회 실패가 전체를 깨지 않도록
+                self.audit.event("auto_module_lookup_error", cve=cve, error=str(e))
+                continue
+            mod = exploit_modules.module_for_cve(cve, product, out or "")
+            if mod is not None:
+                exploit_modules.register(mod)
+                self.audit.event("auto_module_from_cve", cve=cve, edb=mod.edb_id, product=product)
+                report.manual_suggestions.append(
+                    f"# 탐지 CVE {cve} → exploit-db PoC 자동 모듈 등록(EDB-{mod.edb_id}, "
+                    f"{mod.title}). 로컬 DB 출처 · 게이트·옵트인 하 발사. 인가 대상 전용.")
+                return mod
+        return None
 
     def _prepare_lateral(self, report: OrchestrationReport) -> None:
         """수확한 크리덴셜/NT 해시를 '열린 다른 서비스' 재사용·PtH 후보로 준비(생성 전용)."""
