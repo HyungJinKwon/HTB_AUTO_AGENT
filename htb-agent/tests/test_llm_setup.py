@@ -269,5 +269,63 @@ check("화면 출력에 키 없음", KEY not in buf.getvalue())
 check("저장된 키는 실행 중 환경변수로 사용 가능", os.environ.get("ANTHROPIC_API_KEY") == KEY)
 os.environ.pop("ANTHROPIC_API_KEY", None)
 
+print("\n=== Ollama 미설치: '확인 후 자동 설치' (y/N) ===")
+
+
+def ollama_io(answers, which_ollama_after_install="/usr/bin/ollama", shell_rc=0):
+    """ollama 미설치 상태의 SetupIO — 설치 승인 시 run_shell 로 설치, which 가 뒤집힌다."""
+    outs, runs_shell = [], []
+    state = {"installed": False}
+    ans = list(answers)
+
+    def which(n):
+        if n == "ollama":
+            return which_ollama_after_install if state["installed"] else None
+        return "/usr/bin/" + n
+
+    def run_shell(cmd):
+        runs_shell.append(cmd)
+        if shell_rc == 0:
+            state["installed"] = True
+        return shell_rc
+
+    io_ = S.SetupIO(ask=lambda p: ans.pop(0) if ans else "",
+                    out=outs.append, run=lambda c: 0, run_shell=run_shell, which=which,
+                    env={"ASSASSIN_CONFIG_DIR": os.environ["ASSASSIN_CONFIG_DIR"]},
+                    ollama_factory=lambda host=None, models=None: FakeP(
+                        installed=["llama3.1:8b"], host=host, models=models),
+                    memory_gb=lambda: 16.0)
+    return io_, outs, runs_shell
+
+
+# (1) 거부(N) → 설치 실행 안 함, 안내만
+io_n, outs_n, shell_n = ollama_io(["n"])
+res_n = S.SetupResult()
+S._setup_ollama(io_n, res_n)
+check("거부 시 설치 셸 실행 없음", shell_n == [])
+check("거부 시 '설치 필요' 노트", any("설치 필요" in n for n in res_n.notes))
+check("거부해도 설치 명령 안내 출력", any("ollama.com/install.sh" in o for o in outs_n))
+
+# (2) 승인(y) → 공식 설치 셸 실행 + 설치 후 서버·모델 흐름으로 진행
+io_y, outs_y, shell_y = ollama_io(["y", "1"])   # y=설치, 1=모델 선택(llama3.1:8b)
+res_y = S.SetupResult()
+S._setup_ollama(io_y, res_y)
+check("승인 시 공식 설치 명령을 셸로 1회 실행", shell_y == [S.OLLAMA_INSTALL_CMD])
+check("설치 성공 후 모델 흐름 진행 → ollama_ok", res_y.ollama_ok and res_y.ollama_model == "llama3.1:8b")
+
+# (3) 승인했으나 설치 실패(rc!=0) → 실패 노트 + 중단(모델 흐름 미진입)
+io_f, outs_f, shell_f = ollama_io(["y"], shell_rc=1)
+res_f = S.SetupResult()
+S._setup_ollama(io_f, res_f)
+check("설치 실패 시 셸은 호출됨", shell_f == [S.OLLAMA_INSTALL_CMD])
+check("설치 실패 노트 + 미연결", any("설치 실패" in n for n in res_f.notes) and not res_f.ollama_ok)
+
+# (4) 안전 경계: 무확인 자동 실행 아님 — 빈 입력(비대화형 기본)은 설치 안 함
+io_e, outs_e, shell_e = ollama_io([])   # 답 없음 → _ask "" → _yes False
+res_e = S.SetupResult()
+S._setup_ollama(io_e, res_e)
+check("비대화형(빈 입력) 기본 No → 무확인 설치 안 함", shell_e == [])
+
+
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

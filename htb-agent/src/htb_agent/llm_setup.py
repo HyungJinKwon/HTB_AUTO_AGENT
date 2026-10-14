@@ -253,6 +253,7 @@ class SetupIO:
     secret: Any = None            # Callable[[str], str] — 기본 getpass.getpass(화면 표시 안 함)
     out: Callable[[str], None] = print
     run: Any = None               # Callable[[list[str]], int] — 기본 subprocess.run(...).returncode
+    run_shell: Any = None         # Callable[[str], int] — 셸 경유(파이프 허용). Ollama 공식 설치용.
     which: Callable[[str], str | None] = shutil.which
     env: Any = None               # 기본 os.environ(키를 이 프로세스 환경변수로만 올림)
     claude_factory: Any = None    # 기본 ClaudeProvider
@@ -266,6 +267,10 @@ class SetupIO:
             self.secret = getpass.getpass
         if self.run is None:
             self.run = lambda cmd: subprocess.run(cmd).returncode
+        if self.run_shell is None:
+            # 공식 Ollama 설치는 'curl … | sh'(파이프)라 셸이 필요하다. 사용자 [y/N] 확인
+            # 뒤에만 호출된다(무확인 자동 실행 아님). 셸 인젝션 방지를 위해 고정 명령만 넘긴다.
+            self.run_shell = lambda cmd: subprocess.run(cmd, shell=True).returncode
         if self.env is None:
             self.env = os.environ
         if self.claude_factory is None:
@@ -375,12 +380,23 @@ def _setup_ollama(io: SetupIO, res: SetupResult) -> None:
     host = (io.env.get("OLLAMA_HOST") or DEFAULT_OLLAMA_HOST).rstrip("/")
     if io.which("ollama") is None and host == DEFAULT_OLLAMA_HOST:
         io.out(ui.mark_warn("Ollama 가 설치되어 있지 않습니다"))
-        io.out("  " + ui.accent2("설치(Linux/macOS): ") + ui.bold(OLLAMA_INSTALL_CMD))
-        io.out(ui.dim("  (설치 스크립트를 셸로 바로 실행하는 형태라 자동 실행하지 않습니다 — "
-                      "https://ollama.com 에서 내용 확인 후 직접 실행)"))
-        io.out(ui.dim("  설치 후 다시: assassin --setup-llm"))
-        res.notes.append("Ollama: 설치 필요(https://ollama.com)")
-        return
+        io.out("  " + ui.accent2("설치 명령: ") + ui.bold(OLLAMA_INSTALL_CMD))
+        io.out(ui.dim("  공식 스크립트를 셸로 실행합니다(sudo·네트워크 필요) — "
+                      "내용은 https://ollama.com/install.sh 에서 확인 가능"))
+        # [확인 후 자동] 무확인 'curl|sh' 는 하지 않는다. 사용자가 승인([y/N])할 때만 실행한다
+        # (§4 안전 경계·Zero-Guessing: 비가역·시스템 변경은 사람 확인 후). 비대화형이면 기본 No→건너뜀.
+        if not _yes(_ask(io, ui.accent2("지금 자동 설치할까요? ") + ui.dim("[y/N] "))):
+            io.out(ui.dim("  건너뜀 — 나중에 직접: " + OLLAMA_INSTALL_CMD + "  → 다시 assassin --setup-llm"))
+            res.notes.append("Ollama: 설치 필요(https://ollama.com)")
+            return
+        io.out(ui.dim("  설치 중… (네트워크·sudo 암호 입력이 필요할 수 있고, 수 분 걸릴 수 있음)"))
+        rc = io.run_shell(OLLAMA_INSTALL_CMD)
+        if rc != 0 or io.which("ollama") is None:
+            io.out(ui.mark_err("Ollama 설치 실패 — 직접 실행: " + OLLAMA_INSTALL_CMD))
+            res.notes.append("Ollama: 설치 실패(직접 실행: " + OLLAMA_INSTALL_CMD + ")")
+            return
+        io.out(ui.mark_ok("Ollama 설치 완료 — 서버·모델 설정으로 이어집니다"))
+        # 설치 성공 → 아래 서버 가용성 확인·모델 pull 흐름으로 그대로 진행(fall through).
     prov = io.ollama_factory(host=host)
     ok, reason = prov.available()
     if not ok and "설치된 모델 없음" not in reason:
