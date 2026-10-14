@@ -44,7 +44,9 @@ class FootholdMixin:
         def _record_flag(self, report: "OrchestrationReport", hit, prov=...) -> bool: ...
         def _goal_reached(self, report: "OrchestrationReport") -> bool: ...
         def _time_up(self) -> bool: ...
-        def _attempt(self, report, findings, command, phase: str = ...) -> Any: ...
+        def _attempt(self, report, findings, command, phase: str = ...,
+                     budgeted: bool = ..., corrective: bool = ...,
+                     timeout: "int | None" = ...) -> Any: ...
 
     def _exploit_run_stage(self, report, host):
         """3단계: 주입된 공개 PoC(--poc)를 게이트로 실행 → 자격 캡처 → world 반영."""
@@ -74,9 +76,13 @@ class FootholdMixin:
         미설치 파이썬 의존성)로 실패하고 allow_dep_heal 이면, 그 모듈을 현재 venv 에 자동 설치하고
         '1회' 재실행한다(완전 자동 — 사용자 수동 pip 불필요). fetch_pocs 옵트인 + 네트워크 허용 시만."""
         before = len(report.enum_findings)
-        self._attempt(report, report.enum_findings, poc, phase="access")
-        from .exploit_run import harvest_creds, harvest_foothold
         mod = getattr(self, "_active_exploit_module", None)
+        # 폴링형 PoC(웹셸 드롭을 내부에서 길게 대기)는 러너 기본 180s 를 넘길 수 있다. 활성 모듈이
+        # run_timeout 을 선언했으면 그 값으로 실행 상한을 올린다(없으면 None → 기본 180s).
+        poc_to = getattr(mod, "run_timeout", 0) or 0
+        self._attempt(report, report.enum_findings, poc, phase="access",
+                      timeout=(poc_to if poc_to > 0 else None))
+        from .exploit_run import harvest_creds, harvest_foothold
         missing = ""
         for f in report.enum_findings[before:]:
             out = f.output or ""
