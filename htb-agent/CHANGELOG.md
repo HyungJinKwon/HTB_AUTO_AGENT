@@ -19,6 +19,10 @@
 - **ARCHITECTURE 모듈 지도 누락 보강**: `exploit_modules.py`·`poc_fetch.py`·`foothold.py` 3개
   모듈과 내장 익스 모듈(CVE-2025-57819)·PoC 런타임 조달·revshell listener-first 를 반영.
 - **`--list-exploits` 문서화**(USAGE §10.4): 출시됐으나 전 문서에 없던 단독 도구를 기재.
+- **매뉴얼 누락 보강(USAGE)**: README 트림으로 prose 가 사라졌던 `--files`(챌린지 첨부, §6.3)·
+  `--live-bench`(실서비스 라이브 측정, §14.5)와, 그간 CLI 표에만 있던 옵트인 플래그
+  (`--judge`·`--gate-judge`·`--max-restarts`·`--htb-spawn`·`--submit-flags`, 신설 §10.5)를 종합
+  매뉴얼에 기재 — 모든 핵심/옵트인 플래그가 표뿐 아니라 설명을 갖도록.
 - **문서 정직성**: OPERATIONS 안전 요약이 "탐지+수동 제안까지만"으로 `--full-auto`(옵트인 실제
   실행)와 모순되던 것, QUICKSTART 안전 경계 서술을 "기본 생성 전용 + 옵트인 실행"으로 정정.
 - 깨진/부정확 교차링크 정리(QUICKSTART 트러블슈팅·full-auto 섹션 참조).

@@ -229,6 +229,16 @@ assassin http://ctf.example.com/chall --platform ctf --flag-prefix myctf
 | `--category {web,pwn,rev,crypto,forensic,misc}` | LLM 제안을 카테고리에 맞게 유도 |
 | `--flag-prefix TAG` | 우선 인식할 플래그 접두(반복 가능). `DH{}` `flag{}` `CTF{}` 등 `TAG{}` 는 기본 자동 인식 |
 
+**챌린지 첨부파일(`--files`)**: 제공된 소스·바이너리·덤프를 작업공간 `files/`(읽기 전용)로 가져오면
+LLM 이 먼저 읽고 취약 지점을 찾는다. zip·tar 는 안전하게 풀고(zip-slip·압축폭탄 방어), 열린 포트가
+없는 문제(rev/crypto/forensic)도 파일 분석으로 진행한다. 샌드박스(`--sandbox docker`)와 함께면 그
+안에서 솔버 스크립트까지 실행한다.
+
+```bash
+assassin chall.dreamhack.io:8080 --platform dreamhack --category pwn \
+         --files ./prob.zip --autonomous --sandbox docker --llm hybrid
+```
+
 ---
 
 ## 7. 자격증명 넣기
@@ -592,6 +602,17 @@ assassin 10.129.1.7 --full-auto --attacker-ip 10.10.14.13 --exploit-modules ~/mo
 > 받은 공개 PoC 는 제3자 코드다 — 출처 신뢰는 운영자 책임이며, 민감 환경에선 `--poc-dir` 로 미리
 > 검토한 PoC 만 쓰는 것을 권장한다.
 
+### 10.5 기타 옵트인 플래그 (판정 보강 · 무인 완주 · HTB API)
+
+전부 기본 OFF. 안전 경계(3관문·범위·인가 대상)는 그대로 유지된다.
+
+| 옵션 | 쓰임 |
+|---|---|
+| `--judge` | 종료 시 LLM-심판이 '공략 달성' 주장이 증거로 뒷받침되는지 **별도 채점**(조언만 — 규칙 판정·목표 달성을 덮지 않음). LLM 필요 |
+| `--gate-judge` | 자동 모드에서 자동승인될 명령을 LLM 심판이 ALLOW/ASK/DENY 로 재검토해 **더 엄격하게만** 조정(완화 불가·오류 시 기존 동작). LLM 필요 |
+| `--max-restarts N` | 미처리 예외로 죽으면 저장 지점부터 `--resume` 로 최대 N회 **자동 재시작**(무인 완주 보조, 기본 0=끔). 사용자 중단은 제외 |
+| `--htb-spawn` · `--submit-flags` | HTB API 연동(옵트인): 실행 전 머신 스폰 / 획득 플래그 자동 제출. `HTB_TOKEN` env + `--htb-machine-id` 필요. **권한 확인 자산 한정**(§4). 제출 난이도 투표는 `--htb-difficulty` |
+
 ---
 
 ## 11. 산출물: 라이트업 · 리포트 · 로그 · 재개
@@ -689,7 +710,7 @@ assassin 10.129.1.5 --config config/config.example.json
 
 ---
 
-## 14.5 성능 측정(--bench)과 실행 재생(--replay)
+## 14.5 성능 측정(--bench · --live-bench)과 실행 재생(--replay)
 
 **로컬 모의 문제로 성공률 측정** — 실제 네트워크·도구 없이 가짜 응답만 쓰는 연습 문제(`bench/challenges/*.json`)로
 풀이 성공률·명령 수·시간·비용을 잰다. 개선 효과를 숫자로 보여줄 때(해커톤 발표) 쓴다.
@@ -703,6 +724,17 @@ assassin --bench --llm hybrid         # LLM 유무 비교
 - 결과는 표로 출력하고 `state/bench/<시각>/results.json` 에 저장한다(난이도별 성공, pass@N, **검증된 풀이율**(대상과 실제 상호작용한 출력에서 나온 플래그만 인정), 승인 부담, 평균 명령 수, 플래그까지 단계, 시간, 비용, **LLM 호출 수**(총·풀이 1건당 — 방향을 잡고 진행할수록 작아짐)).
 - 시도마다 감사 로그를 남겨 아래 `--replay` 로 그대로 재생할 수 있다.
 - 쉬운 문제는 규칙만으로 풀리고, 단서를 이어가야 하는 중간 문제는 LLM 을 붙여야 풀린다 — 효과를 바로 대비해 볼 수 있다.
+
+**실제 서비스로 라이브 측정(`--live-bench`)** — 가짜 응답이 아니라 **실제 서비스를 띄우고 진짜 도구로
+풀이**해 발표/심사용 신뢰 수치(성공률·pass@k·검증된 풀이율·시간)를 낸다. 타겟 종류: `loopback`
+(파이썬 취약 서비스를 전용 127.0.0.x·표준 포트에)·`docker`(Dockerfile 컨테이너, 데몬 필요)·`vm`
+(실제 머신/VM — 주소는 `address` 또는 `ASSASSIN_VM_<이름>=<IP>`). 체인 풀이는 `--llm` 을 켜야 풀린다.
+
+```bash
+assassin --live-bench --attempts 3 --llm hybrid    # 전체(loopback + 가능한 docker) pass@3
+assassin --live-bench --attempts 1                  # KB만(규칙기반) 기준선
+```
+> 실제 머신 검증 런북은 [VALIDATION.md](VALIDATION.md) P6 참고(권한 확인 자산만).
 
 **실행을 단계별로 재생** — 감사 로그(JSONL)를 '명령 제안 → 관문 → 실행 결과' 타임라인 HTML 로 바꾼다.
 브라우저에서 ←/→/스페이스로 넘겨 본다. 교육·심사 발표에 쓴다.
