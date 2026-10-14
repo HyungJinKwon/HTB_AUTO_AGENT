@@ -119,7 +119,8 @@ check("요약 화면에 종류별 제목·안내", "바로 적용하는 법" in 
 print("\n=== 초보자 안내 보강(검토 후속) ===")
 guide = M._start_guide()
 check("시작 화면에 안전 경계 안심 문구", "위험한 건 '생성'만" in guide and "실행은 사람이 결정" in guide)
-_p = M.build_parser()
+# 고급 옵션(기본 -h 에선 숨김, --help-all 에 노출)의 '도움말 품질'은 full 파서로 검증한다.
+_p = M.build_parser(full=True)
 _help = {a.dest: (a.help or "") for a in _p._actions}
 check("--catch-revshell 도움말에 '언제 쓰나'", "웹 RCE 로 발판이 안 잡힐 때" in _help.get("catch_revshell", ""))
 check("--gate-judge 도움말에 '언제 쓰나'", "자동 모드에서 더 신중하게" in _help.get("gate_judge", ""))

