@@ -37,6 +37,13 @@ SUFFIX = "Ab3Xk9Lm2Q"
 # watchTowr 실 성공 출력 형식: '[+] VULNERABLE - webshell found: <base>this-is-an-ioc-not-
 # actually-watchTowr-<rand>.php?cmd=hostname'. 캡처는 쿼리스트링 앞 .php 까지.
 EXPECT_URL = f"http://{T}/this-is-an-ioc-not-actually-watchTowr-{SUFFIX}.php"
+# ★ 실 PoC 재현 핵심: 성공 URL 은 '긴 배너(>200자) 뒤'에 늦게 나온다. 요약기(summarize_tool_
+# output)의 200자 트렁케이트 폴백이 바로 이 지점에서 URL 줄을 날려 '배너만' 보이게 만들었다.
+# 그래서 배너를 일부러 200자 넘게 만들어, 캡처가 '요약(f.output)'이 아니라 '원본(raw_output)'
+# 에서 이뤄지는지를 진짜로 검증한다(짧은 배너면 이 버그를 못 잡는다).
+BANNER = ("  __ ___ ___________ watchTowr-vs-FreePBX-CVE-2025-57819 ASCII banner art "
+          "line one // " + ("=" * 180) + " // end-of-banner")
+assert len(BANNER) > 200
 
 
 def make_orc(runner):
@@ -65,7 +72,7 @@ class RecordingRunner:
         self.timeouts[command] = timeout
         if "poc" in command:
             return RunOutput(command, stdout=(
-                "banner art line\n[*] injecting cron via SQLi...\n"
+                f"{BANNER}\n[*] injecting cron via SQLi...\n"
                 f"[+] VULNERABLE - webshell found: {EXPECT_URL}?cmd=hostname\n[*] cleanup\n"))
         return RunOutput(command, stdout="")
 
@@ -79,10 +86,16 @@ orc._exploit_run_stage(rep, None)
 check("PoC 호출에 python3 -u (unbuffered) 포함", poc_cmd.startswith("python3 -u "))
 check("PoC 실행이 모듈 run_timeout(300)으로 상향 전달됨",
       rec.timeouts.get(poc_cmd) == 300)
-check("폴링형 PoC 의 '늦은' 웹셸 URL 을 캡처(rce_url)", getattr(orc, "rce_url", "") == EXPECT_URL)
+check("긴 배너(>200자) 뒤 '늦은' 웹셸 URL 을 캡처(rce_url) — 요약 아닌 raw_output 에서",
+      getattr(orc, "rce_url", "") == EXPECT_URL)
 check("웹 cmd 스펙 = 모듈대로(GET/query/cmd)",
       getattr(orc, "rce_method", "") == "GET" and getattr(orc, "rce_inject", "") == "query"
       and getattr(orc, "rce_cmd_param", "") == "cmd")
+# 회귀 가드: raw_output 은 전체 보존(URL 포함), 표시용 요약도 결과 줄(URL)을 보존해야 한다.
+poc_find = next(f for f in rep.enum_findings if "poc" in (f.command or ""))
+check("raw_output 에 성공 URL 보존(캡처 소스)", EXPECT_URL in (poc_find.raw_output or ""))
+check("표시 요약(f.output)도 결과 줄(URL)을 보존 — '배너만' 회귀 방지",
+      EXPECT_URL in (poc_find.output or ""))
 
 
 # ── (2) 진짜 서브프로세스 PoC — 실 ShellRunner 로 '배너 → 지연 → 늦은 URL' 캡처(가짜 아님) ──
@@ -94,7 +107,7 @@ poc_path = os.path.join(tmpdir, "watchTowr-vs-FreePBX-CVE-2025-57819.py")
 with open(poc_path, "w") as f:
     f.write(
         "import sys, time\n"
-        "sys.stdout.write('  __ ___ banner art (watchTowr)\\n')\n"
+        f"sys.stdout.write({BANNER!r} + '\\n')\n"   # 긴 배너(>200자) — 요약 트렁케이트 재현
         "sys.stdout.write('[*] injecting cron via SQLi; polling for webshell...\\n')\n"
         "time.sleep(1.5)\n"
         f"print('[+] VULNERABLE - webshell found: {EXPECT_URL}?cmd=hostname')\n"
@@ -106,11 +119,13 @@ inv = orc2._active_exploit_module.build_invocation(poc_path, T, scheme="http")
 orc2.poc_commands = [inv]
 rep2 = OrchestrationReport(target=T)
 orc2._exploit_run_stage(rep2, None)
-check("실 서브프로세스 PoC 가 게이트를 통과해 실행됨",
-      any(poc_path in (fnd.command or "") for fnd in rep2.enum_findings))
-check("실행 출력에 배너와 늦은 URL 이 모두 캡처됨(버퍼 유실 없음)",
-      any("VULNERABLE" in (fnd.output or "") and "banner art" in (fnd.output or "")
-          for fnd in rep2.enum_findings))
+pf2 = next((fnd for fnd in rep2.enum_findings if poc_path in (fnd.command or "")), None)
+check("실 서브프로세스 PoC 가 게이트를 통과해 실행됨", pf2 is not None)
+check("원본(raw_output)에 긴 배너+늦은 URL 모두 보존(버퍼 유실 없음)",
+      pf2 is not None and EXPECT_URL in (pf2.raw_output or "")
+      and "end-of-banner" in (pf2.raw_output or ""))
+check("표시 요약(f.output)이 결과 줄(VULNERABLE/URL) 보존 — '배너만' 회귀 방지",
+      pf2 is not None and EXPECT_URL in (pf2.output or ""))
 check("실 출력에서 rce_url 캡처 = 발판 성립", getattr(orc2, "rce_url", "") == EXPECT_URL)
 
 print(f"\n결과: {passed} passed, {failed} failed")

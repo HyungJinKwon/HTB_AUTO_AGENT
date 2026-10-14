@@ -85,7 +85,12 @@ class FootholdMixin:
         from .exploit_run import harvest_creds, harvest_foothold
         missing = ""
         for f in report.enum_findings[before:]:
-            out = f.output or ""
+            # 발판 캡처·자격수확·의존성 파싱은 '요약(f.output)'이 아니라 '원본(raw_output)'에서
+            # 한다. 요약기(summarize_tool_output)는 PoC 처럼 매칭 파서가 없는 출력에 200자
+            # 트렁케이트 폴백을 걸어, 배너 뒤에 늦게 나오는 '[+] webshell found: <url>' 줄을
+            # 통째로 날린다 → 요약본만 보면 URL 캡처 실패(배너만 보고 끊김). raw_output(원본,
+            # 20000자 상한)에서 뽑아야 늦은 성공 URL 을 놓치지 않는다(핑거프린트/searchsploit 과 동일 원칙).
+            out = getattr(f, "raw_output", "") or f.output or ""
             for u, p in harvest_creds(out):
                 self.world.add_cred(f"{u}:{p}", source="PoC 출력")
             # 발판 아티팩트 캡처: PoC 가 드롭한 웹셸 URL 을 잡아 웹 RCE 발판으로 잇는다.
