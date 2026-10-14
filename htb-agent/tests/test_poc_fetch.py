@@ -97,5 +97,57 @@ with tempfile.TemporaryDirectory() as d:
     check("OFF 면 모듈 활성화 안 함", orc2._active_exploit_module is None)
     check("OFF 면 큐 비어있음", not orc2.poc_commands)
 
+print("\n=== PoC 의존성 자가치유: 빠진 모듈명 파싱 ===")
+check("ModuleNotFoundError → 모듈명",
+      poc_fetch.missing_module("Traceback ... ModuleNotFoundError: No module named 'urllib3'") == "urllib3")
+check("점분리는 최상위로 축약",
+      poc_fetch.missing_module("No module named 'requests.adapters'") == "requests")
+check("표준 라이브러리는 설치 대상 아님(빈 문자열)",
+      poc_fetch.missing_module("No module named 'os'") == "")
+check("정상 출력엔 없음", poc_fetch.missing_module("webshell: http://t/s.php?cmd=") == "")
+
+print("\n=== ensure_module: 이미 있으면 설치 안 함 / 없으면 주입 pip 호출 ===")
+check("이미 있는 모듈(os) → 설치 미호출·True",
+      poc_fetch.ensure_module("os", pip_fn=lambda n: (_ for _ in ()).throw(AssertionError("설치 금지"))))
+installed = []
+check("없는 모듈 → pip_fn 호출·성공 True",
+      poc_fetch.ensure_module("totally_missing_pkg_xyz", pip_fn=lambda n: installed.append(n) or True))
+check("설치된 이름 전달됨", installed == ["totally_missing_pkg_xyz"])
+check("잘못된 모듈명(인자 주입 차단)",
+      not poc_fetch.ensure_module("evil; rm -rf /", pip_fn=lambda n: True))
+os.environ["ASSASSIN_NO_NET"] = "1"
+check("ASSASSIN_NO_NET → 설치 안 함(False)",
+      not poc_fetch.ensure_module("another_missing_pkg_xyz"))
+os.environ.pop("ASSASSIN_NO_NET", None)
+
+print("\n=== _run_one_poc: PoC 가 의존성 부족으로 죽으면 자동 설치 후 1회 재실행 ===")
+# PoC 출력이 처음엔 'No module named urllib3', 설치 후 재실행하면 웹셸 URL 을 뱉도록 러너를 구성.
+state = {"ran": 0}
+def poc_runner(cmd):
+    if "python3 /poc.py" in cmd:
+        state["ran"] += 1
+        if state["ran"] == 1:
+            return RunOutput(cmd, "Traceback\nModuleNotFoundError: No module named 'urllib3'")
+        return RunOutput(cmd, "[+] webshell dropped: http://10.129.245.100/shell.php?cmd=")
+    return RunOutput(cmd, "")
+g = ScopeGuard.from_cidr_strings(); g.bind_target(T)
+orcH = Orchestrator(g, FakeRunner(poc_runner), KnowledgeBase.load(), auto_approve_contained,
+                    is_tool_available=lambda b: True, quiet=True,
+                    exploit_exec=True, auto_poc=True, fetch_pocs=True)
+orcH.world = WorldModel(target=T)
+orcH.poc_commands = ["python3 /poc.py -H https://10.129.245.100/"]
+# 실제 pip 대신 '설치 성공' 주입(네트워크 없음)
+import htb_agent.poc_fetch as _pf
+_orig_pip = _pf._pip_install
+_pf._pip_install = lambda modname, timeout=180.0: True
+try:
+    repH = OrchestrationReport(target=T)
+    orcH._exploit_run_stage(repH, None)
+finally:
+    _pf._pip_install = _orig_pip
+check("의존성 부족 PoC → 재실행됨(2회)", state["ran"] == 2)
+check("재실행 후 웹셸 URL 캡처(rce_url)", getattr(orcH, "rce_url", "").endswith("shell.php?cmd="))
+check("자동 설치 안내 남김", any("의존성 자동 설치" in s for s in repH.manual_suggestions))
+
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

@@ -64,7 +64,7 @@ sudo ./scripts/install_tools.sh            # 보안 도구 일괄 설치
 
 python3 -m venv .venv                       # ① 가상환경 생성(PEP 668 우회)
 source .venv/bin/activate                   # ② 활성화
-pip install -e ".[claude]"                  # ③ 에이전트 + Claude(anthropic) 설치 → 'assassin'·'htb-agent' 생성
+pip install -e ".[claude,exploit]"          # ③ 에이전트 + Claude(anthropic) + 익스 실행 의존성(requests) → 'assassin'·'htb-agent'
 
 mkdir -p ~/.local/bin                        # ④ 어디서나 쓰도록 심링크
 ln -sf ~/HTB_AUTO_AGENT/htb-agent/.venv/bin/assassin  ~/.local/bin/assassin
@@ -588,6 +588,11 @@ assassin 10.129.1.5 --full-auto --attacker-ip 10.10.14.13 --llm claude --html
 assassin 10.129.1.7 --full-auto --attacker-ip 10.10.14.13 --exploit-modules ~/mods.json --llm claude
 ```
 
+> **PoC 의존성 자동 설치(완전 자동)**: 조달한 공개 PoC 가 `requests`·`urllib3` 등 파이썬 모듈을
+> 요구하면, `--full-auto`(옵트인·네트워크 허용) 시 에이전트가 **현재 venv 에 자동 설치하고 PoC 를
+> 1회 재실행**한다(`ModuleNotFoundError` 감지). 설치는 `sys.executable`(현 venv) 한정·전역 비간섭,
+> `ASSASSIN_NO_NET=1` 이면 생략. 즉 사용자가 수동 `pip install` 을 하지 않아도 된다.
+>
 > **수록된 익스 모듈 확인(`--list-exploits`)**: 타겟 없이 단독 실행하면 자동 발사 대상인 내장+사용자
 > (`--exploit-modules`) 익스 모듈 목록(CVE·제품·취약버전·PoC 출처·채널)을 보여 준다.
 > ```bash

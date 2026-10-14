@@ -72,7 +72,7 @@ git clone https://github.com/HyungJinKwon/HTB_AUTO_AGENT.git ~/HTB_AUTO_AGENT
 cd ~/HTB_AUTO_AGENT/htb-agent
 sudo ./scripts/install_tools.sh            # 보안 도구 일괄 설치
 python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[claude]"                 # 에이전트(+Claude) → 'assassin' 생성
+pip install -e ".[claude,exploit]"        # 에이전트 + Claude + 익스 실행 의존성(requests)
 assassin --doctor                          # 환경 점검(도구·VPN·LLM)
 ```
 

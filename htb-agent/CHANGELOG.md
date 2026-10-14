@@ -2,6 +2,28 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.8] — 2026-10-14
+
+완전 자동 보강 — PoC 런타임 의존성을 에이전트가 스스로 갖춘다(수동 pip 제거).
+
+### 추가(Added)
+- **PoC 의존성 자가치유(`poc_fetch.ensure_module`/`ensure_common_deps`)**: 실제 머신 풀이에서
+  조달한 공개 PoC(예: watchTowr FreePBX CVE-2025-57819)가 `urllib3`/`requests` 미설치로
+  `ModuleNotFoundError` 를 내며 죽어 발판이 안 서던 문제를 자동화로 해소. 옵트인(`--full-auto`/
+  `--fetch-pocs`) + 네트워크 허용 시: (1) 익스 실행 단계 진입에 공용 의존성(requests·urllib3)을
+  현재 venv 에 선제 설치, (2) PoC 가 `No module named X` 로 실패하면 **그 모듈을 자동 설치하고
+  PoC 를 1회 재실행**(`_run_one_poc`). 설치는 `sys.executable`(현 venv) 한정·전역 비간섭, 모듈명
+  엄격 검증(인자 주입 차단)·표준 라이브러리 제외, `ASSASSIN_NO_NET=1` 이면 생략. 사용자가 수동
+  `pip install` 을 하지 않아도 완전 자동 익스 체인이 성립한다.
+
+### 변경(Changed)
+- 설치 문서(README·QUICKSTART·USAGE)의 권장 설치를 `pip install -e ".[claude,exploit]"` 로
+  통일(익스 실행 의존성 requests 포함) — 완전 자동 사용 시 1줄로 끝나게.
+
+### 테스트(Tests)
+- `test_poc_fetch`(+12): 빠진 모듈명 파싱·stdlib 제외·점분리 축약·ensure_module 게이팅(기존/주입/
+  인자주입차단/NO_NET)·`_run_one_poc` 의존성 부족→자동설치→재실행→웹셸 URL 캡처.
+
 ## [2.39.7] — 2026-10-14
 
 라이브 벤치 결정성 완결 — 실 curl loopback 체크의 잔여 플래키 제거.
