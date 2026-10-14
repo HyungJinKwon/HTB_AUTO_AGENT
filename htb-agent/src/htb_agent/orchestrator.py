@@ -2397,21 +2397,23 @@ class Orchestrator(FootholdMixin):
         self.audit.event("diagnosis", cmd=finding.command, category=diag.category,
                          is_target=diag.is_target)
 
-    def _safe_run(self, cmd: str) -> "RunOutput":
+    def _safe_run(self, cmd: str, timeout: int = 180) -> "RunOutput":
         """runner.run 을 예외로부터 보호. 어떤 러너 예외도 실패 RunOutput 으로 흡수해
-        한 명령의 실패가 라운드/배치 전체를 깨지 않도록 한다(병렬 map 보호 포함)."""
+        한 명령의 실패가 라운드/배치 전체를 깨지 않도록 한다(병렬 map 보호 포함).
+        timeout 은 러너 실행 상한(초) — 폴링형 PoC 는 모듈이 더 긴 값을 요구할 수 있다."""
         try:
-            return self.runner.run(cmd, timeout=180)
+            return self.runner.run(cmd, timeout=max(1, int(timeout)))
         except Exception as e:   # noqa: BLE001
             self.audit.event("run_exception", cmd=cmd, error=f"{type(e).__name__}: {e}")
             return RunOutput(cmd, error=f"러너 예외: {type(e).__name__}: {e}", returncode=-1)
 
     def _attempt(self, report: OrchestrationReport, findings: list[EnumFinding],
                  cmd: str, phase: str = "enum", budgeted: bool = True,
-                 corrective: bool = False) -> None:
+                 corrective: bool = False, timeout: "int | None" = None) -> None:
         """순차 실행: 게이트 → (통과 시) 실행 → 결과 처리.
         budgeted=False 면 KB 열거 예산(max_enum)에 계상하지 않는다([S5-1] 소비 스테이지용).
-        corrective=True 면 이 finding 은 '출력구동 교정 재시도'라 또 교정하지 않는다(재귀 방지)."""
+        corrective=True 면 이 finding 은 '출력구동 교정 재시도'라 또 교정하지 않는다(재귀 방지).
+        timeout 이 주어지면 러너 실행 상한을 그 값으로 올린다(폴링형 PoC 전용 — None 이면 기본 180s)."""
         finding = self._gate(report, findings, cmd, phase, budgeted=budgeted)
         if finding is None:
             return
@@ -2419,7 +2421,7 @@ class Orchestrator(FootholdMixin):
             finding.note = (finding.note + " · " if finding.note else "") + "dry-run: 제안만(미실행)"
             report.gate_stats["dry_run"] = report.gate_stats.get("dry_run", 0) + 1
             return
-        out = self._safe_run(finding.command)
+        out = self._safe_run(finding.command, 180 if timeout is None else timeout)
         self._process(report, finding, out, corrective=corrective)
 
     def _attempt_batch(self, report: OrchestrationReport, findings: list[EnumFinding],
