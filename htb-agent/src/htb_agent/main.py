@@ -115,7 +115,8 @@ def build_parser(full: bool = False) -> argparse.ArgumentParser:
                         "'recon web smb …'). 저장소의 공식 스크립트만 실행, 루트 필요")
     g_start.add_argument("--setup-llm", action="store_true", dest="setup_llm",
                    help="LLM 연결 마법사: Claude(API 키)·로컬 LLM(Ollama 모델)을 질문에 답하며 연결하고 "
-                        "실제 1회 호출로 확인 → 기본 설정 저장(이후 --llm 생략 가능). 키는 ~/.config/assassin 에 600 권한")
+                        "실제 1회 호출로 확인 → 기본 설정 저장(이후 --llm 생략 가능). Ollama 미설치 시 [y/N] 확인 "
+                        "후 공식 스크립트로 자동 설치(무확인 실행 아님). 키는 ~/.config/assassin 에 600 권한")
     g_start.add_argument("--llm-test", action="store_true", dest="llm_test",
                    help="환경 자가진단 + LLM 실제 호출 테스트(짧은 요청 1회 — 틀린 키·없는 모델·막힌 네트워크 확인)")
     g_tool.add_argument("--revshell", metavar="LHOST:LPORT", default=None,
