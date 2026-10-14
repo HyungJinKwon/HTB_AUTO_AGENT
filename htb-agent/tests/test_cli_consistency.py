@@ -101,5 +101,11 @@ run(["10.129.1.5", "--auto", "--web-learn", "--no-learn-gaps"] + BASE, runner=fa
 check("--no-learn-gaps 가 우선", captured.get("learn_gaps") is False)
 M.Orchestrator = Orig
 
+print("\n=== --list-exploits (단독 도구, 타겟 불필요) ===")
+rc, out = run(["--list-exploits"])
+check("--list-exploits → rc 0", rc == 0)
+check("내장 CVE-2025-57819 표시", "CVE-2025-57819" in out and "freepbx" in out)
+check("자동 발사·확장 안내 포함", "--full-auto" in out and "--exploit-modules" in out)
+
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
