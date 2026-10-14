@@ -154,6 +154,9 @@ def build_parser(full: bool = False) -> argparse.ArgumentParser:
     g_tool.add_argument("--crack", metavar="HASH", default=None,
                    help="해시 크래킹 자동 준비(생성 안 실행). 해시 종류 식별 + john/hashcat "
                         "명령 생성. 예: --crack '$krb5tgs$23$...'. 권한 확인 자산 해시 전용")
+    g_tool.add_argument("--list-exploits", action="store_true", dest="list_exploits",
+                   help="내장 익스 모듈(공개 PoC 오케스트레이션) 목록 표시 — 자동 발사 대상 CVE·제품·"
+                        "취약버전·PoC 출처. --exploit-modules 로 로드한 사용자 모듈도 함께 표시")
     g_tool.add_argument("--bench", metavar="SUITE", nargs="?", const="__default__", default=None,
                    help="로컬 모의 문제로 풀이 성공률·명령 수·시간·비용 측정(오프라인, 실제 통신 없음). "
                         "SUITE 생략 시 번들 문제 세트. --attempts N 으로 반복(pass@N), --llm 으로 LLM 비교")
@@ -1213,6 +1216,28 @@ def _dispatch_standalone(args, cfg, knowledge_dir):
         print(crack.render(args.crack))
         return 0
 
+    # 내장/사용자 익스 모듈 목록(타겟 없이) — 자동 발사 대상 CVE 커버리지 확인
+    if getattr(args, "list_exploits", False):
+        from . import exploit_modules
+        em_file = getattr(args, "exploit_modules", None)
+        if em_file:
+            try:
+                n = exploit_modules.load_manifest(em_file)
+                print(f"[+] 사용자 익스 모듈 {n}건 로드: {em_file}\n")
+            except (OSError, ValueError) as e:
+                print(f"[!] 매니페스트 로드 실패({em_file}): {e}\n", file=sys.stderr)
+        mods = exploit_modules.known()
+        print(f"내장/사용자 익스 모듈 {len(mods)}건 (공개 PoC 오케스트레이션 — 인가 대상 전용):")
+        for m in mods:
+            src = (f"EDB-{m.edb_id}" if m.edb_id else (m.git_source or "출처 미지정"))
+            ver = f"< {m.vuln_below}" if m.vuln_below else "버전무관"
+            print(f"  · {m.cve}  [{m.product} {ver}]  채널={m.channel}  출처={src}")
+            if m.title:
+                print(f"      {m.title}")
+        print("\n자동 발사: --full-auto (핑거프린트 매칭 시). 다른 CVE 추가: --exploit-modules <json> "
+              "(docs/USAGE.md §10.4). exploit-db 등재분은 --auto-poc 가 자동 커버.")
+        return 0
+
     # 사용자 제공 자료 수집(스캔 안 함) — .md/.txt/.pdf 를 지식베이스 노트로 미리 학습
     if args.ingest is not None:
         import os as _osing
@@ -1361,7 +1386,8 @@ def _main(argv: list[str] | None = None, runner=None) -> int:
         ("--kb-sync", args.kb_sync), ("--promote", args.promote), ("--learn", args.learn),
         ("--list-sessions", args.list_sessions), ("--update", args.update),
         ("--export-stats", args.export_stats), ("--import-stats", args.import_stats),
-        ("--bench", args.bench), ("--live-bench", args.live_bench), ("--replay", args.replay))
+        ("--bench", args.bench), ("--live-bench", args.live_bench), ("--replay", args.replay),
+        ("--list-exploits", getattr(args, "list_exploits", False)))
         if v not in (None, False)]
     if len(standalone) > 1:
         parser.error(f"함께 쓸 수 없는 단독 명령: {' '.join(standalone)}")

@@ -2,6 +2,18 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.2] — 2026-10-14
+
+최종 마감 — 전수 검증(전체 ruff·버전 정합·전체 스위트)에서 발견한 누락 1건 교정.
+
+### 추가(Added)
+- **`--list-exploits` 단독 도구**: 내장/사용자(`--exploit-modules`) 익스 모듈 목록(자동 발사 대상
+  CVE·제품·취약버전·PoC 출처)을 타겟 없이 표시. 지금까지 코드 주석/docstring 에서만 참조되고 CLI
+  에 없던 'dangling reference' 를 실제 명령으로 구현해 닫음.
+
+### 테스트(Tests)
+- `test_cli_consistency`(+3: --list-exploits rc 0·CVE 표시·안내). 전체 143 스위트 무회귀.
+
 ## [2.39.1] — 2026-10-14
 
 자동화·논리 흐름 적대적 검토(2 리뷰 에이전트)에서 찾은 실제 결함 수정.
