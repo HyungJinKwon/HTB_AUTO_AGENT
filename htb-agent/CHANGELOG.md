@@ -2,6 +2,19 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.6] — 2026-10-14
+
+CI `lint` 게이트(mypy) 적색 해소 — 타입 애노테이션만, 런타임 무변경.
+
+### 수정(Fixed)
+- **mypy 게이트 통과(0건)**: CI 의 `mypy src/ --ignore-missing-imports`(차단 게이트)가 7건으로
+  실패하던 것을 교정. (1) `foothold.py` FootholdMixin 의 TYPE_CHECKING 스텁에 `_goal_reached`·
+  `_time_up`(합성 대상 Orchestrator 제공 메서드)을 선언해 `_privesc_loop` 등 애노테이트 본문의
+  `attr-defined` 제거. (2) `orchestrator.py` `_active_exploit_module` 를 `"ExploitModule | None"`
+  로 명시(초기 `None` 추론이 모듈 대입과 충돌하던 `assignment` 오류 제거). 테스트·실행 경로 불변.
+- (품질) 로컬 최종 점검에 `mypy src/` 를 ruff 와 함께 상시 포함하도록 운영 체크리스트 보강
+  (이번 적색의 근인 = 로컬에서 mypy 미실행).
+
 ## [2.39.5] — 2026-10-14
 
 문서 전면 정리 — 연속 수정으로 흩어진 마크다운을 "한 주제=한 문서(SSOT)" 구조로 재배치.
