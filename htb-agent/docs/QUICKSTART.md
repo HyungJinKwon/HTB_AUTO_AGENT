@@ -7,7 +7,7 @@
 최신 Kali·Ubuntu 는 PEP 668 로 시스템 `pip install` 이 막히므로 **venv + 심링크**로 설치합니다.
 
 ```bash
-# 새 PC·VM 스냅샷 — 기본(default) 브랜치로 클론 (clone/pull 이 기본 브랜치 자동 선택)
+# 새 PC·VM 스냅샷 — 기본(default) 브랜치(현재: main)로 클론 (clone/pull 이 기본 브랜치 자동 선택)
 git clone https://github.com/HyungJinKwon/HTB_AUTO_AGENT.git ~/HTB_AUTO_AGENT
 # (이미 받아둔 경우 최신화) git -C ~/HTB_AUTO_AGENT pull --ff-only
 cd ~/HTB_AUTO_AGENT/htb-agent

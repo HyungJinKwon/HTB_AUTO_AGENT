@@ -56,7 +56,7 @@
 **심링크**하면, venv 를 매번 activate 하지 않아도 어느 디렉터리에서나 `assassin` 이 바로 동작한다.
 
 ```bash
-# 새 PC·VM 스냅샷 — 기본(default) 브랜치로 클론 (clone/pull 이 기본 브랜치를 자동 선택)
+# 새 PC·VM 스냅샷 — 기본(default) 브랜치(현재: main)로 클론 (clone/pull 이 기본 브랜치를 자동 선택)
 git clone https://github.com/HyungJinKwon/HTB_AUTO_AGENT.git ~/HTB_AUTO_AGENT
 # (이미 받아둔 경우 최신화) git -C ~/HTB_AUTO_AGENT pull --ff-only
 cd ~/HTB_AUTO_AGENT/htb-agent

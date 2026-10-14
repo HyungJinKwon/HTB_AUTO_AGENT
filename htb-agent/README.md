@@ -66,7 +66,7 @@
 최신 Kali·Ubuntu 는 **PEP 668** 로 시스템 `pip install` 이 막히므로 **venv + 심링크**로 설치한다.
 
 ```bash
-# git clone 은 '기본(default) 브랜치'를 자동 체크아웃한다 — 완성본이 여기 병합된다.
+# git clone 은 '기본(default) 브랜치'(현재: main)를 자동 체크아웃한다 — 완성본이 여기 병합된다.
 # 브랜치명을 손으로 지정하지 말 것(특히 claude/* 작업 브랜치는 체크아웃 금지).
 git clone https://github.com/HyungJinKwon/HTB_AUTO_AGENT.git ~/HTB_AUTO_AGENT
 cd ~/HTB_AUTO_AGENT/htb-agent
