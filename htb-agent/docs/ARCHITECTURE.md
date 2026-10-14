@@ -195,7 +195,10 @@ PowerShell `IEX`·`DownloadString`·`-EncodedCommand`, 명령 치환(`$(…)`·�
 | | `crack.py` | 해시 크래킹 자동 준비(--crack + 출력/볼트에서 해시 수집·식별→john/hashcat 명령 생성, 생성 전용) |
 | **발판·익스(옵트인)** | `web_secrets.py` | 웹 노출 비밀/백업 파일 '읽기 전용' 열거 — 발판 전 HTTP 자격 수확 재료(vhost 인식, `--exploit-exec`/`--auto-poc` 전용) |
 | | `exploit_fetch.py` | PoC 정적 분석·실행 '계획 생성'(② 기반, 생성 전용) — ⭐ 버전매칭 PoC 받기·실행계획 문자열 |
-| | `exploit_run.py` | 공개 PoC 실행 채널(3단계, 옵트인) — 고른 '한 줄 PoC 명령'을 기존 러너로 실행, 출력에서 자격 캡처. **익스 코드는 담지 않음** |
+| | `exploit_run.py` | 공개 PoC 실행 채널(3단계, 옵트인) — 고른 '한 줄 PoC 명령'을 기존 러너로 실행, 출력에서 자격·발판 URL 캡처(harvest_creds/harvest_foothold). **익스 코드는 담지 않음** |
+| | `exploit_modules.py` | **내장 익스 모듈 레지스트리**(생성 전용 데이터) — CVE별 (핑거프린트 매칭·취약버전·공개 PoC 조달방법·실행 템플릿·출력→웹셸 URL 파서) 메타데이터. 수록: `CVE-2025-57819`(FreePBX `<16.0.89`). exploit-db 미등재 최신 CVE 를 메움. `--exploit-modules` 로 사용자 모듈(JSON) 추가. **무기 코드 비탑재** |
+| | `poc_fetch.py` | 공개 PoC 런타임 조달(옵트인 `--fetch-pocs`) — **레지스트리 선언 출처만**(exploit-db `searchsploit -m`·공개 git). 임의/LLM/타겟 URL 금지. `ASSASSIN_NO_NET=1` 이면 조달 차단(오프라인 안전) |
+| | `foothold.py` | **발판·익스 실행 스테이지**(FootholdMixin, 옵트인) — PoC 실행→웹 RCE 발판 캡처→(opt-in)웹→리버스셸 업그레이드·revshell 채널 모듈 listener-first 수신→자격수확→플래그→권한상승 폐루프. SSH/웹/리버스셸 세션 무관. RCE 실행 표면(3관문 하) |
 | | `session_verify.py` | 발판 성립 검증(생성 전용) — '진짜 셸이 떴는지'를 출력으로 판정 |
 | | `shell_session.py` | 발판 셸 세션 추상화(B) — 채널 무관 공통 인터페이스(run/alive) |
 | | `shell_transport.py` | 발판 transport(리버스셸 소켓 / 웹RCE HTTP) — **사용자 커밋·RCE 실행 표면**(requests 선택 의존, 미설치 시 안전 degrade) |
