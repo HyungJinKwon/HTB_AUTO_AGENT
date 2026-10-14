@@ -2,6 +2,25 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.37.1] — 2026-10-14
+
+세밀 검토 후속 — 비차단 관찰 2건을 반영.
+
+### 추가(Added)
+- **SSH 발판에도 `sudo -S` 자격 재사용(`_exploit_exec_stage`)**: 웹/리버스셸 발판(`_privesc_loop`)에만
+  있던 자격 재사용 root 경로를 SSH 발판에도 GTFOBins 벡터 루프 '앞'에 추가(대칭). 평문 비번을
+  `sudo -S` 로 넣어 전체권한 sudo → `uid=0` → `/root/root.txt`(기존 root.txt 읽기와 동일하게
+  `_attempt` 게이트 경유). `--full-auto`(auto_poc) 하에서 자동.
+
+### 변경(Changed)
+- **리버스셸 업그레이드 전용 짧은 수신 타임아웃**: 웹 발판 성공 후 `--catch-revshell` 업그레이드
+  콜백 대기를 기본 120s 대신 ~25s(`_revshell_upgrade_timeout`)로 단축 — user 플래그는 이미
+  확보돼 있으므로 콜백이 없으면 빠르게 웹 세션으로 복귀(기본 리버스셸 발판의 120s 와 구분).
+  실제 catcher 에만 timeout 을 전달하고, 주입형 2-인자 catcher 는 TypeError 폴백으로 호환.
+
+### 테스트(Tests)
+- `test_exploit_exec_stage`(+3: SSH sudo -S 자격재사용 → root). `test_revshell_upgrade` 무회귀.
+
 ## [2.37.0] — 2026-10-13
 
 루트 플래그 자동화의 '표준 경로' 커버리지를 넓히고, 옵션이 많아 헷갈리던 CLI 도움말을 2단으로 정리했다.
