@@ -541,9 +541,11 @@ assassin 10.129.1.5 --full-auto --llm claude --html --json
    쏴 콜백을 수신(수동 `nc -lvnp 4444` 과정 자동화). 성립하면 더 안정적인 셸로 승격, 실패해도 웹 발판 유지.
 5. **privesc 폐루프(root 자동화)** — 발판 세션 위에서 ⑴ **자격 재사용**(수확한 평문 비번을
    `sudo -S` 로 넣어 전체권한 sudo 시도) ⑵ 열거→**GTFOBins HIGH 벡터**(php·node·gdb·find·vim·
-   tar·taskset·busybox·dash… sudo/SUID/capability) one-shot 상승 → `uid=0` 확인 → `/root/root.txt`
-   직독까지 자동. 웹셸/리버스셸 발판 모두. **표준 경로 밖(DB UDF·커널 LPE 등)은 자동 발사하지 않고
-   생성 전용 제안으로 남긴다**(정직성 §3). `assassin --help-all` 로 전체 옵션 확인.
+   tar·taskset·busybox·dash… sudo/SUID/capability) ⑶ **docker 그룹**(호스트 / 마운트 chroot) one-shot
+   상승 → `uid=0` 확인 → `/root/root.txt` 직독까지 자동(웹셸/리버스셸/SSH 발판 모두). **lxd 그룹·NFS
+   no_root_squash·sudo LD_PRELOAD·writable /etc/passwd** 는 탐지해 **정확한 실행 단계 제안**으로,
+   **DB UDF·커널 LPE** 도 제안으로 남긴다 — 파괴적/환경의존/신종은 자동 발사하지 않는다(정직성 §3·
+   안전 §4). `assassin --help-all` 로 전체 옵션 확인.
 
 | 항목 | 내용 |
 |---|---|

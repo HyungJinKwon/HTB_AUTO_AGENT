@@ -2,6 +2,31 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.38.0] — 2026-10-14
+
+자동 커버리지를 '발판 캡처 범위'와 '표준 권한상승 벡터' 양쪽으로 넓혔다(신종 익스 창작·임의 PoC
+자동실행·커널 자동발사는 안전·정직성상 자동화하지 않고 제안 품질로 보강).
+
+### 추가(Added)
+- **발판 캡처 범위 확장(`parse_foothold_url`)**: `.php` 외 `.jsp/.jspx/.asp/.aspx/.cfm/.cgi/.pl`
+  웹셸과, 확장자 없이 'Webshell:/shell at/RCE at/uploaded to/endpoint <url>' 식으로 지목하는
+  PoC 출력까지 캡처 → 더 많은 공개 PoC 에서 웹 RCE 발판 자동 포착.
+- **비-GTFOBins 표준 privesc 벡터(`analyze_extra`)**: docker/lxd 그룹·NFS no_root_squash·
+  sudo env_keep LD_PRELOAD·writable /etc/passwd 탐지. **docker 그룹**은 조건 충족 시 `_privesc_loop`
+  에서 **자동 발사**(호스트 / 마운트 chroot → root.txt), 나머지는 **정확한 실행 단계를 고신뢰
+  제안**(자동 발사 안 함)으로 surface. PRIVESC_ENUM 에 NFS/writable-passwd 신호 수집 추가.
+- **벡터 권한 직독**: 상승 벡터 성공 시 그 벡터의 root 권한 one-shot 으로도 root.txt 를 직독(해당
+  벡터로만 읽히는 경우 — docker chroot 등) 캡처.
+
+### 안전(Safety)
+- 넓힌 것은 **"공개 PoC 로 서는 발판"과 "표준·스크립트형 권한상승"**뿐이다. 자동 발사는 신뢰도
+  높은 벡터(GTFOBins·자격재사용·docker)에 한하고, 파괴적/환경의존 벡터(writable passwd·LD_PRELOAD·
+  NFS·lxd)·커널 LPE·DB UDF 는 **자동 발사하지 않고 제안**으로 남긴다. 임의 인터넷 PoC 자동실행·
+  신종 익스 창작은 하지 않는다(공급망·정직성). 전부 옵트인·스코프 게이트·인가 대상 전용.
+
+### 테스트(Tests)
+- `test_exploit_modules`(+5 캡처) · `test_privesc_analyze`(+8 analyze_extra) · `test_privesc_loop`(+3 docker).
+
 ## [2.37.1] — 2026-10-14
 
 세밀 검토 후속 — 비차단 관찰 2건을 반영.

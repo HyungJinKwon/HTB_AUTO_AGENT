@@ -277,7 +277,8 @@ class FootholdMixin:
                     self.world.raise_access("root")
                     self.audit.event("privesc_root", via=v.kind, binary=v.binary,
                                      channel=getattr(session, "kind", "?"))
-                    # ④ root 전이 후 플래그 재읽기(세션 직독, provenance=privesc)
+                    # ④ root 전이 후 플래그 읽기. docker 그룹 등은 '현재 유저 cat' 으로는 root.txt 를
+                    # 못 읽으므로, 성공한 벡터의 'root 권한 one-shot' 으로도 직독해 스캔한다.
                     from . import flag_read
                     for kind, val in flag_read.read_flags(
                             session, flag_kind=self.flag_kind).items():
@@ -285,6 +286,15 @@ class FootholdMixin:
                                                     "exploit-derived",
                                                     "권한상승 후 발판 세션에서 직접 읽음")
                         self._record_flag(report, FlagHit(val, kind, "privesc"), prov)
+                    priv_read = v.oneshot("cat /root/root.txt 2>/dev/null")
+                    if priv_read:
+                        from .flag import scan as _scan
+                        rootout = session.run(priv_read)
+                        for hit in _scan(priv_read, rootout or "", flag_kind=self.flag_kind):
+                            prov = _prov.FlagProvenance(hit.kind, hit.value, "<벡터 권한 직독>",
+                                                        "privesc", "exploit-derived",
+                                                        f"{v.kind} 권한으로 root.txt 직독")
+                            self._record_flag(report, FlagHit(hit.value, hit.kind, "privesc"), prov)
                     return
         except OSError as e:   # 세션 소켓/전송 오류 → privesc 중단(발판·user 플래그 유지)
             self.audit.event("privesc_session_error", error=f"{type(e).__name__}: {e}")
