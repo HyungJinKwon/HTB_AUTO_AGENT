@@ -51,6 +51,23 @@ jobs:
           pip install "mypy==2.3.1"
           mypy src/ --ignore-missing-imports
 
+  foothold-e2e:
+    runs-on: ubuntu-latest
+    # ★ '가짜 아닌' 실 end-to-end: requests(.[exploit])를 깔고, 실 HTTP 웹셸 발판 체인을
+    # 진짜로 돌린다(단위 테스트의 fake 주입이 놓친 실 경로 — urllib3/requests degrade 재발 방지).
+    defaults:
+      run:
+        working-directory: htb-agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 익스 실행 의존성 설치(requests)
+        run: pip install -e ".[exploit]"
+      - name: 실 웹 RCE 발판 e2e (loopback HTTP · 실 requests)
+        run: python3 tests/test_e2e_real_foothold.py
+
   install-smoke:
     runs-on: ubuntu-latest
     # 새 가상환경에 설치해 'assassin' 명령이 소스 밖(다른 cwd)에서도 동작하는지 확인

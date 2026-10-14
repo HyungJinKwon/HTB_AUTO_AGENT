@@ -2,6 +2,24 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.9] — 2026-10-14
+
+실 end-to-end 검증 상설화 — '가짜 주입 단위 테스트'가 놓친 실 경로를 CI 로 고정(재발 방지).
+
+### 추가(Added)
+- **`test_e2e_real_foothold`(신규)**: fake 주입이 아닌 '진짜' end-to-end — 실 HTTP 웹셸을
+  loopback 에 띄우고, **실 `requests`(web_http_fn) → WebRceSession → 발판 성립 검증(실 id/uname)
+  → flag_read.read_flags 로 user 플래그 실 읽기**까지 돌린다. 실 pip 경로(`_pip_install`/
+  `ensure_module`/`missing_module`)도 주입 없이 검증. requests 미설치(코어 전용)면 그 블록만 skip.
+- **CI 잡 `foothold-e2e`**: `pip install -e ".[exploit]"` 로 requests 를 깔고 위 실 발판 e2e 를
+  매 push/PR 에 실행한다. urllib3/requests 미설치로 발판이 조용히 degrade 되던 사고를 '단위
+  테스트는 통과하는데 실제론 실패'로 다시 못 빠지게 CI 가 실 경로를 강제한다.
+
+### 배경
+- 직전(2.39.8) 자가치유는 단위 테스트(주입)만으로 검증됐고, '실 requests HTTP 왕복'은 한 번도
+  실행되지 않았다. 이 릴리스는 그 실 경로를 상설 테스트+CI 로 고정해 "만들고 병합 후 실제론 미작동"
+  의 반복을 구조적으로 차단한다.
+
 ## [2.39.8] — 2026-10-14
 
 완전 자동 보강 — PoC 런타임 의존성을 에이전트가 스스로 갖춘다(수동 pip 제거).
