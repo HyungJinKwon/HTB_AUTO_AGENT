@@ -133,7 +133,7 @@ cd htb-agent && python3 tests/run_all.py     # 전체 스위트(끝에 '총 N �
 | `--version` | 버전 표시 |
 | `--doctor` | 환경 자가진단(도구·LLM·VPN 점검, 스캔 안 함). 완전 초보자 권장 첫 실행 |
 | `--install-missing` `CATS` | 빠진 보안 도구를 install_tools.sh 로 자동 설치(카테고리 지정 가능: 'recon web smb …'). 저장소의 공식 스크립트만 실행, 루트 필요 |
-| `--setup-llm` | LLM 연결 마법사: Claude(API 키)·로컬 LLM(Ollama 모델)을 질문에 답하며 연결하고 실제 1회 호출로 확인 → 기본 설정 저장(이후 --llm 생략 가능). **Ollama 미설치 시 `[y/N]` 확인 후 공식 스크립트로 자동 설치**(무확인 실행 아님). 키는 ~/.config/assassin 에 600 권한 |
+| `--setup-llm` | LLM 연결 마법사: Claude(API 키)·로컬 LLM(Ollama 모델)을 질문에 답하며 연결하고 실제 1회 호출로 확인 → 기본 설정 저장(이후 --llm 생략 가능). Ollama 미설치 시 [y/N] 확인 후 공식 스크립트로 자동 설치(무확인 실행 아님). 키는 ~/.config/assassin 에 600 권한 |
 | `--llm-test` | 환경 자가진단 + LLM 실제 호출 테스트(짧은 요청 1회 — 틀린 키·없는 모델·막힌 네트워크 확인) |
 | `--revshell` `LHOST:LPORT` | 리버스쉘 페이로드 생성(실행 안 함). 'IP:PORT' 또는 'PORT'(공격자 IP 자동/--attacker-ip). 권한 확인 대상 전용 |
 | `--learn` `TOPIC` | 권위 출처 자가학습(도구·공격기법·개념·프로토콜)을 지식베이스에 저장. 예: --learn kerberoasting / burp / http. 전체 일괄: --learn all. 목록: --learn list |

@@ -2,6 +2,14 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.13] — 2026-10-14
+
+### 수정(Fixed)
+- **CI 적색 해소 — README CLI 옵션 표 desync**: v2.39.12 에서 `--setup-llm` 설명을 README 에
+  '수동'으로 고쳐, argparse `help` 에서 자동 생성되는 옵션 표와 어긋나 `gen_cli_docs --check`
+  게이트(test 잡)가 전 Python 버전에서 실패했다. 설명을 argparse `help`(단일 출처)에 반영하고
+  표를 재생성해 해소. (SSOT 원칙: 옵션 표는 손으로 고치지 말고 파서에서 생성.)
+
 ## [2.39.12] — 2026-10-14
 
 Ollama 자동 설치 — `--setup-llm` 마법사가 미설치 시 '확인 후 자동' 설치(완전 자동 하이브리드 지향).
