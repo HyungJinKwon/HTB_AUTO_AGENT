@@ -41,4 +41,7 @@ FLAG_READS = [
 PRIVESC_ENUM = [   # 권한상승 '열거'만(파괴 없음) — 다음 수 판단 재료
     "id; whoami; sudo -n -l 2>/dev/null; sudo -l 2>/dev/null",
     "find / -perm -4000 -type f 2>/dev/null; getcap -r / 2>/dev/null",
+    # 비-GTFOBins 표준 벡터 신호(NFS·writable passwd) — analyze_extra 가 파싱
+    "cat /etc/exports 2>/dev/null; ls -la /etc/passwd 2>/dev/null; "
+    "find / -writable -type f 2>/dev/null | grep -E '/etc/(passwd|shadow)$'",
 ]

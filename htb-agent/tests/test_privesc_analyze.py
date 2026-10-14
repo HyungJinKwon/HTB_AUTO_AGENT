@@ -101,8 +101,29 @@ check("기본 payload=id", PrivescVector("sudo", "find", path="/usr/bin/find",
 check("render 에 비대화형(one-shot) 노출",
       "비대화형(one-shot)" in render_vectors(analyze_enum("    (root) NOPASSWD: /usr/bin/find\n")))
 
-print("\n=== 생성 전용 경계(불변) 자기점검 ===")
+print("\n=== analyze_extra: 비-GTFOBins 표준 벡터 탐지 ===")
 import htb_agent.privesc_analyze as pa  # noqa: E402
+_dk = pa.analyze_extra("uid=1000(user) gid=1000(user) groups=1000(user),998(docker)")
+check("docker 그룹 → high + one-shot(자동 발사 가능)",
+      any(v.kind == "docker-group" and v.confidence == "high" and v.oneshot("id") for v in _dk))
+check("docker one-shot 에 chroot /mnt",
+      any("chroot /mnt" in v.oneshot("id") for v in _dk if v.kind == "docker-group"))
+_lx = pa.analyze_extra("groups=1000(user),116(lxd)")
+check("lxd 그룹 → 제안(med, 자동 발사 안 함)",
+      any(v.kind == "lxd-group" and v.confidence == "med" and not v.oneshot("id") for v in _lx))
+_nfs = pa.analyze_extra("/srv *(rw,sync,no_root_squash)")
+check("NFS no_root_squash → 제안", any(v.kind == "nfs" for v in _nfs))
+_ld = pa.analyze_extra("env_keep+=LD_PRELOAD\n(root) NOPASSWD: /usr/bin/foo")
+check("sudo env_keep LD_PRELOAD → 제안", any(v.kind == "ld-preload" for v in _ld))
+_pw = pa.analyze_extra("/etc/passwd\n")   # find -writable 출력(단독 경로)
+check("writable /etc/passwd → 제안", any(v.kind == "writable-passwd" for v in _pw))
+check("평범한 유저(그룹·설정 신호 없음) → 추가 벡터 없음",
+      not pa.analyze_extra("uid=1000(user) gid=1000(user) groups=1000(user)"))
+check("analyze_enum 이 extra 를 포함(docker 합산)",
+      any(v.kind == "docker-group" for v in pa.analyze_enum(
+          "groups=1000(user),998(docker)")))
+
+print("\n=== 생성 전용 경계(불변) 자기점검 ===")
 for mod in ("subprocess", "socket", "os", "requests", "urllib", "shutil", "pty"):
     check(f"실행/네트워크 모듈 미임포트: {mod!r}", not hasattr(pa, mod))
 

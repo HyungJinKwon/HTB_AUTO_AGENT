@@ -151,5 +151,24 @@ rep_nt = OrchestrationReport(target=T, flag_kind="boot2root")
 orc_nt._privesc_loop(sess_nt, rep_nt)
 check("NT 해시는 sudo -S 비번으로 안 씀", not any("sudo -S" in c for c in sess_nt.cmds))
 
+print("\n=== docker 그룹 자동 발사 → root + root.txt(벡터 권한 직독) ===")
+def docker_responder(cmd):
+    if "chroot /mnt" in cmd:                       # docker one-shot(컨테이너 root 컨텍스트)
+        return ROOTFLAG + "\n" if "root.txt" in cmd else "uid=0(root) gid=0(root)"
+    if "root.txt" in cmd or "user.txt" in cmd or "flag" in cmd:
+        return ""   # 현재 유저 cat 은 권한거부
+    if "sudo -n -l" in cmd or cmd.startswith("id;"):
+        return "uid=1000(user) gid=1000(user) groups=1000(user),998(docker)"
+    return ""
+
+orc_dk = make_orc()   # 자격 없음 → 자격재사용 건너뜀, docker 그룹 벡터로 상승
+sess_dk = FakeSession(docker_responder)
+rep_dk = OrchestrationReport(target=T, flag_kind="boot2root")
+orc_dk._privesc_loop(sess_dk, rep_dk)
+check("docker 그룹 벡터로 root 전이", orc_dk.world.has_access("root"))
+check("docker 권한 one-shot 으로 root.txt 캡처", rep_dk.root_flag == ROOTFLAG)
+check("docker chroot one-shot 이 세션에서 실행됨",
+      any("chroot /mnt" in c for c in sess_dk.cmds))
+
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
