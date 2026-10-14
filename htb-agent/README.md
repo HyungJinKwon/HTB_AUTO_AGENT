@@ -66,6 +66,8 @@
 최신 Kali·Ubuntu 는 **PEP 668** 로 시스템 `pip install` 이 막히므로 **venv + 심링크**로 설치한다.
 
 ```bash
+# git clone 은 '기본(default) 브랜치'를 자동 체크아웃한다 — 완성본이 여기 병합된다.
+# 브랜치명을 손으로 지정하지 말 것(특히 claude/* 작업 브랜치는 체크아웃 금지).
 git clone https://github.com/HyungJinKwon/HTB_AUTO_AGENT.git ~/HTB_AUTO_AGENT
 cd ~/HTB_AUTO_AGENT/htb-agent
 sudo ./scripts/install_tools.sh            # 보안 도구 일괄 설치
@@ -77,6 +79,8 @@ assassin --doctor                          # 환경 점검(도구·VPN·LLM)
 > **전체 설치 절차**(심링크로 어디서나 실행·bash/zsh·LLM 연결 마법사)는
 > **[docs/QUICKSTART.md §1](docs/QUICKSTART.md)** 또는 **[docs/USAGE.md §2](docs/USAGE.md)**.
 > Python 3.10+ (코어는 표준 라이브러리만). 규칙 기반·로컬 Ollama 만 쓰면 `pip install -e .` 로 충분.
+> 최신화는 `git pull --ff-only`(기본 브랜치 그대로). `claude/*` 작업 브랜치는 CI·리뷰 중 강제동기될
+> 수 있으니 로컬 실행용으로 체크아웃하지 말 것 — 최신 릴리스는 항상 기본 브랜치에 병합된다.
 
 ---
 
