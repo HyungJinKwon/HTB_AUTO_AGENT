@@ -182,10 +182,10 @@ runs5 = []
 r5 = S.run_setup(io5)
 check("동의 → pip install anthropic 실행", runs5 and runs5[0][-3:] == ["pip", "install", "anthropic"][-3:]
       and r5.claude_ok)
-io6, outs6, runs6 = make_io(["3", ""], ollama=lambda host=None, models=None: FakeP(
+io6, outs6, runs6 = make_io(["3", "n"], ollama=lambda host=None, models=None: FakeP(
     avail=(False, "Ollama 에 설치된 모델 없음"), host=host, models=models), mem=8)
 r6 = S.run_setup(io6)
-check("모델 받기 거절 → 실행 안 함", runs6 == [] and not r6.ollama_ok)
+check("모델 받기 명시 거절(n) → 실행 안 함", runs6 == [] and not r6.ollama_ok)
 io7, outs7, runs7 = make_io(["3", "y"], ollama=lambda host=None, models=None: FakeP(
     avail=(True, "ok") if models else (False, "Ollama 에 설치된 모델 없음"), host=host, models=models), mem=8)
 r7 = S.run_setup(io7)
@@ -289,17 +289,19 @@ def ollama_io(answers, which_ollama_after_install="/usr/bin/ollama", shell_rc=0)
             state["installed"] = True
         return shell_rc
 
+    runs = []
     io_ = S.SetupIO(ask=lambda p: ans.pop(0) if ans else "",
-                    out=outs.append, run=lambda c: 0, run_shell=run_shell, which=which,
+                    out=outs.append, run=lambda c: (runs.append(c), 0)[1],
+                    run_shell=run_shell, which=which, sleep=lambda s: None,
                     env={"ASSASSIN_CONFIG_DIR": os.environ["ASSASSIN_CONFIG_DIR"]},
                     ollama_factory=lambda host=None, models=None: FakeP(
                         installed=["llama3.1:8b"], host=host, models=models),
                     memory_gb=lambda: 16.0)
-    return io_, outs, runs_shell
+    return io_, outs, runs_shell, runs
 
 
 # (1) 거부(N) → 설치 실행 안 함, 안내만
-io_n, outs_n, shell_n = ollama_io(["n"])
+io_n, outs_n, shell_n, _ = ollama_io(["n"])
 res_n = S.SetupResult()
 S._setup_ollama(io_n, res_n)
 check("거부 시 설치 셸 실행 없음", shell_n == [])
@@ -307,24 +309,85 @@ check("거부 시 '설치 필요' 노트", any("설치 필요" in n for n in res
 check("거부해도 설치 명령 안내 출력", any("ollama.com/install.sh" in o for o in outs_n))
 
 # (2) 승인(y) → 공식 설치 셸 실행 + 설치 후 서버·모델 흐름으로 진행
-io_y, outs_y, shell_y = ollama_io(["y", "1"])   # y=설치, 1=모델 선택(llama3.1:8b)
+io_y, outs_y, shell_y, _ = ollama_io(["y", "1"])   # y=설치, 1=모델 선택(llama3.1:8b)
 res_y = S.SetupResult()
 S._setup_ollama(io_y, res_y)
 check("승인 시 공식 설치 명령을 셸로 1회 실행", shell_y == [S.OLLAMA_INSTALL_CMD])
 check("설치 성공 후 모델 흐름 진행 → ollama_ok", res_y.ollama_ok and res_y.ollama_model == "llama3.1:8b")
 
 # (3) 승인했으나 설치 실패(rc!=0) → 실패 노트 + 중단(모델 흐름 미진입)
-io_f, outs_f, shell_f = ollama_io(["y"], shell_rc=1)
+io_f, outs_f, shell_f, _ = ollama_io(["y"], shell_rc=1)
 res_f = S.SetupResult()
 S._setup_ollama(io_f, res_f)
 check("설치 실패 시 셸은 호출됨", shell_f == [S.OLLAMA_INSTALL_CMD])
 check("설치 실패 노트 + 미연결", any("설치 실패" in n for n in res_f.notes) and not res_f.ollama_ok)
 
 # (4) 안전 경계: 무확인 자동 실행 아님 — 빈 입력(비대화형 기본)은 설치 안 함
-io_e, outs_e, shell_e = ollama_io([])   # 답 없음 → _ask "" → _yes False
+io_e, outs_e, shell_e, _ = ollama_io([])   # 답 없음 → _ask "" → _yes False
 res_e = S.SetupResult()
 S._setup_ollama(io_e, res_e)
 check("비대화형(빈 입력) 기본 No → 무확인 설치 안 함", shell_e == [])
+
+
+print("\n=== 설치 직후 서버 기동 레이스: 준비될 때까지 폴링 → 모델 pull 로 이어짐 ===")
+# 설치 직후 서버가 바로 안 뜨는(systemd 기동 전) 상황: available() 가 처음 N회는 '연결 실패',
+# 이후 '설치된 모델 없음'(서버 기동·모델만 없음)으로 바뀐다. 폴링으로 레이스를 넘겨 pull 까지 가야 한다.
+race = {"n": 0}
+
+
+def race_factory(host=None, models=None):
+    race["n"] += 1
+    if models:                      # pull 후 모델 지정 재생성 → 실호출 성공
+        return FakeP(avail=(True, "ok"), host=host, models=models)
+    if race["n"] <= 2:              # 처음 2회(설치 직후): 서버 아직 안 뜸
+        return FakeP(avail=(False, "Ollama 연결 실패"), host=host)
+    return FakeP(avail=(False, "Ollama 에 설치된 모델 없음"), host=host)   # 서버 기동됨·모델만 없음
+
+
+slept = []
+state2 = {"installed": False}
+io_r = S.SetupIO(
+    ask=lambda p: "y",                        # 설치 승인 · 모델 pull 은 기본 진행(Y)
+    out=lambda s: None, run=lambda c: 0,
+    run_shell=lambda cmd: (state2.__setitem__("installed", True), 0)[1],
+    which=lambda n: None if (n == "ollama" and not state2["installed"]) else "/usr/bin/" + n,
+    sleep=lambda s: slept.append(s),
+    env={"ASSASSIN_CONFIG_DIR": os.environ["ASSASSIN_CONFIG_DIR"]},
+    ollama_factory=race_factory, memory_gb=lambda: 8.0)
+res_r = S.SetupResult()
+S._setup_ollama(io_r, res_r)
+check("서버 기동까지 폴링함(sleep 호출됨)", len(slept) >= 1)
+check("폴링 후 모델 흐름 도달 → pull 실행·연결 성공",
+      res_r.ollama_ok and res_r.ollama_model == "qwen2.5:7b")
+
+
+print("\n=== 로컬 선택 시 모델 pull '기본 자동 진행'(Enter=받기, n=거부) ===")
+# 모델 미설치 + 빈 입력(Enter) → 자동으로 추천 모델 pull(로컬을 '선택'한 사용자 의도 반영).
+io_auto, outs_auto, _, runs_auto = ollama_io(
+    [""],   # 모델 받기 프롬프트에 Enter → 기본 진행
+)
+# 모델 없음→pull→모델 지정 시 성공으로 뒤집히는 팩토리로 교체
+_state = {"pulled": False}
+io_auto.ollama_factory = (lambda host=None, models=None:
+                          FakeP(avail=(True, "ok"), host=host, models=models) if models
+                          else FakeP(avail=(False, "Ollama 에 설치된 모델 없음"),
+                                     installed=[], host=host))
+io_auto.which = lambda n: "/usr/bin/" + n     # ollama 이미 설치됨(설치 분기 건너뜀)
+io_auto.memory_gb = lambda: 8.0               # 8GB → 추천 qwen2.5:7b (결정적)
+res_auto = S.SetupResult()
+S._setup_ollama(io_auto, res_auto)
+check("Enter(빈 입력) → 추천 모델 자동 pull 실행",
+      runs_auto == [["ollama", "pull", "qwen2.5:7b"]] and res_auto.ollama_ok)
+
+# 명시적 거부(n)는 여전히 건너뜀
+io_no, outs_no, _, runs_no = ollama_io(["n"])
+io_no.which = lambda nm: "/usr/bin/" + nm
+io_no.ollama_factory = lambda host=None, models=None: FakeP(
+    avail=(False, "Ollama 에 설치된 모델 없음"), installed=[], host=host)
+res_no = S.SetupResult()
+S._setup_ollama(io_no, res_no)
+check("명시적 n → pull 건너뜀", runs_no == [] and not res_no.ollama_ok
+      and any("모델 필요" in n for n in res_no.notes))
 
 
 print(f"\n결과: {passed} passed, {failed} failed")
