@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
+    from .exploit_modules import ExploitModule
     from .scheduler import StageScheduler
 
 from . import command_fixer, diagnostics, flag_assess, preparations, results_verify, reversing
@@ -300,7 +301,7 @@ class Orchestrator(FootholdMixin):
         self.poc_dir = poc_dir
         # 공개 PoC 자동 조달(옵트인) — 레지스트리 선언 출처에서만. --full-auto 가 켠다.
         self.fetch_pocs = fetch_pocs
-        self._active_exploit_module = None   # _consider_builtin_exploit 가 매칭 시 세팅(발판 캡처용)
+        self._active_exploit_module: "ExploitModule | None" = None   # _consider_builtin_exploit 가 매칭 시 세팅(발판 캡처용)
         self._poc_fetch_fn = None            # 테스트/대체 주입(실 네트워크 없이 조달 흉내)
         self._cve_lookup_fn = None           # 테스트/대체 주입(searchsploit --cve 출력 흉내)
 
