@@ -12,8 +12,9 @@ LLM Setup — 초보자용 LLM 연결 마법사 + 키 보관 + 실제 호출 테
   · `~/.config/assassin/credentials` (디렉터리 700, 파일 600). 환경변수가 있으면 환경변수가 우선.
   · 화면에는 가린 값(`sk-ant-…abcd`)만 보이고, 상태 파일·감사 로그·리포트·라이트업에는 남기지 않는다
     (이 모듈은 키를 os.environ 에만 넣고, 다른 계층은 키를 읽거나 기록하지 않는다).
-  · 패키지 설치·모델 다운로드는 항상 먼저 묻는다(엔터=아니오). Ollama 설치 스크립트(파이프→셸)는
-    자동 실행하지 않고 명령만 안내한다.
+  · anthropic 설치는 먼저 묻는다(엔터=아니오). Ollama 는 미설치 시 [y/N] 확인 후 공식 스크립트로
+    자동 설치(파이프→셸, 무확인 실행 아님)하고, 로컬을 '선택'했으면 추천 모델 다운로드는 기본
+    진행한다(Enter=받기, 거부는 n) — 모델이 없으면 로컬 LLM 이 동작하지 않기 때문.
 """
 
 from __future__ import annotations
@@ -254,6 +255,7 @@ class SetupIO:
     out: Callable[[str], None] = print
     run: Any = None               # Callable[[list[str]], int] — 기본 subprocess.run(...).returncode
     run_shell: Any = None         # Callable[[str], int] — 셸 경유(파이프 허용). Ollama 공식 설치용.
+    sleep: Any = None             # Callable[[float], None] — 설치 직후 서버 기동 대기(폴링). 테스트 주입.
     which: Callable[[str], str | None] = shutil.which
     env: Any = None               # 기본 os.environ(키를 이 프로세스 환경변수로만 올림)
     claude_factory: Any = None    # 기본 ClaudeProvider
@@ -271,6 +273,9 @@ class SetupIO:
             # 공식 Ollama 설치는 'curl … | sh'(파이프)라 셸이 필요하다. 사용자 [y/N] 확인
             # 뒤에만 호출된다(무확인 자동 실행 아님). 셸 인젝션 방지를 위해 고정 명령만 넘긴다.
             self.run_shell = lambda cmd: subprocess.run(cmd, shell=True).returncode
+        if self.sleep is None:
+            import time
+            self.sleep = time.sleep
         if self.env is None:
             self.env = os.environ
         if self.claude_factory is None:
@@ -290,6 +295,26 @@ class SetupIO:
 
 def _yes(ans: str) -> bool:
     return ans.strip().lower() in ("y", "yes", "예", "네", "ㅇ")
+
+
+def _no(ans: str) -> bool:
+    """명시적 거부만 True — '기본 자동 진행' 프롬프트에서 Enter/빈값은 거부가 아니다(진행)."""
+    return ans.strip().lower() in ("n", "no", "아니", "아니오", "ㄴ")
+
+
+def _await_ollama(io: "SetupIO", host: str, attempts: int, delay: float = 1.0):
+    """Ollama 서버가 응답할 때까지 available() 를 재시도한다. (ok, reason, prov) 반환.
+    서버 기동엔 시간이 걸리므로(특히 설치 직후 systemd 서비스가 올라오기 전) 폴링한다.
+    '설치된 모델 없음' 은 서버가 떠 있다는 뜻이므로 '연결됨'으로 보고 멈춘다(모델 pull 로 이어감)."""
+    prov = io.ollama_factory(host=host)
+    ok, reason = prov.available()
+    tries = 1
+    while not (ok or "설치된 모델 없음" in reason) and tries < max(1, attempts):
+        io.sleep(delay)
+        prov = io.ollama_factory(host=host)
+        ok, reason = prov.available()
+        tries += 1
+    return ok, reason, prov
 
 
 def _ask(io: SetupIO, prompt: str) -> str:
@@ -378,6 +403,7 @@ def _setup_ollama(io: SetupIO, res: SetupResult) -> None:
     from .llm.base import Tier
     io.out("\n" + ui.heading("로컬 LLM (Ollama) 연결", "💻"))
     host = (io.env.get("OLLAMA_HOST") or DEFAULT_OLLAMA_HOST).rstrip("/")
+    just_installed = False
     if io.which("ollama") is None and host == DEFAULT_OLLAMA_HOST:
         io.out(ui.mark_warn("Ollama 가 설치되어 있지 않습니다"))
         io.out("  " + ui.accent2("설치 명령: ") + ui.bold(OLLAMA_INSTALL_CMD))
@@ -396,9 +422,13 @@ def _setup_ollama(io: SetupIO, res: SetupResult) -> None:
             res.notes.append("Ollama: 설치 실패(직접 실행: " + OLLAMA_INSTALL_CMD + ")")
             return
         io.out(ui.mark_ok("Ollama 설치 완료 — 서버·모델 설정으로 이어집니다"))
+        just_installed = True
         # 설치 성공 → 아래 서버 가용성 확인·모델 pull 흐름으로 그대로 진행(fall through).
-    prov = io.ollama_factory(host=host)
-    ok, reason = prov.available()
+    # 서버 기동 대기: 방금 설치했으면 systemd 서비스가 올라올 때까지 폴링(레이스 제거). 이미
+    # 설치돼 있던 경우엔 1회만 확인(기존 동작 유지 — 서버 미기동이면 안내).
+    if just_installed:
+        io.out(ui.dim("  서버 기동 대기 중… (systemd 서비스가 올라올 때까지 최대 ~20초)"))
+    ok, reason, prov = _await_ollama(io, host, attempts=20 if just_installed else 1, delay=1.0)
     if not ok and "설치된 모델 없음" not in reason:
         io.out(ui.mark_err(f"Ollama 서버에 연결하지 못했습니다 ({host})"))
         io.out("  " + ui.accent2("서버 켜기: ") + ui.bold("ollama serve") + ui.dim("   (다른 터미널에서 실행해 두기)"))
@@ -426,8 +456,11 @@ def _setup_ollama(io: SetupIO, res: SetupResult) -> None:
         else:
             choice = opts[0]
     if not choice:
-        if not _yes(_ask(io, ui.accent2(f"'{rec}' 모델을 받을까요? ")
-                         + ui.dim("(수 GB 다운로드) [y/N] "))):
+        # [로컬 선택 시 자동] 이 지점에 왔다는 건 사용자가 이미 하이브리드/로컬을 '선택'했다는 뜻이다.
+        # 모델이 없으면 로컬 LLM 이 안 도므로, 추천 모델 다운로드를 '기본 진행'으로 둔다(Enter·
+        # 비대화형=받기). 수 GB 라 명시적 거부(n)면 건너뛴다 — 무확인 강제는 아니고 거부 경로를 남긴다.
+        if _no(_ask(io, ui.accent2(f"'{rec}' 모델을 받을까요? ")
+                    + ui.dim("(수 GB 다운로드 · 로컬 사용 선택 시 자동) [Y/n] "))):
             io.out(ui.dim(f"  건너뜀 — 나중에: ollama pull {rec}"))
             res.notes.append(f"Ollama: 모델 필요(ollama pull {rec})")
             return
@@ -456,7 +489,7 @@ def run_setup(io: SetupIO | None = None) -> SetupResult:
     res = SetupResult()
     io.out(ui.panel("LLM 연결 마법사", [
         "질문에 답하면 Claude(API)·로컬 LLM(Ollama)을 연결하고 실제로 한 번 호출해 확인합니다.",
-        ui.dim("· 패키지 설치·모델 다운로드는 먼저 묻습니다(엔터=아니오)."),
+        ui.dim("· 설치는 먼저 묻습니다. 로컬(Ollama) 선택 시 설치는 [y/N] 확인·모델 다운로드는 자동 진행(거부: n)."),
         ui.dim(f"· API 키는 {credentials_path(io.env)} 에 본인만 읽기(600)로 저장, 화면엔 가린 값만."),
         ui.dim("· LLM 없이도 규칙 기반으로 동작합니다 — 언제든 건너뛰어도 됩니다."),
     ], style="navy"))
