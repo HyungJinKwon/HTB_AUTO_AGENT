@@ -2,6 +2,31 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.4] — 2026-10-14
+
+최종 마감 적대적 검토(full-auto 체인 end-to-end 추적)에서 찾은 실 결함 2건 교정 + 문서 정합.
+
+### 수정(Fixed)
+- **리버스셸 채널 모듈의 콜백 유실(경쟁) 제거 [MED]**: `channel="revshell"` 내장/매니페스트 모듈은
+  PoC 자체가 리버스셸을 트리거한다. 기존 흐름은 `_exploit_run_stage` 에서 트리거를 먼저 쏘고
+  리스너는 `_acquire_session`(발판 단계)에서야 떠, 콜백이 '아직 열리지 않은/이미 닫힌' 포트로 가
+  유실되고 리스너는 오지 않을 콜백을 최대 120s 대기했다. 이제 트리거 발사 '전에' 리스너를
+  백그라운드로 **선기동(listener-first)** 하고(`_start_revshell_prelisten`), 수신분을 보관했다가
+  `_acquire_session` 이 성립검증 후 소비한다(`_consume_prelistened_revshell`). 웹→리버스셸 업그레이드
+  경로와 동일한 패턴. `channel="web"`(내장 FreePBX 등)·`catch_revshell` OFF 엔 무영향.
+- **캡처된 웹셸 URL 이 핑거프린트 없을 때 유실되던 문제 [LOW]**: `_acquire_session` 이 웹 RCE 분기를
+  `web_product` 가 있을 때만 탔다. 수동 `--poc` 로 핑거프린트 없이 웹셸만 드롭된 경우 캡처한
+  `rce_url` 이 쓰이지 못하고 리버스셸 분기로 건너뛰었다. 이제 `rce_url` 이 잡혔으면 `web_product`
+  없이도 웹 RCE 분기로 진입한다.
+
+### 문서(Docs)
+- `--live` 데모 단계 수 6→7(성능 측정 누락분, VALIDATION.md 와 정합). USAGE §10.4 에 revshell 채널
+  모듈의 listener-first 보장 명시.
+
+### 테스트(Tests)
+- `test_foothold_prelisten`(신규 11): 선기동 listener-first·콜백 보관·성립검증 소비·헛발판 폐기·
+  web 채널/OFF 무영향·rce_url 분기. 전체 144 스위트 무회귀.
+
 ## [2.39.3] — 2026-10-14
 
 라이브 벤치 플래키 안정화 — 전체 스위트 결정성 확보.
