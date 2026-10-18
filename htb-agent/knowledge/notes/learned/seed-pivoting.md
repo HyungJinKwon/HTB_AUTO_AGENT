@@ -31,5 +31,5 @@ chisel client <lhost>:8000 R:socks   # 피벗
 
 ### ATT&CK T1090 Proxy
 - 출처: https://attack.mitre.org/techniques/T1090/
-- 승격일: 2026-10-07
-- 요약: Proxy Adversaries may use a connection proxy to direct network traffic between systems or act as an intermediary for network communications to a command and control server to avoid direct connections to their infrastructure. Many tools exist that enable traffic redirection through proxies or port redirection, including HTRAN, ZXProxy, and ZXPortMap. [1] Adversaries use these types of proxies to manage command and control communications, reduce the number of simultaneous outbound network connecti
+- 승격일: 2026-10-18
+- 요약: Proxy Adversaries may use a connection proxy to direct network traffic between systems or act as an intermediary for network communications to a command and control server to avoid direct connections to their infrastructure. Many tools exist that enable traffic redirection through proxies or port redirection, including HTRAN, ZXProxy, and ZXPortMap.[1] Adversaries use these types of proxies to manage command and control communications, reduce the number of simultaneous outbound network connectio
