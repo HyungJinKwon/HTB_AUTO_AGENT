@@ -2,6 +2,32 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.15] — 2026-10-19
+
+환경 조작 자동화 — 열린 NFS export 자동 마운트·수확 + vhost /etc/hosts 자동 등록(옵트인).
+
+### 추가(Added)
+- **NFS export 자동 정찰(`nfs_recon.py` + `_nfs_harvest_stage`)**: 실측(Enigma)에서 `showmount -e`
+  로 `/srv/nfs/onboarding *` 를 '발견만' 하고 마운트를 안 해 발판이 끊기던 갭을 메운다. 옵트인
+  (`--full-auto`)·타겟 IP 한정으로, 열린 export 를 **읽기전용(ro,nolock) 마운트**해 트리를
+  '읽기'로 스캔 → **자격·SSH 개인키·플래그·후보 사용자**를 수확하고 **반드시 umount**한다.
+  수확한 **SSH 개인키로 타겟(22)에 로그인**해(사용자 후보 = 수확분+기본값) user/root 플래그를
+  읽는다. 마운트 트리에서 아무 것도 '실행'하지 않는다(정적 읽기 only).
+- **vhost → /etc/hosts 자동 등록(sudo 경로)**: 기존 `_ensure_name_resolution` 은 root 실행일
+  때만 /etc/hosts 에 썼는데, 옵트인 하에서 **`sudo -n`(비대화형)** 로도 자동 추가하도록 확장.
+  리다이렉트 대상 .htb/.local vhost 를 타겟 IP 로 등록해 웹 경로가 완전 자동 진행된다.
+
+### 안전 경계(불변)
+- 전부 **옵트인 전용**(exploit_exec/auto_poc). 실제 mount/umount·sudo tee(root 필요)는 **주입
+  가능한 함수**로 분리, 기본은 **`sudo -n`**(캐시된 sudo 타임스탬프). 권한 없으면 조용히 실패
+  대신 **1회 수동 안내**로 폴백(무확인 강제 아님). 마운트는 **ro** + 타겟 IP export 한정
+  (스코프 확장 없음), 작업 후 umount. SSH 키 로그인은 3관문(_attempt) 하 상한 8회.
+
+### 검증
+- `test_nfs_recon`(신규, 14건): showmount 파싱 · 실 파일트리 스캔(SSH키·자격·플래그·사용자) ·
+  스테이지 end-to-end(가짜 mounter 로 로컬 트리 마운트→수확→SSH키 로그인→user 플래그) ·
+  옵트인 게이트 · 마운트 실패 시 수동폴백. 전체 테스트 통과(ruff·mypy·gen_cli_docs 클린).
+
 ## [2.39.14] — 2026-10-14
 
 Ollama 완전 자동화 마무리 — 설치 직후 서버 기동 대기 + 로컬 선택 시 모델 pull 자동.
