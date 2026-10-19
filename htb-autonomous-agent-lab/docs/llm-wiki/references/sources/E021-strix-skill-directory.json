@@ -1,0 +1,146 @@
+[
+  {
+    "name": "api-security-testing",
+    "path": "skills/api-security-testing",
+    "sha": "9a20db4e3f30c141376a0eb68d5d5e53cd5065f3",
+    "size": 0,
+    "url": "https://api.github.com/repos/usestrix/strix/contents/skills/api-security-testing?ref=main",
+    "html_url": "https://github.com/usestrix/strix/tree/main/skills/api-security-testing",
+    "git_url": "https://api.github.com/repos/usestrix/strix/git/trees/9a20db4e3f30c141376a0eb68d5d5e53cd5065f3",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/usestrix/strix/contents/skills/api-security-testing?ref=main",
+      "git": "https://api.github.com/repos/usestrix/strix/git/trees/9a20db4e3f30c141376a0eb68d5d5e53cd5065f3",
+      "html": "https://github.com/usestrix/strix/tree/main/skills/api-security-testing"
+    }
+  },
+  {
+    "name": "application-security-testing",
+    "path": "skills/application-security-testing",
+    "sha": "d6eed1475befd72f2a5bb551fabf33c36257a816",
+    "size": 0,
+    "url": "https://api.github.com/repos/usestrix/strix/contents/skills/application-security-testing?ref=main",
+    "html_url": "https://github.com/usestrix/strix/tree/main/skills/application-security-testing",
+    "git_url": "https://api.github.com/repos/usestrix/strix/git/trees/d6eed1475befd72f2a5bb551fabf33c36257a816",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/usestrix/strix/contents/skills/application-security-testing?ref=main",
+      "git": "https://api.github.com/repos/usestrix/strix/git/trees/d6eed1475befd72f2a5bb551fabf33c36257a816",
+      "html": "https://github.com/usestrix/strix/tree/main/skills/application-security-testing"
+    }
+  },
+  {
+    "name": "ci-security-scanning-with-strix",
+    "path": "skills/ci-security-scanning-with-strix",
+    "sha": "ff2ac38de21a04ba5a30a2add8cc8710f6891b98",
+    "size": 0,
+    "url": "https://api.github.com/repos/usestrix/strix/contents/skills/ci-security-scanning-with-strix?ref=main",
+    "html_url": "https://github.com/usestrix/strix/tree/main/skills/ci-security-scanning-with-strix",
+    "git_url": "https://api.github.com/repos/usestrix/strix/git/trees/ff2ac38de21a04ba5a30a2add8cc8710f6891b98",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/usestrix/strix/contents/skills/ci-security-scanning-with-strix?ref=main",
+      "git": "https://api.github.com/repos/usestrix/strix/git/trees/ff2ac38de21a04ba5a30a2add8cc8710f6891b98",
+      "html": "https://github.com/usestrix/strix/tree/main/skills/ci-security-scanning-with-strix"
+    }
+  },
+  {
+    "name": "find-security-vulnerabilities-in-code",
+    "path": "skills/find-security-vulnerabilities-in-code",
+    "sha": "c1074a151145de99bcdb5e193aebbfd7a066b954",
+    "size": 0,
+    "url": "https://api.github.com/repos/usestrix/strix/contents/skills/find-security-vulnerabilities-in-code?ref=main",
+    "html_url": "https://github.com/usestrix/strix/tree/main/skills/find-security-vulnerabilities-in-code",
+    "git_url": "https://api.github.com/repos/usestrix/strix/git/trees/c1074a151145de99bcdb5e193aebbfd7a066b954",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/usestrix/strix/contents/skills/find-security-vulnerabilities-in-code?ref=main",
+      "git": "https://api.github.com/repos/usestrix/strix/git/trees/c1074a151145de99bcdb5e193aebbfd7a066b954",
+      "html": "https://github.com/usestrix/strix/tree/main/skills/find-security-vulnerabilities-in-code"
+    }
+  },
+  {
+    "name": "fix-security-vulnerabilities-with-strix",
+    "path": "skills/fix-security-vulnerabilities-with-strix",
+    "sha": "4659be6594ea2f5538350f3dd2edc9a13e458e12",
+    "size": 0,
+    "url": "https://api.github.com/repos/usestrix/strix/contents/skills/fix-security-vulnerabilities-with-strix?ref=main",
+    "html_url": "https://github.com/usestrix/strix/tree/main/skills/fix-security-vulnerabilities-with-strix",
+    "git_url": "https://api.github.com/repos/usestrix/strix/git/trees/4659be6594ea2f5538350f3dd2edc9a13e458e12",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/usestrix/strix/contents/skills/fix-security-vulnerabilities-with-strix?ref=main",
+      "git": "https://api.github.com/repos/usestrix/strix/git/trees/4659be6594ea2f5538350f3dd2edc9a13e458e12",
+      "html": "https://github.com/usestrix/strix/tree/main/skills/fix-security-vulnerabilities-with-strix"
+    }
+  },
+  {
+    "name": "managed-pentesting-with-strix",
+    "path": "skills/managed-pentesting-with-strix",
+    "sha": "6f869119c820804a9a85c0a873a14e4e83292c07",
+    "size": 0,
+    "url": "https://api.github.com/repos/usestrix/strix/contents/skills/managed-pentesting-with-strix?ref=main",
+    "html_url": "https://github.com/usestrix/strix/tree/main/skills/managed-pentesting-with-strix",
+    "git_url": "https://api.github.com/repos/usestrix/strix/git/trees/6f869119c820804a9a85c0a873a14e4e83292c07",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/usestrix/strix/contents/skills/managed-pentesting-with-strix?ref=main",
+      "git": "https://api.github.com/repos/usestrix/strix/git/trees/6f869119c820804a9a85c0a873a14e4e83292c07",
+      "html": "https://github.com/usestrix/strix/tree/main/skills/managed-pentesting-with-strix"
+    }
+  },
+  {
+    "name": "owasp-top-10-testing",
+    "path": "skills/owasp-top-10-testing",
+    "sha": "5dd695a1bbf414fb1eec72f98dcc394b24bc454e",
+    "size": 0,
+    "url": "https://api.github.com/repos/usestrix/strix/contents/skills/owasp-top-10-testing?ref=main",
+    "html_url": "https://github.com/usestrix/strix/tree/main/skills/owasp-top-10-testing",
+    "git_url": "https://api.github.com/repos/usestrix/strix/git/trees/5dd695a1bbf414fb1eec72f98dcc394b24bc454e",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/usestrix/strix/contents/skills/owasp-top-10-testing?ref=main",
+      "git": "https://api.github.com/repos/usestrix/strix/git/trees/5dd695a1bbf414fb1eec72f98dcc394b24bc454e",
+      "html": "https://github.com/usestrix/strix/tree/main/skills/owasp-top-10-testing"
+    }
+  },
+  {
+    "name": "penetration-testing-with-strix",
+    "path": "skills/penetration-testing-with-strix",
+    "sha": "8d9439a99c433d50d26af6898b6890cfea8efd6c",
+    "size": 0,
+    "url": "https://api.github.com/repos/usestrix/strix/contents/skills/penetration-testing-with-strix?ref=main",
+    "html_url": "https://github.com/usestrix/strix/tree/main/skills/penetration-testing-with-strix",
+    "git_url": "https://api.github.com/repos/usestrix/strix/git/trees/8d9439a99c433d50d26af6898b6890cfea8efd6c",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/usestrix/strix/contents/skills/penetration-testing-with-strix?ref=main",
+      "git": "https://api.github.com/repos/usestrix/strix/git/trees/8d9439a99c433d50d26af6898b6890cfea8efd6c",
+      "html": "https://github.com/usestrix/strix/tree/main/skills/penetration-testing-with-strix"
+    }
+  },
+  {
+    "name": "web-app-penetration-testing",
+    "path": "skills/web-app-penetration-testing",
+    "sha": "1d4f2c5328742a5af073d054e6d392f3e431f1c1",
+    "size": 0,
+    "url": "https://api.github.com/repos/usestrix/strix/contents/skills/web-app-penetration-testing?ref=main",
+    "html_url": "https://github.com/usestrix/strix/tree/main/skills/web-app-penetration-testing",
+    "git_url": "https://api.github.com/repos/usestrix/strix/git/trees/1d4f2c5328742a5af073d054e6d392f3e431f1c1",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/usestrix/strix/contents/skills/web-app-penetration-testing?ref=main",
+      "git": "https://api.github.com/repos/usestrix/strix/git/trees/1d4f2c5328742a5af073d054e6d392f3e431f1c1",
+      "html": "https://github.com/usestrix/strix/tree/main/skills/web-app-penetration-testing"
+    }
+  }
+]

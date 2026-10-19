@@ -1,0 +1,12 @@
+# HTB 에이전트 — 런타임 의존성
+# 코어는 Python 표준 라이브러리만 사용.
+#
+pexpect>=4.9           # 지속 셸 세션(--runner session). 없으면 oneshot 으로 강하
+#
+# 아래는 다음 단계(LLM 추상화)에서 사용 예정 — 필요 시 주석 해제:
+# anthropic>=0.40      # Claude API 백엔드
+# ollama>=0.3          # 로컬 모델 백엔드
+# pyyaml>=6.0          # config.yaml 파싱
+#
+# 시스템 도구(nmap, bloodhound, s3scanner 등)는 pip 가 아닌
+# scripts/install_tools.sh 로 설치합니다.

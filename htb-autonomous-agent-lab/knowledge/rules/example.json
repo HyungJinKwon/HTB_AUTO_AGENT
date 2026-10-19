@@ -1,0 +1,9 @@
+{
+  "name": "예시 — 웹 vhost 탐색",
+  "when": {"ports": [80, 443], "services": ["http", "https"]},
+  "suggest": [
+    "gobuster vhost -u http://{t} -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt"
+  ],
+  "note": "응답 크기 필터로 거짓양성 제거. machine.htb 를 /etc/hosts 에 추가 후 재탐색.",
+  "tags": ["web", "vhost"]
+}

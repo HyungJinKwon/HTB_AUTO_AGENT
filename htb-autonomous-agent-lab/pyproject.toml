@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "htb-agent"
+version = "1.1.0"
+description = "HTB 머신 승인제 풀이 에이전트 (권한 확인 자산 한정, 레드팀 학습용)"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+claude = ["anthropic>=0.40"]
+session = ["pexpect>=4.9"]
+config = ["pyyaml>=6.0"]
+
+[project.scripts]
+htb-agent = "htb_agent.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]   # 라인 길이는 경고만(한국어 주석 고려)

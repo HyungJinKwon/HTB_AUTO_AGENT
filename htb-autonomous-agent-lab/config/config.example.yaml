@@ -1,0 +1,15 @@
+# HTB 에이전트 설정 예시 (참고용 — 현재는 CLI 인자/환경변수 우선)
+# config.yaml 은 .gitignore 처리됨.
+
+# 허용 타겟 대역 (생략 시 HTB 기본: 10.10.10.0/23, 10.129.0.0/16)
+allowed_ranges:
+  - 10.129.0.0/16
+
+# LLM 두뇌
+llm:
+  backend: none          # none | claude | ollama
+  tier: standard         # cheap | standard | strong
+
+# 환경변수로 설정하는 값:
+#   ANTHROPIC_API_KEY   : Claude API 키 (backend=claude)
+#   OLLAMA_HOST         : 로컬 Ollama 주소 (기본 http://localhost:11434)
