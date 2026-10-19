@@ -149,6 +149,8 @@ LLM 두뇌(선택): `--llm hybrid`(Ollama+Claude) · `--llm claude` · `--llm ol
 
 - 권한이 확인된 자산만. 범위 밖 금지(코드로 강제).
 - **기본은 생성 전용** — 익스플로잇·권한상승·크래킹은 '탐지 + 수동 제안'까지만 자동화한다.
-  실제 익스 실행은 **옵트인(`--full-auto` / `--exploit-exec` / `--auto-poc` / `--catch-revshell`)**
-  으로만 켜지며, 그때도 3관문(검증·범위·승인)과 ScopeGuard(인가 대상) 하에서만 동작한다.
+  실제 익스 실행은 **옵트인(`--full-auto` / `--exploit-exec` / `--auto-poc` / `--catch-revshell` /
+  `--priv-env`)** 으로만 켜지며, 그때도 3관문(검증·범위·승인)과 ScopeGuard(인가 대상) 하에서만 동작한다.
+  `--priv-env`(환경조작: NFS 수확·`/etc/hosts` 등록)의 기본은 rootless(sudo·마운트 없음)이고, sudo 는
+  rootless 불가 시의 `-n` 폴백(ro·타겟 IP 한정·비대화형)뿐이다.
 - 과장 금지: OS/취약점 판정은 증거기반 확신도, 약하면 `〔추정〕` 표기.

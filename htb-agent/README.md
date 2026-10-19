@@ -23,9 +23,11 @@
 | 🚀 완전 자동 루트 시도(발판·플래그까지) | `assassin 10.129.1.5 --full-auto --llm claude --html --json` |
 | CTF/Dreamhack 문제 | `assassin chall.host:1337 --platform ctf --category web` |
 
-> `--full-auto` = `--autonomous + --exploit-exec + --auto-poc + --catch-revshell`(가능하면 egress
-> 샌드박스 자동 선택). **실제 익스플로잇·PoC 발사·리버스셸 수신**을 수행하는 **명시적 옵트인**
-> 이다(기본은 생성 전용). 권한이 확인된 대상 전용. 자세히는 [docs/USAGE.md §10](docs/USAGE.md).
+> `--full-auto` = `--autonomous + --exploit-exec + --auto-poc + --catch-revshell + --priv-env`
+> (가능하면 egress 샌드박스 자동 선택). **실제 익스플로잇·PoC 발사·리버스셸 수신·NFS 수확**을
+> 수행하는 **명시적 옵트인**이다(기본은 생성 전용). 환경조작(`--priv-env`)은 열린 NFS export 를
+> rootless(`libnfs-utils`)로 읽고 vhost 를 `/etc/hosts` 에 등록 — 기본은 sudo 없이, 불가 시에만
+> `sudo -n` 폴백. 권한이 확인된 대상 전용. 자세히는 [docs/USAGE.md §10](docs/USAGE.md).
 
 ### 📚 문서 안내 (역할 분담 — 중복 없이 링크)
 
