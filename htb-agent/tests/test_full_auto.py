@@ -24,6 +24,7 @@ check("autonomous 켜짐", a.autonomous)
 check("exploit_exec 켜짐", a.exploit_exec)
 check("auto_poc 켜짐", a.auto_poc)
 check("catch_revshell 켜짐", a.catch_revshell)
+check("priv_env 켜짐(환경조작 포함 — 한 플래그로 전부)", a.priv_env)
 
 print("\n=== --autonomous 는 익스 발사를 암시하지 않음(경계 보존) ===")
 b = P.parse_args(["10.129.1.5", "--autonomous"])
@@ -31,6 +32,7 @@ _expand_full_auto(b)   # full_auto 아님 → 전개 no-op
 check("autonomous 단독: exploit_exec OFF", not b.exploit_exec)
 check("autonomous 단독: auto_poc OFF", not b.auto_poc)
 check("autonomous 단독: catch_revshell OFF", not b.catch_revshell)
+check("autonomous 단독: priv_env OFF", not getattr(b, "priv_env", False))
 
 print("\n=== 기본(플래그 없음): 전부 OFF ===")
 c = P.parse_args(["10.129.1.5"])

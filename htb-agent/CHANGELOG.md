@@ -2,6 +2,37 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.16] — 2026-10-19
+
+환경조작을 'rootless 기본'으로 재설계(자동화·안전 동시 개선) + `--full-auto` 단일 플래그에 통합.
+
+### 추가(Added)
+- **`--priv-env` 플래그**: 로컬 '권한(root/sudo) 환경조작'(열린 NFS export 의 sudo 마운트,
+  vhost 의 `/etc/hosts` sudo 자동등록)을 켜는 전용 옵트인. **`--full-auto` 에 포함**되어 사용자는
+  플래그를 따로 외울 필요가 없고, full-auto 없이 권한 환경조작만 원할 때 단독으로도 쓴다.
+
+### 변경(Changed)
+- **NFS 수확 기본 경로를 rootless(libnfs)로**: sudo 커널 마운트 대신 **`nfs-ls`/`nfs-cp`(libnfs-utils)**
+  로 export 를 유저스페이스에서 나열·읽는다 → **root·마운트·시스템변경 0**. 가장 위험하던 'root 로
+  mount' 를 기본 경로에서 제거했다. SSH 개인키는 `nfs-cp` 로 로컬 0600 보존 후 타겟(22) 로그인에 사용.
+- **`--full-auto` 가 환경조작까지 포함(UX 단일화)**: 사용자가 외울 플래그를 늘리지 않도록 `--full-auto`
+  가 `--priv-env` 도 켠다. 안전은 '옵션 분리'가 아니라 **경로 설계**로 보존한다 — 기본은 rootless
+  (libnfs·Host헤더)라 root 를 안 쓰고, sudo 는 rootless 불가 시의 `-n` 폴백(ro·타겟 IP 한정·비대화형·
+  실패 시 수동안내)뿐이다. `--autonomous` 단독 등 다른 모드에서는 priv_env OFF(인지된 경계 보존).
+- `install_tools.sh` 에 `libnfs-utils` 추가(rootless NFS 기본 도구).
+
+### 안전경계(정리)
+- rootless(기본, 무조건): libnfs 읽기 전용 NFS 나열/읽기 · vhost 는 Host 헤더/hosts_map 로 동작
+  (sudo /etc/hosts 불필요) — root/sudo/시스템변경 없음.
+- sudo 폴백(priv_env=on, 즉 --full-auto 또는 --priv-env): rootless 불가 시에만 sudo -n ro 마운트/
+  umount·sudo tee /etc/hosts. 전부 타겟 IP 한정·주입 가능·실패 시 수동 안내. 원격·마운트 트리에서
+  아무 것도 실행하지 않음(정적 읽기 only). priv_env 없고 libnfs 도 없으면 → 설치 안내 1회(강제 아님).
+
+### 검증
+- `test_nfs_recon`(17): nfs-ls 파싱 · rootless e2e(libnfs 주입→수확→SSH키 로그인→user 플래그) ·
+  sudo 마운트 폴백(--priv-env) · libnfs/권한 없을 때 sudo 미사용+안내 · 옵트인 게이트.
+  전체 테스트 통과(ruff·mypy·gen_cli_docs 클린).
+
 ## [2.39.15] — 2026-10-19
 
 환경 조작 자동화 — 열린 NFS export 자동 마운트·수확 + vhost /etc/hosts 자동 등록(옵트인).

