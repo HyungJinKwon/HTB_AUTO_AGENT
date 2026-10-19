@@ -1,0 +1,2 @@
+# Windows(core.autocrlf=true) 체크아웃을 WSL/Kali 에서 그대로 실행할 수 있게
+*.sh text eol=lf

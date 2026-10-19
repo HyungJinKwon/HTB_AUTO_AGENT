@@ -1,0 +1,76 @@
+[
+  {
+    "name": "Linux privesc 자동열거(linpeas/LinEnum)",
+    "when": {"os": ["linux"]},
+    "suggest": [
+      "linpeas.sh -a",
+      "./linpeas.sh | tee linpeas.out"
+    ],
+    "note": "셸 확보 후 대상에서 실행(전송 필요). 요약된 상위 신호부터 검토.",
+    "tags": ["privesc", "linux", "linpeas"],
+    "phase": "privesc"
+  },
+  {
+    "name": "sudo 권한 점검",
+    "when": {"os": ["linux"]},
+    "suggest": [
+      "sudo -l",
+      "sudo -n true 2>&1"
+    ],
+    "note": "NOPASSWD 항목은 GTFOBins 로 셸 승격 가능한지 확인. 가장 먼저 볼 것.",
+    "tags": ["privesc", "linux", "sudo", "gtfobins"],
+    "phase": "privesc"
+  },
+  {
+    "name": "SUID/SGID 바이너리 탐색",
+    "when": {"os": ["linux"]},
+    "suggest": [
+      "find / -perm -4000 -type f 2>/dev/null",
+      "find / -perm -2000 -type f 2>/dev/null"
+    ],
+    "note": "비표준 SUID 는 GTFOBins 매칭. 커스텀 바이너리는 strings/ltrace 로 분석.",
+    "tags": ["privesc", "linux", "suid"],
+    "phase": "privesc"
+  },
+  {
+    "name": "capabilities 점검",
+    "when": {"os": ["linux"]},
+    "suggest": ["getcap -r / 2>/dev/null"],
+    "note": "cap_setuid/cap_dac_read_search 등은 즉시 privesc 경로.",
+    "tags": ["privesc", "linux", "capabilities"],
+    "phase": "privesc"
+  },
+  {
+    "name": "cron/스케줄 + 프로세스 감시(pspy)",
+    "when": {"os": ["linux"]},
+    "suggest": [
+      "cat /etc/crontab; ls -la /etc/cron.*",
+      "pspy64 -pf -i 1000"
+    ],
+    "note": "루트가 주기 실행하는 쓰기가능 스크립트/와일드카드 주입. pspy 로 숨은 작업 관찰.",
+    "tags": ["privesc", "linux", "cron", "pspy"],
+    "phase": "privesc"
+  },
+  {
+    "name": "쓰기가능 민감파일/경로",
+    "when": {"os": ["linux"]},
+    "suggest": [
+      "find / -writable -type f -not -path '/proc/*' 2>/dev/null | grep -vE '^/(sys|run)'",
+      "ls -la /etc/passwd /etc/shadow /etc/sudoers.d 2>/dev/null"
+    ],
+    "note": "쓰기가능 /etc/passwd(해시 추가)·서비스 유닛·PATH 하이재킹 점검.",
+    "tags": ["privesc", "linux"],
+    "phase": "privesc"
+  },
+  {
+    "name": "커널/배포판 익스플로잇 후보",
+    "when": {"os": ["linux"]},
+    "suggest": [
+      "uname -a; cat /etc/os-release",
+      "searchsploit linux kernel $(uname -r | cut -d- -f1)"
+    ],
+    "note": "커널 익스는 최후수단(불안정). 설정오류 경로 소진 후 고려.",
+    "tags": ["privesc", "linux", "kernel"],
+    "phase": "privesc"
+  }
+]

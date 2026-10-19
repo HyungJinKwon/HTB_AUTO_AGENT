@@ -1,0 +1,10 @@
+{
+  "allowed_ranges": ["10.129.0.0/16"],
+  "attacker_ips": [],
+  "llm": {"backend": "none", "tier": "standard"},
+  "max_attempts": 4,
+  "max_enum": 6,
+  "max_llm": 5,
+  "knowledge_dir": "knowledge",
+  "state_dir": "state"
+}
