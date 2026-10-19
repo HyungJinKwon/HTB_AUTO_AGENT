@@ -520,14 +520,20 @@ assassin 10.129.1.5 --cred svc:Summer2024 --exploit-exec --autonomous
 assassin 10.129.1.5 --full-auto --llm claude --html --json
 ```
 플래그 뜻 — `--full-auto`(**한 플래그 번들**: `--autonomous` + `--exploit-exec` + `--auto-poc` +
-`--catch-revshell` 를 한 번에 켜고, docker 이미지가 이미 빌드돼 있으면 egress 샌드박스를 자동 선택.
-⚠️ 실제 익스·PoC 발사·리버스셸 수신 — 권한 확인 대상 전용) · `--llm claude`(Claude 두뇌) ·
-`--html`/`--json`(대시보드·기계판독 결과 저장).
+`--catch-revshell` + `--priv-env`(환경조작) 을 한 번에 켜고, docker 이미지가 이미 빌드돼 있으면
+egress 샌드박스를 자동 선택. ⚠️ 실제 익스·PoC 발사·리버스셸 수신 — 권한 확인 대상 전용) ·
+`--llm claude`(Claude 두뇌) · `--html`/`--json`(대시보드·기계판독 결과 저장).
 
 > 익스 발사 옵트인은 일반 `--autonomous` 에 묻지 않고 이 명시적 `--full-auto`(또는 개별
-> `--exploit-exec`/`--auto-poc`/`--catch-revshell`)로만 켠다 — `--autonomous` 단독은 열거·생성까지만
-> 하고 실제 발사는 하지 않는다('인지된 옵트인' 보존). 풀어 쓰면
-> `--autonomous --exploit-exec --auto-poc --catch-revshell` 와 동일.
+> `--exploit-exec`/`--auto-poc`/`--catch-revshell`/`--priv-env`)로만 켠다 — `--autonomous` 단독은
+> 열거·생성까지만 하고 실제 발사·환경조작은 하지 않는다('인지된 옵트인' 보존). 풀어 쓰면
+> `--autonomous --exploit-exec --auto-poc --catch-revshell --priv-env` 와 동일.
+>
+> **`--priv-env`(환경조작)**: 열린 NFS export 를 읽어 자격·SSH키·플래그를 자동 수확하고, vhost 를
+> `/etc/hosts` 에 자동 등록한다. **기본 경로는 rootless** — `libnfs-utils`(`nfs-ls`/`nfs-cp`)로 sudo·
+> 커널 마운트 없이 export 를 유저스페이스에서 읽는다. sudo 는 rootless 불가 시의 `-n` 폴백(ro·타겟
+> IP 한정·비대화형)뿐이다. `--full-auto` 에 포함되므로 따로 줄 필요 없고, full-auto 없이 환경조작만
+> 원할 때 단독으로 쓴다. rootless 도구가 없으면 1회 설치 안내(`sudo apt install -y libnfs-utils`)만 남긴다.
 
 > ⚠️ 권한이 확인된 대상(HTB·인가된 진단)에서만. 자격·대상 모두 범위 가드의 통제를 받는다.
 
@@ -540,6 +546,12 @@ assassin 10.129.1.5 --full-auto --llm claude --html --json
 
 핑거프린트된 제품/버전이 모듈과 매칭되면 `--full-auto`(또는 `--exploit-exec --auto-poc`)가 다음을 잇는다:
 
+0. **환경 자동준비(`--priv-env`, `--full-auto` 가 자동 켬)** — 익스 체인보다 **먼저** 돈다. ⑴ 포트
+   111/2049 가 열려 있으면 열린 **NFS export** 를 rootless(`nfs-ls`/`nfs-cp`)로 읽어 설정파일 자격·
+   `/home/*/`·`/etc/passwd` 사용자·SSH 개인키·`user.txt`/`root.txt` 를 수확(sudo·마운트 없음). ⑵ 수확한
+   SSH 개인키가 있고 22 가 열렸으면 그 키로 로그인해 플래그를 바로 읽는다. ⑶ 리다이렉트로 드러난 vhost
+   (`enigma.htb` 등)는 `/etc/hosts` 에 자동 등록(없으면 Host 헤더로 우회). 수확 자격은 이후 SSH 발판·
+   privesc 자격재사용·측면이동 후보로 재투입된다.
 1. **PoC 자동 조달(옵트인, `--full-auto` 가 자동 켬)** — 로컬 선조달분 → `searchsploit -m`(로컬
    무해) → 없으면 **레지스트리가 선언한 공개 출처에서 자동 조달**(`git clone --depth 1`). 받는
    출처는 레지스트리/매니페스트 값만 쓴다(임의/LLM/타겟 URL 금지 — 주입 방지). 받기만 하고 실행은
