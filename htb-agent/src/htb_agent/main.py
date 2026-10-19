@@ -241,9 +241,11 @@ def build_parser(full: bool = False) -> argparse.ArgumentParser:
                    help="완전 수동: 모든 명령을 실행 전 확인(승인제 최대)")
     g_mode.add_argument("--full-auto", action="store_true", dest="full_auto",
                    help="🚀 한 플래그 완전 발사: --autonomous + --exploit-exec + --auto-poc + "
-                        "--catch-revshell 을 모두 켜고, 가능하면 egress 샌드박스를 자동 선택한다. "
-                        "⚠️ 실제 익스플로잇·PoC 발사·리버스셸 수신을 수행 — 권한이 확인된 대상 전용. "
-                        "범위 밖·파괴명령 게이트는 그대로 유지된다")
+                        "--catch-revshell + --priv-env(환경조작) 을 모두 켜고, 가능하면 egress "
+                        "샌드박스를 자동 선택한다. 환경조작 기본은 rootless(libnfs·Host헤더)라 root "
+                        "없이 동작하고 sudo 는 불가 시 -n 폴백뿐이다. ⚠️ 실제 익스플로잇·PoC 발사·"
+                        "리버스셸 수신을 수행 — 권한이 확인된 대상 전용. 범위 밖·파괴명령 게이트는 "
+                        "그대로 유지된다")
     g_mode.add_argument("--dry-run", action="store_true", dest="dry_run",
                    help="계획 미리보기: 정찰·분석은 하되 제안된 명령은 '실행하지 않고' 보여만 준다(무해 점검)")
     g_mode.add_argument("--exploit-exec", action="store_true", dest="exploit_exec",
@@ -254,6 +256,12 @@ def build_parser(full: bool = False) -> argparse.ArgumentParser:
                         "--exploit-exec 발판 단계에서 준비된 리버스셸 payload 의 콜백을 소켓 "
                         "리스너로 수신해 발판 세션화(공격자 IP/포트 확보 시). 성립 검증 통과분만 "
                         "인정. 소켓 수신은 RCE 실행 표면 — 권한 확인 대상 전용")
+    g_mode.add_argument("--priv-env", action="store_true", dest="priv_env",
+                   help="옵트인(기본 OFF): 로컬 '권한(root/sudo) 환경조작'을 허용 — 열린 NFS export "
+                        "의 sudo 마운트, vhost 의 /etc/hosts 자동 등록(sudo). 기본 경로는 rootless"
+                        "(libnfs nfs-ls/nfs-cp·Host 헤더)라 이 플래그 없이도 자동 동작하며, 이 플래그는 "
+                        "rootless 불가 시의 sudo 폴백 전용(캐시된 sudo 타임스탬프 필요). "
+                        "--full-auto 에 이미 포함됨(따로 줄 필요 없음). 권한 확인 대상 전용")
     g_mode.add_argument("--judge", action="store_true", dest="judge",
                    help="옵트인(기본 OFF): 종료 시 LLM-심판이 '공략 달성' 주장이 증거로 "
                         "뒷받침되는지 별도 채점(조언만 — 규칙 판정·목표 달성을 덮지 않음). LLM 필요")
@@ -586,6 +594,10 @@ def _expand_full_auto(args) -> None:
     args.auto_poc = True
     args.catch_revshell = True
     args.fetch_pocs = True        # 내장 모듈 매칭 시 공개 PoC 자동 조달(레지스트리 출처만)
+    # [UX] '한 플래그로 전부' — 환경조작(NFS·/etc/hosts)도 포함. 안전은 경로 설계로 보존한다:
+    # 기본은 rootless(libnfs·Host헤더)라 root 를 안 쓰고, sudo 는 rootless 불가 시 -n 폴백(ro·
+    # 타겟 IP 한정·비대화형·실패 시 수동안내)뿐이다. 사용자가 외울 플래그를 늘리지 않기 위함.
+    args.priv_env = True
 
 
 def select_approver(*, manual: bool, auto: bool, autonomous: bool,
@@ -935,6 +947,7 @@ def _run_target(args, cfg, knowledge_dir, runner) -> int:
                                 poc_commands=args.poc_commands or [],
                                 poc_dir=getattr(args, "poc_dir", "") or "",
                                 fetch_pocs=getattr(args, "fetch_pocs", False),
+                                priv_env=getattr(args, "priv_env", False),
                                 dry_run=args.dry_run,
                                 observer=observer,
                                 max_enum=max_enum,

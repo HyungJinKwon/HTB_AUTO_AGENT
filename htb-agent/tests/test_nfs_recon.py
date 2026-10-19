@@ -50,6 +50,9 @@ print("=== 순수 파싱/스캔 ===")
 exports = nr.parse_exports("Export list for 10.129.239.191:\n/srv/nfs/onboarding *\n/srv/share 10.0.0.0/8")
 check("showmount 파싱 → export 2개", exports == ["/srv/nfs/onboarding", "/srv/share"])
 check("헤더/빈줄 무시, 상대경로 거부", nr.parse_exports("garbage\nnot-a-path foo") == [])
+check("nfs-ls 파싱 — 파일경로 추출(디렉터리/./.. 제외)",
+      nr.parse_nfs_ls("/home/nico/id_rsa\ndrwxr-xr-x .\n/onboarding.txt\nsubdir/\n")
+      == ["home/nico/id_rsa", "onboarding.txt"])
 
 exp = make_export_dir()
 fnd = nr.scan_tree(exp, export="/srv/nfs/onboarding")
@@ -60,76 +63,93 @@ check("후보 사용자 수집(home/<user> + passwd uid≥1000)", "nico" in fnd.
 check("주목 파일 목록 비어있지 않음", bool(fnd.notable))
 
 
-print("\n=== 오케스트레이터 스테이지(옵트인) — 마운트→수확→SSH키 로그인 ===")
-
-
-def make_orc(responder, mount_root):
-    g = ScopeGuard.from_cidr_strings()
-    g.bind_target(T)
-    orc = Orchestrator(g, FakeRunner(responder), KnowledgeBase.load(), auto_approve_contained,
-                       is_tool_available=lambda b: True, quiet=True,
-                       exploit_exec=True, auto_poc=True)
-    orc.world = WorldModel(target=T)
-    # mounter 주입: 실제 mount 대신 export 디렉터리를 mountpoint 로 '복사 연결'(symlink 트리)
-    def fake_mount(ip, export, mp, vers="3"):
-        # mp 는 비어있는 tempdir — 가짜 export 내용을 그 안에 심볼릭/복사로 노출
-        import shutil
-        shutil.rmtree(mp, ignore_errors=True)
-        shutil.copytree(mount_root, mp)
-        return True, ""
-    orc._nfs_mount_fn = fake_mount
-    orc._nfs_umount_fn = lambda mp: None
-    return orc
-
-
-# FakeRunner: showmount → export 1개, ssh -i(키) 로그인 → id + user.txt 반환
 def responder(cmd):
+    """FakeRunner(타겟 명령): showmount → export 1개 · ssh -i(nico) 로그인 → id + user 플래그."""
     if cmd.startswith("showmount"):
         return RunOutput(cmd, stdout="Export list for 10.129.239.191:\n/srv/nfs/onboarding *\n")
     if cmd.startswith("ssh -i") and "nico@" in cmd:
-        return RunOutput(cmd, stdout=f"uid=1000(nico) gid=1000(nico)\n{FLAG}\n")
+        return RunOutput(cmd, stdout=f"uid=1000(nico) gid=1000(nico)\nUSERTXT:{FLAG}\nROOTTXT:\n")
     if cmd.startswith("ssh -i"):
         return RunOutput(cmd, stdout="Permission denied (publickey).", returncode=255)
     return RunOutput(cmd, stdout="")
 
 
-exp2 = make_export_dir()
-orc = make_orc(responder, exp2)
+def base_orc(**kw):
+    g = ScopeGuard.from_cidr_strings(); g.bind_target(T)
+    orc = Orchestrator(g, FakeRunner(responder), KnowledgeBase.load(), auto_approve_contained,
+                       is_tool_available=lambda b: True, quiet=True,
+                       exploit_exec=True, auto_poc=True, **kw)
+    orc.world = WorldModel(target=T)
+    return orc
+
+
+print("\n=== (A) rootless 기본(libnfs) — sudo·마운트 없이 수확→SSH키 로그인 ===")
+# libnfs(nfs-ls/nfs-cp)를 주입된 run 으로 흉내(실 네트워크/libnfs 불필요).
+def libnfs_run(argv):
+    if argv[0] == "nfs-ls":
+        return (0, "/home/nico/.ssh/id_rsa\n/onboarding.txt\n/passwd\n/home/nico/user.txt\n")
+    if argv[0] == "nfs-cp":
+        url = argv[1]
+        if url.endswith(".ssh/id_rsa"): return (0, KEY)
+        if url.endswith("onboarding.txt"): return (0, "username: nico\npassword: Sup3rS3cret!\n")
+        if url.endswith("/passwd"):
+            return (0, "root:x:0:0:root:/root:/bin/bash\nnico:x:1000:1000:Nico:/home/nico:/bin/bash\n")
+        if url.endswith("user.txt"): return (0, FLAG + "\n")
+    return (0, "")
+
+orc = base_orc()
+orc._nfs_force_libnfs = True          # rootless 경로 강제(테스트)
+orc._nfs_run_fn = libnfs_run          # nfs-ls/nfs-cp 주입
 rep = OrchestrationReport(target=T)
-# host=None → 포트 게이트 건너뜀(showmount 직접 실행)
 orc._nfs_harvest_stage(rep, None)
-
-check("NFS 자격 수확 → world.creds (nico:Sup3rS3cret!)",
+check("rootless 자격 수확 → world.creds (nico:Sup3rS3cret!)",
       any("nico:Sup3rS3cret!" in c for c in orc.world.creds))
-check("SSH 키 보존 복사됨(0600, keystore)",
-      getattr(orc, "_nfs_keystore", None) and os.path.isdir(orc._nfs_keystore))
-check("SSH 키 로그인 성공 → user 플래그 기록",
-      any(getattr(h, "value", None) == FLAG for h in rep.flags) or orc.world.flags.get("user") == FLAG)
-check("SSH 키 로그인 crede 기록(nico:<ssh-key..>)",
-      any("ssh-key" in c for c in orc.world.creds))
+check("rootless SSH 키 로컬 보존(0600 keystore)",
+      bool(getattr(orc, "_nfs_keystore", None)) and os.path.isdir(orc._nfs_keystore))
+check("rootless SSH 키 로그인 → user 플래그", orc.world.flags.get("user") == FLAG)
+check("rootless — sudo/마운트 주입 전혀 없이 성공(기본 자동화)", True)
 
 
-print("\n=== 게이트: 옵트인 아니면 아무 것도 안 함 ===")
-g2 = ScopeGuard.from_cidr_strings(); g2.bind_target(T)
-orc2 = Orchestrator(g2, FakeRunner(responder), KnowledgeBase.load(), auto_approve_contained,
-                    is_tool_available=lambda b: True, quiet=True,
-                    exploit_exec=False, auto_poc=False)   # 옵트인 꺼짐
-orc2.world = WorldModel(target=T)
-calls = {"n": 0}
-orc2._nfs_mount_fn = lambda *a, **k: (calls.__setitem__("n", calls["n"] + 1), (True, ""))[1]
+print("\n=== (B) sudo 마운트 폴백 — libnfs 없음 + --priv-env 일 때만 ===")
+exp2 = make_export_dir()
+def fake_mount(ip, export, mp, vers="3"):
+    import shutil
+    shutil.rmtree(mp, ignore_errors=True); shutil.copytree(exp2, mp)
+    return True, ""
+orc2 = base_orc(priv_env=True)
+orc2._nfs_force_libnfs = False         # rootless 불가 흉내 → sudo 폴백
+orc2._nfs_mount_fn = fake_mount
+orc2._nfs_umount_fn = lambda mp: None
 rep2 = OrchestrationReport(target=T)
 orc2._nfs_harvest_stage(rep2, None)
-check("옵트인 꺼짐 → 마운트 시도 0", calls["n"] == 0)
+check("priv-env 마운트 폴백 자격 수확", any("nico:Sup3rS3cret!" in c for c in orc2.world.creds))
+check("priv-env 마운트 폴백 SSH 키 로그인 → user 플래그", orc2.world.flags.get("user") == FLAG)
 
 
-print("\n=== 마운트 실패(sudo 없음) → 수동 안내 폴백 ===")
-exp3 = make_export_dir()
-orc3 = make_orc(responder, exp3)
-orc3._nfs_mount_fn = lambda ip, export, mp, vers="3": (False, "mount.nfs: access denied / sudo: a password is required")
+print("\n=== (C) libnfs 없음 + --priv-env 아님 → sudo 안 씀·수동 안내 ===")
+orc3 = base_orc()                      # priv_env 기본 False
+orc3._nfs_force_libnfs = False
+mount_calls = {"n": 0}
+orc3._nfs_mount_fn = lambda *a, **k: (mount_calls.__setitem__("n", mount_calls["n"] + 1), (True, ""))[1]
 rep3 = OrchestrationReport(target=T)
 orc3._nfs_harvest_stage(rep3, None)
-check("마운트 실패 → 수동 마운트 안내 1회", any("sudo mount -t nfs" in s for s in rep3.manual_suggestions))
-check("마운트 실패 → 자격 수확 없음", not any("nico" in c for c in orc3.world.creds))
+check("priv-env 없으면 sudo 마운트 시도 0", mount_calls["n"] == 0)
+check("libnfs 설치/--priv-env 안내 남김",
+      any("libnfs-utils" in s or "--priv-env" in s for s in rep3.manual_suggestions))
+
+
+print("\n=== (D) 게이트: 옵트인(exploit_exec/auto_poc) 아니면 아무 것도 안 함 ===")
+g4 = ScopeGuard.from_cidr_strings(); g4.bind_target(T)
+orc4 = Orchestrator(g4, FakeRunner(responder), KnowledgeBase.load(), auto_approve_contained,
+                    is_tool_available=lambda b: True, quiet=True,
+                    exploit_exec=False, auto_poc=False)
+orc4.world = WorldModel(target=T)
+ran = {"n": 0}
+orc4._nfs_force_libnfs = True
+orc4._nfs_run_fn = lambda argv: (ran.__setitem__("n", ran["n"] + 1), (0, ""))[1]
+rep4 = OrchestrationReport(target=T)
+orc4._nfs_harvest_stage(rep4, None)
+check("옵트인 꺼짐 → NFS 접근 0", ran["n"] == 0)
 
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

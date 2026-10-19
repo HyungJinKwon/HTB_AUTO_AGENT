@@ -136,6 +136,7 @@ if want smb; then
   apt_pkg smbclient; apt_pkg smbmap
   apt_or_pipxgit enum4linux-ng enum4linux-ng https://github.com/cddmp/enum4linux-ng
   apt_pkg nfs-common         # showmount(NFS export 열거)
+  apt_pkg libnfs-utils       # rootless NFS 읽기(nfs-ls/nfs-cp) — sudo·마운트 없이 export 수확
 fi
 
 if want ad; then
