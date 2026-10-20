@@ -127,6 +127,7 @@ if want forensic; then
   LOG "[forensic] 포렌식/스테가노"
   apt_pkg binwalk; apt_pkg foremost; apt_pkg libimage-exiftool-perl
   apt_pkg steghide; apt_pkg hashid; apt_pkg oathtool   # Debian/Kali 패키지명은 oathtool
+  apt_pkg poppler-utils      # pdftotext — NFS/문서에서 PDF 텍스트 추출(온보딩 PDF 자격 수확)
   pipx_pkg volatility3
   WARN "zsteg 는 gem install zsteg 로 설치"
 fi

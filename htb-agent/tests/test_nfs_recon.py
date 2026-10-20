@@ -41,6 +41,10 @@ def make_export_dir():
         f.write(FLAG + "\n")
     with open(os.path.join(root, "onboarding.txt"), "w") as f:
         f.write("Welcome!\nusername: nico\npassword: Sup3rS3cret!\n")
+    # 실측(Enigma): 발판 자격이 '온보딩 PDF' 한 장에 들어 있었고 .pdf 를 스킵해 수확 0이 됐다.
+    # 유효한 PDF 텍스트 레이어가 없어도 strings 폴백으로 본문을 복구하는지 검증.
+    with open(os.path.join(root, "New_Employee_Access.pdf"), "wb") as f:
+        f.write(b"%PDF-1.4 fake-doc\nUsername: bob\nPassword: Welcome123!\n")
     with open(os.path.join(root, "passwd"), "w") as f:
         f.write("root:x:0:0:root:/root:/bin/bash\nnico:x:1000:1000:Nico:/home/nico:/bin/bash\n")
     return root
@@ -54,10 +58,19 @@ check("nfs-ls 파싱 — 파일경로 추출(디렉터리/./.. 제외)",
       nr.parse_nfs_ls("/home/nico/id_rsa\ndrwxr-xr-x .\n/onboarding.txt\nsubdir/\n")
       == ["home/nico/id_rsa", "onboarding.txt"])
 
+print("=== PDF 텍스트 추출(발판 자격이 PDF 안에 있는 경우) ===")
+_pdf = tempfile.mkstemp(suffix=".pdf")[1]
+with open(_pdf, "wb") as _f:
+    _f.write(b"%PDF-1.4 onboarding\nUsername: alice\nPassword: Hunter2!\n")
+_txt = nr.extract_doc_text(_pdf)
+check("extract_doc_text — PDF 본문 텍스트 복구", "alice" in _txt and "Hunter2!" in _txt)
+os.remove(_pdf)
+
 exp = make_export_dir()
 fnd = nr.scan_tree(exp, export="/srv/nfs/onboarding")
 check("SSH 개인키 발견(내용 마커)", len(fnd.ssh_keys) == 1 and fnd.ssh_keys[0].endswith("id_rsa"))
 check("온보딩 자격 수확(nico:Sup3rS3cret!)", ("nico", "Sup3rS3cret!") in fnd.creds)
+check("PDF 자격 수확(bob:Welcome123! — .pdf 더 이상 스킵 안 함)", ("bob", "Welcome123!") in fnd.creds)
 check("user 플래그 스캔", any(v == FLAG for _k, v in fnd.flags))
 check("후보 사용자 수집(home/<user> + passwd uid≥1000)", "nico" in fnd.users)
 check("주목 파일 목록 비어있지 않음", bool(fnd.notable))
@@ -85,16 +98,28 @@ def base_orc(**kw):
 
 print("\n=== (A) rootless 기본(libnfs) — sudo·마운트 없이 수확→SSH키 로그인 ===")
 # libnfs(nfs-ls/nfs-cp)를 주입된 run 으로 흉내(실 네트워크/libnfs 불필요).
+# nfs-cp 는 이제 '임시파일 dest'에 바이너리로 받는다(stdout '-' 아님) — 실 규약과 동일.
+# 발판 자격은 Enigma 처럼 '온보딩 PDF' 안에 둔다(= .pdf 추출 경로가 실제로 도는지 검증).
+_NFS_FILES = {
+    ".ssh/id_rsa": KEY.encode(),
+    "New_Employee_Access.pdf": b"%PDF-1.4 fake\nUsername: nico\nPassword: Sup3rS3cret!\n",
+    "/passwd": b"root:x:0:0:root:/root:/bin/bash\nnico:x:1000:1000:Nico:/home/nico:/bin/bash\n",
+    "user.txt": (FLAG + "\n").encode(),
+}
 def libnfs_run(argv):
     if argv[0] == "nfs-ls":
-        return (0, "/home/nico/.ssh/id_rsa\n/onboarding.txt\n/passwd\n/home/nico/user.txt\n")
+        return (0, "/home/nico/.ssh/id_rsa\n/New_Employee_Access.pdf\n/passwd\n/home/nico/user.txt\n")
     if argv[0] == "nfs-cp":
-        url = argv[1]
-        if url.endswith(".ssh/id_rsa"): return (0, KEY)
-        if url.endswith("onboarding.txt"): return (0, "username: nico\npassword: Sup3rS3cret!\n")
-        if url.endswith("/passwd"):
-            return (0, "root:x:0:0:root:/root:/bin/bash\nnico:x:1000:1000:Nico:/home/nico:/bin/bash\n")
-        if url.endswith("user.txt"): return (0, FLAG + "\n")
+        url, dest = argv[1], argv[2]
+        data = next((v for k, v in _NFS_FILES.items() if url.endswith(k)), None)
+        if data is None:
+            return (1, "")
+        try:
+            with open(dest, "wb") as f:
+                f.write(data)
+        except OSError:
+            return (1, "")
+        return (0, "")
     return (0, "")
 
 orc = base_orc()
@@ -102,7 +127,7 @@ orc._nfs_force_libnfs = True          # rootless 경로 강제(테스트)
 orc._nfs_run_fn = libnfs_run          # nfs-ls/nfs-cp 주입
 rep = OrchestrationReport(target=T)
 orc._nfs_harvest_stage(rep, None)
-check("rootless 자격 수확 → world.creds (nico:Sup3rS3cret!)",
+check("rootless 자격 수확 → world.creds (PDF 안의 nico:Sup3rS3cret!)",
       any("nico:Sup3rS3cret!" in c for c in orc.world.creds))
 check("rootless SSH 키 로컬 보존(0600 keystore)",
       bool(getattr(orc, "_nfs_keystore", None)) and os.path.isdir(orc._nfs_keystore))
