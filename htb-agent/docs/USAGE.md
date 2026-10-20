@@ -529,8 +529,9 @@ egress 샌드박스를 자동 선택. ⚠️ 실제 익스·PoC 발사·리버�
 > 열거·생성까지만 하고 실제 발사·환경조작은 하지 않는다('인지된 옵트인' 보존). 풀어 쓰면
 > `--autonomous --exploit-exec --auto-poc --catch-revshell --priv-env` 와 동일.
 >
-> **`--priv-env`(환경조작)**: 열린 NFS export 를 읽어 자격·SSH키·플래그를 자동 수확하고, vhost 를
-> `/etc/hosts` 에 자동 등록한다. **기본 경로는 rootless** — `libnfs-utils`(`nfs-ls`/`nfs-cp`)로 sudo·
+> **`--priv-env`(환경조작)**: 열린 NFS export 를 읽어 자격·SSH키·플래그를 자동 수확(PDF 등 문서는
+> `pdftotext` 로 본문 추출)하고, vhost 를 `/etc/hosts` 에 자동 등록한다. **기본 경로는 rootless** —
+> `libnfs-utils`(`nfs-ls`/`nfs-cp`)로 sudo·
 > 커널 마운트 없이 export 를 유저스페이스에서 읽는다. sudo 는 rootless 불가 시의 `-n` 폴백(ro·타겟
 > IP 한정·비대화형)뿐이다. `--full-auto` 에 포함되므로 따로 줄 필요 없고, full-auto 없이 환경조작만
 > 원할 때 단독으로 쓴다. rootless 도구가 없으면 1회 설치 안내(`sudo apt install -y libnfs-utils`)만 남긴다.
@@ -548,7 +549,9 @@ egress 샌드박스를 자동 선택. ⚠️ 실제 익스·PoC 발사·리버�
 
 0. **환경 자동준비(`--priv-env`, `--full-auto` 가 자동 켬)** — 익스 체인보다 **먼저** 돈다. ⑴ 포트
    111/2049 가 열려 있으면 열린 **NFS export** 를 rootless(`nfs-ls`/`nfs-cp`)로 읽어 설정파일 자격·
-   `/home/*/`·`/etc/passwd` 사용자·SSH 개인키·`user.txt`/`root.txt` 를 수확(sudo·마운트 없음). ⑵ 수확한
+   `/home/*/`·`/etc/passwd` 사용자·SSH 개인키·`user.txt`/`root.txt` 를 수확(sudo·마운트 없음).
+   **PDF 등 문서**(예: 온보딩 PDF)는 `pdftotext`(poppler, 없으면 pypdf)로 본문을 추출해 그 안의
+   자격까지 수확한다. ⑵ 수확한
    SSH 개인키가 있고 22 가 열렸으면 그 키로 로그인해 플래그를 바로 읽는다. ⑶ 리다이렉트로 드러난 vhost
    (`enigma.htb` 등)는 `/etc/hosts` 에 자동 등록(없으면 Host 헤더로 우회). 수확 자격은 이후 SSH 발판·
    privesc 자격재사용·측면이동 후보로 재투입된다.

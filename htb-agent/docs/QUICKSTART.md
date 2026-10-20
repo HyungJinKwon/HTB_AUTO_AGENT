@@ -52,7 +52,8 @@ assassin --setup-llm                # (선택) Claude·로컬 LLM 연결 마법�
 > `--llm claude`(Claude 두뇌, 먼저 `assassin --setup-llm`) · `--html`/`--json`(결과 저장).
 > (개별로 켜려면 `--autonomous --exploit-exec --auto-poc --priv-env` 처럼 풀어 써도 동일.)
 > **환경조작(`--priv-env`)** 은 열린 NFS export 를 rootless(`libnfs-utils`)로 읽어 자격·SSH키·플래그를
-> 수확하고 vhost 를 `/etc/hosts` 에 등록합니다 — 기본은 sudo 없이, 불가 시에만 `sudo -n` 폴백.
+> 수확(PDF 문서는 `pdftotext` 로 본문 추출)하고 vhost 를 `/etc/hosts` 에 등록합니다 — 기본은 sudo 없이,
+> 불가 시에만 `sudo -n` 폴백.
 > **권한이 확인된 대상에서만.** 발판이 실제로 성립해야 자격수확·플래그로 이어지고, 성립 안 하면
 > 조용히 발판 미확보로 끝납니다(헛발판 안 잡음). 자세히는 [USAGE.md §10.2–10.4](USAGE.md).
 >
