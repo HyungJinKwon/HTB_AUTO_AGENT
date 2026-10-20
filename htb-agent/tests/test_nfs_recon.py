@@ -66,6 +66,14 @@ _txt = nr.extract_doc_text(_pdf)
 check("extract_doc_text — PDF 본문 텍스트 복구", "alice" in _txt and "Hunter2!" in _txt)
 os.remove(_pdf)
 
+# 무확장자 파일이라도 매직바이트(%PDF)로 PDF 판정 — nfs-cp dest(f0) 처럼 확장자가 없어도 추출.
+_noext = tempfile.mkstemp()[1]   # 확장자 없음
+with open(_noext, "wb") as _f:
+    _f.write(b"%PDF-1.4 onboarding\nUsername: carol\nPassword: P@ss!\n")
+check("extract_doc_text — 무확장자 %PDF 도 PDF로 추출",
+      "carol" in nr.extract_doc_text(_noext))
+os.remove(_noext)
+
 exp = make_export_dir()
 fnd = nr.scan_tree(exp, export="/srv/nfs/onboarding")
 check("SSH 개인키 발견(내용 마커)", len(fnd.ssh_keys) == 1 and fnd.ssh_keys[0].endswith("id_rsa"))
@@ -106,11 +114,13 @@ _NFS_FILES = {
     "/passwd": b"root:x:0:0:root:/root:/bin/bash\nnico:x:1000:1000:Nico:/home/nico:/bin/bash\n",
     "user.txt": (FLAG + "\n").encode(),
 }
+_CP_DESTS = []   # nfs-cp 가 받은 dest 경로 기록(확장자 보존 검증용)
 def libnfs_run(argv):
     if argv[0] == "nfs-ls":
         return (0, "/home/nico/.ssh/id_rsa\n/New_Employee_Access.pdf\n/passwd\n/home/nico/user.txt\n")
     if argv[0] == "nfs-cp":
         url, dest = argv[1], argv[2]
+        _CP_DESTS.append(dest)
         data = next((v for k, v in _NFS_FILES.items() if url.endswith(k)), None)
         if data is None:
             return (1, "")
@@ -129,6 +139,8 @@ rep = OrchestrationReport(target=T)
 orc._nfs_harvest_stage(rep, None)
 check("rootless 자격 수확 → world.creds (PDF 안의 nico:Sup3rS3cret!)",
       any("nico:Sup3rS3cret!" in c for c in orc.world.creds))
+check("nfs-cp dest 가 확장자 보존(.pdf — 무확장자면 pdftotext 안 타던 버그 방지)",
+      any(d.endswith(".pdf") for d in _CP_DESTS))
 check("rootless SSH 키 로컬 보존(0600 keystore)",
       bool(getattr(orc, "_nfs_keystore", None)) and os.path.isdir(orc._nfs_keystore))
 check("rootless SSH 키 로그인 → user 플래그", orc.world.flags.get("user") == FLAG)

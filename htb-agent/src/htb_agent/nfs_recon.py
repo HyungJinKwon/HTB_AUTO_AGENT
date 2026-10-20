@@ -79,9 +79,18 @@ def _strings_from_file(path: str, min_len: int = 4) -> str:
 
 def extract_doc_text(path: str) -> str:
     """문서(PDF 등)에서 텍스트 추출 — pdftotext(poppler) 우선 → pypdf/PyPDF2 → 가독 문자열 폴백.
-    실행 아님(대상 파일을 읽기만). 추출 실패해도 예외 없이 빈/부분 문자열 반환."""
+    실행 아님(대상 파일을 읽기만). 추출 실패해도 예외 없이 빈/부분 문자열 반환.
+    PDF 판정은 확장자뿐 아니라 '매직 바이트(%PDF)'로도 한다 — 임시파일이 확장자 없이(nfs-cp
+    dest 등) 넘어와도 pdftotext 를 타도록(확장자 의존 버그 방지)."""
     ext = os.path.splitext(path)[1].lower()
-    if ext == ".pdf":
+    is_pdf = ext == ".pdf"
+    if not is_pdf:
+        try:
+            with open(path, "rb") as f:
+                is_pdf = f.read(5).startswith(b"%PDF")
+        except OSError:
+            is_pdf = False
+    if is_pdf:
         if shutil.which("pdftotext"):
             try:
                 p = subprocess.run(["pdftotext", "-layout", path, "-"],
@@ -287,7 +296,9 @@ def scan_via_libnfs(ip: str, export: str, run, keystore: str,
                 continue
             # nfs-cp 로 '임시파일'에 받는다(바이너리 안전 — PDF 등 문서/키 모두 깨짐 없음).
             # stdout('-') 경유는 바이너리가 텍스트 캡처에서 손상되므로 쓰지 않는다.
-            dest = os.path.join(tmpd, f"f{key_idx}")
+            # 확장자를 보존해 extract_doc_text 가 pdftotext 를 타게 한다(f0 처럼 무확장자면
+            # PDF 판정이 어긋나 strings 폴백으로 빠져 압축 PDF 본문을 못 읽던 버그 방지).
+            dest = os.path.join(tmpd, f"f{key_idx}{ext}")
             rc2, _ = run(["nfs-cp", _nfs_url(ip, export, rel), dest])
             if rc2 != 0 or not os.path.exists(dest) or os.path.getsize(dest) == 0:
                 continue
