@@ -2,6 +2,22 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.18] — 2026-10-20
+
+PDF 수확이 무확장자 임시파일 때문에 여전히 0이던 버그 수정(Enigma 라이브 디버그로 특정).
+
+### 수정(Fixed)
+- **rootless NFS 의 PDF 추출이 실제로 동작하도록**: `scan_via_libnfs` 가 nfs-cp 로 받는 임시
+  dest 가 `f0`(확장자 없음)이라, `extract_doc_text` 의 PDF 판정(`.pdf` 확장자)이 어긋나
+  pdftotext 를 안 타고 strings 폴백으로 빠졌다 → 압축 스트림 PDF 본문을 못 읽어 수확 0.
+  (v2.39.17 에서 `.pdf` 스킵은 풀었으나 임시파일 네이밍에서 재발.) 두 겹으로 고친다:
+  ① nfs-cp dest 에 **원본 확장자 보존**(`f0.pdf`), ② `extract_doc_text` 가 **매직바이트
+  `%PDF` 로도 PDF 판정**(파일명 무관). Enigma 온보딩 PDF(kevin 자격)가 실제로 수확된다.
+
+### 검증
+- `test_nfs_recon`(21): 무확장자 %PDF 매직 추출·nfs-cp dest 확장자 보존 회귀 테스트 추가.
+  전체 스위트·ruff·mypy·gen_cli_docs 클린.
+
 ## [2.39.17] — 2026-10-20
 
 NFS 수확이 PDF 문서를 건너뛰어 발판 자격을 놓치던 버그 수정(실측 Enigma 로 특정).
