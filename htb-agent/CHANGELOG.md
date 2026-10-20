@@ -2,6 +2,27 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.17] — 2026-10-20
+
+NFS 수확이 PDF 문서를 건너뛰어 발판 자격을 놓치던 버그 수정(실측 Enigma 로 특정).
+
+### 수정(Fixed)
+- **NFS 수확이 PDF 등 문서를 읽도록**: `_SKIP_EXT` 에 `.pdf` 가 있어 NFS export 의 유일한 발판
+  파일(`New_Employee_Access.pdf`)을 통째로 스킵 → 자격 수확 0 → 발판 미확보였다. 실측(Enigma
+  10.129.239.191)에서 `nfs_read` 는 성공했으나 수확이 0이던 원인. `.pdf` 를 스킵에서 빼고
+  **텍스트 추출(pdftotext → pypdf/PyPDF2 → 가독 문자열 폴백)** 후 자격·플래그 파서로 넘긴다.
+- **rootless nfs-cp 를 바이너리 안전하게**: stdout(`-`) 캡처는 PDF 같은 바이너리를 텍스트
+  변환에서 손상시켰다. `nfs-cp` 를 **임시파일 dest** 로 받은 뒤 문서는 추출, 그 외는 텍스트로
+  읽는다(키는 keystore 0600 보존). 마운트 폴백(`scan_tree`)도 동일하게 PDF 추출 적용.
+
+### 추가(Added)
+- `nfs_recon.extract_doc_text()` — PDF 텍스트 추출 헬퍼(pdftotext/pypdf/strings 3단 폴백).
+- `install_tools.sh` 에 `poppler-utils`(pdftotext) 추가 — Kali 에서 PDF 추출 보장.
+
+### 검증
+- `test_nfs_recon`(19): PDF 본문 추출·`.pdf` 스킵 해제 수확·rootless e2e(PDF 자격→SSH키 로그인
+  →user 플래그) 포함. 전체 스위트·ruff·mypy·gen_cli_docs 클린.
+
 ## [2.39.16] — 2026-10-19
 
 환경조작을 'rootless 기본'으로 재설계(자동화·안전 동시 개선) + `--full-auto` 단일 플래그에 통합.
