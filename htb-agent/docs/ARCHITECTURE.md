@@ -71,7 +71,7 @@ flowchart TD
 불일치가 `replan_after`(기본 2)에 이르면 `막힘` → `_plan_fingerprint` 가 바뀌어 다음 라운드 시작 때 재계획한다.
 지문에는 실행 건수를 넣지 않고(기록이 비었을 때만 예전처럼 포함), 크리덴셜·서비스·수집물·취약점·권한·플래그와
 가설 결론(확인/기각)·막힘만 넣는다. 기록은 상태 파일(`plan`·`analysis`)에 저장돼 `--resume` 으로 이어지고,
-리포트 JSON(`plan`, schema 1.6)·HTML·라이트업·감사 로그(`plan_update`·`hypothesis_signal`·`hypothesis_stuck`)에
+리포트 JSON(`plan`, schema 1.9)·HTML·라이트업·감사 로그(`plan_update`·`hypothesis_signal`·`hypothesis_stuck`)에
 남는다. 가설 상태는 제안 방향에만 쓰이고 3관문·플래그 출처·목표 판정에는 관여하지 않는다.
 
 **목표 달성 조기 종료**: 대상 상호작용 출력에서 나온(provenance=exploit-derived) 플래그로
@@ -221,7 +221,7 @@ PowerShell `IEX`·`DownloadString`·`-EncodedCommand`, 명령 치환(`$(…)`·�
 | | `profiles.py` | 플랫폼 프로파일(HTB/Dreamhack/CTF: 스코프·플래그·카테고리) |
 | | `enrich.py` | CVE/CWE 자동 수집(NVD·GitHub PoC, 주입식 fetcher·캐시·오프라인 안전) |
 | | `writeup.py` | 라이트업 생성(htb-ctf-writeup-v5 / Tistory 13섹션) |
-| | `report_export.py` | 결과 내보내기 — 기계판독 JSON(schema 1.6) · 블루/네이비 HTML 대시보드(상단 '한눈에 보기': 진행 결과·3관문 지표·플래그 출처·지식 기반·LLM 라우팅·안전 경계·단계 진행 + 분석(병렬 가설)) |
+| | `report_export.py` | 결과 내보내기 — 기계판독 JSON(schema 1.9) · 블루/네이비 HTML 대시보드(상단 '한눈에 보기': 진행 결과·3관문 지표·플래그 출처·지식 기반·LLM 라우팅·안전 경계·단계 진행 + 분석(병렬 가설)) |
 
 ---
 

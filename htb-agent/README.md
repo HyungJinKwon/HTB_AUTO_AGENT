@@ -23,7 +23,7 @@
 | 🚀 완전 자동 루트 시도(발판·플래그까지) | `assassin 10.129.1.5 --full-auto --llm claude --html --json` |
 | CTF/Dreamhack 문제 | `assassin chall.host:1337 --platform ctf --category web` |
 
-> `--full-auto` = `--autonomous + --exploit-exec + --auto-poc + --catch-revshell + --priv-env`
+> `--full-auto` = `--autonomous + --exploit-exec + --auto-poc + --catch-revshell + --fetch-pocs + --priv-env`
 > (가능하면 egress 샌드박스 자동 선택). **실제 익스플로잇·PoC 발사·리버스셸 수신·NFS 수확**을
 > 수행하는 **명시적 옵트인**이다(기본은 생성 전용). 환경조작(`--priv-env`)은 열린 NFS export 를
 > rootless(`libnfs-utils`)로 읽고 vhost 를 `/etc/hosts` 에 등록 — 기본은 sudo 없이, 불가 시에만
@@ -180,7 +180,7 @@ cd htb-agent && python3 tests/run_all.py     # 전체 스위트(끝에 '총 N �
 | `--vm-confine` | --sandbox vm: 접속한 VM 에 egress 방화벽(타겟 대역만)을 적용해 docker 처럼 완전자율 동적 실행을 자동 허용. 그 VM 네트워크를 타겟으로 제한하므로 전용 풀이 VM 에서만 |
 | `--auto` | 완전 자동: 범위내+검증통과만 실행, 범위 밖은 조용히 건너뜀(무프롬프트) |
 | `--manual` | 완전 수동: 모든 명령을 실행 전 확인(승인제 최대) |
-| `--full-auto` | 🚀 한 플래그 완전 발사: --autonomous + --exploit-exec + --auto-poc + --catch-revshell + --priv-env(환경조작) 을 모두 켜고, 가능하면 egress 샌드박스를 자동 선택한다. 환경조작 기본은 rootless(libnfs·Host헤더)라 root 없이 동작하고 sudo 는 불가 시 -n 폴백뿐이다. ⚠️ 실제 익스플로잇·PoC 발사·리버스셸 수신을 수행 — 권한이 확인된 대상 전용. 범위 밖·파괴명령 게이트는 그대로 유지된다 |
+| `--full-auto` | 🚀 한 플래그 완전 발사: --autonomous + --exploit-exec + --auto-poc + --catch-revshell + --fetch-pocs + --priv-env(환경조작) 을 모두 켜고, 가능하면 egress 샌드박스를 자동 선택한다. 환경조작 기본은 rootless(libnfs·Host헤더)라 root 없이 동작하고 sudo 는 불가 시 -n 폴백뿐이다. ⚠️ 실제 익스플로잇·PoC 발사·리버스셸 수신을 수행 — 권한이 확인된 대상 전용. 범위 밖·파괴명령 게이트는 그대로 유지된다 |
 | `--dry-run` | 계획 미리보기: 정찰·분석은 하되 제안된 명령은 '실행하지 않고' 보여만 준다(무해 점검) |
 | `--exploit-exec` | 옵트인(기본 OFF): 확보한 평문 자격으로 SSH 접속해 플래그 읽기·권한상승 열거를 게이트를 거쳐 자동 실행(권한 확인 대상 전용) |
 | `--catch-revshell` | 옵트인(기본 OFF): 웹 RCE 로 발판이 안 잡힐 때 리버스셸로 발판 잡기 — --exploit-exec 발판 단계에서 준비된 리버스셸 payload 의 콜백을 소켓 리스너로 수신해 발판 세션화(공격자 IP/포트 확보 시). 성립 검증 통과분만 인정. 소켓 수신은 RCE 실행 표면 — 권한 확인 대상 전용 |

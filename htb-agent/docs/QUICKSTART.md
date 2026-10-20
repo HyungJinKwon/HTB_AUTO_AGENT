@@ -47,7 +47,7 @@ assassin --setup-llm                # (선택) Claude·로컬 LLM 연결 마법�
 | 자격증명을 넣어 자동으로 채우기 | `--cred 사용자:비밀번호` |
 
 > **완전 자동 루트 한 줄의 플래그 뜻** — `--full-auto`(한 플래그 번들: `--autonomous` +
-> `--exploit-exec` + `--auto-poc` + `--catch-revshell` + `--priv-env`(환경조작), 가능하면 egress
+> `--exploit-exec` + `--auto-poc` + `--catch-revshell` + `--fetch-pocs` + `--priv-env`(환경조작), 가능하면 egress
 > 샌드박스 자동 선택 → 발판 **실제 실행**·PoC 발사·리버스셸 수신·NFS 수확까지. 기본 OFF, 명시적 옵트인) ·
 > `--llm claude`(Claude 두뇌, 먼저 `assassin --setup-llm`) · `--html`/`--json`(결과 저장).
 > (개별로 켜려면 `--autonomous --exploit-exec --auto-poc --priv-env` 처럼 풀어 써도 동일.)
