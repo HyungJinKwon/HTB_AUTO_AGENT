@@ -520,14 +520,14 @@ assassin 10.129.1.5 --cred svc:Summer2024 --exploit-exec --autonomous
 assassin 10.129.1.5 --full-auto --llm claude --html --json
 ```
 플래그 뜻 — `--full-auto`(**한 플래그 번들**: `--autonomous` + `--exploit-exec` + `--auto-poc` +
-`--catch-revshell` + `--priv-env`(환경조작) 을 한 번에 켜고, docker 이미지가 이미 빌드돼 있으면
+`--catch-revshell` + `--fetch-pocs` + `--priv-env`(환경조작) 을 한 번에 켜고, docker 이미지가 이미 빌드돼 있으면
 egress 샌드박스를 자동 선택. ⚠️ 실제 익스·PoC 발사·리버스셸 수신 — 권한 확인 대상 전용) ·
 `--llm claude`(Claude 두뇌) · `--html`/`--json`(대시보드·기계판독 결과 저장).
 
 > 익스 발사 옵트인은 일반 `--autonomous` 에 묻지 않고 이 명시적 `--full-auto`(또는 개별
 > `--exploit-exec`/`--auto-poc`/`--catch-revshell`/`--priv-env`)로만 켠다 — `--autonomous` 단독은
 > 열거·생성까지만 하고 실제 발사·환경조작은 하지 않는다('인지된 옵트인' 보존). 풀어 쓰면
-> `--autonomous --exploit-exec --auto-poc --catch-revshell --priv-env` 와 동일.
+> `--autonomous --exploit-exec --auto-poc --catch-revshell --fetch-pocs --priv-env` 와 동일.
 >
 > **`--priv-env`(환경조작)**: 열린 NFS export 를 읽어 자격·SSH키·플래그를 자동 수확(PDF 등 문서는
 > `pdftotext` 로 본문 추출)하고, vhost 를 `/etc/hosts` 에 자동 등록한다. **기본 경로는 rootless** —

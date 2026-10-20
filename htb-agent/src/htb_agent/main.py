@@ -241,7 +241,7 @@ def build_parser(full: bool = False) -> argparse.ArgumentParser:
                    help="완전 수동: 모든 명령을 실행 전 확인(승인제 최대)")
     g_mode.add_argument("--full-auto", action="store_true", dest="full_auto",
                    help="🚀 한 플래그 완전 발사: --autonomous + --exploit-exec + --auto-poc + "
-                        "--catch-revshell + --priv-env(환경조작) 을 모두 켜고, 가능하면 egress "
+                        "--catch-revshell + --fetch-pocs + --priv-env(환경조작) 을 모두 켜고, 가능하면 egress "
                         "샌드박스를 자동 선택한다. 환경조작 기본은 rootless(libnfs·Host헤더)라 root "
                         "없이 동작하고 sudo 는 불가 시 -n 폴백뿐이다. ⚠️ 실제 익스플로잇·PoC 발사·"
                         "리버스셸 수신을 수행 — 권한이 확인된 대상 전용. 범위 밖·파괴명령 게이트는 "
