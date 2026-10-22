@@ -2,6 +2,25 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.27] — 2026-10-22
+
+실측(Enigma) 후속 — vhost 서브도메인 브루트의 와일드카드 보정.
+
+배경: v2.39.26 으로 vhost(enigma.htb) 자동 등록·웹앱 도달까지는 됐으나, 서브도메인 열거가
+`gobuster vhost ... --append-domain`(보정 없음)이라 **returncode 1 로 아무 것도 못 찾았다**.
+HTB 는 '존재하지 않는 vhost 도 같은 랜딩'을 반환하는 와일드카드가 흔해, 보정 없이는 전부 거르거나
+오탐한다(실측에서 서브도메인 미발견).
+
+### 변경(Changed)
+- **KB 룰 'vhost/호스트명 리다이렉트' vhost 브루트 → ffuf 자동 보정(`-ac`)**: `gobuster vhost`
+  (무보정)를 `ffuf -H "Host: FUZZ.{t}" -u http://{t}/ -ac`(자동 와일드카드 보정)로 교체.
+  발견한 서브도메인(`drive.`/`portal.` 등)은 출력의 `*.htb` 토큰을 v2.39.26 의 넓힌
+  `_maybe_register_vhost` 가 자동 등록 → 다음 스윕에서 그 서브도메인 앱을 열거하는 완결 체인.
+  룰 note 에 와일드카드 보정 필수(ffuf `-ac` / gobuster `--exclude-length`) 근거 명시.
+
+### 검증
+- KB 로드·명령 검증(ffuf+FUZZ+`-ac`) 통과. 전체 스위트·ruff·mypy·gen_cli_docs 클린.
+
 ## [2.39.26] — 2026-10-22
 
 실측(HTB Enigma) 기반 교정 — vhost 리다이렉트 박스 해금 + 리버스셸 공전 제거.

@@ -129,9 +129,9 @@
     "when": {"ports": [80, 443, 8080], "services": ["http", "https"]},
     "suggest": [
       "curl -sI http://{t}/",
-      "gobuster vhost -u http://{t} -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt --append-domain"
+      "ffuf -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -u http://{t}/ -H \"Host: FUZZ.{t}\" -ac -t 50 -s"
     ],
-    "note": "HTB Ignition/Three: curl -I 가 Location: http://<name>.htb 리다이렉트하거나 Contact 이메일 도메인 발견 시 echo '{t} <name>.htb'|sudo tee -a /etc/hosts. 이후 vhost 서브도메인 열거(gobuster vhost, 3.2+ 는 --append-domain). 발견 서브도메인도 /etc/hosts 추가.",
+    "note": "HTB Ignition/Three/Enigma: curl -I 가 Location: http://<name>.htb 리다이렉트하거나 Contact 이메일 도메인 발견 시 echo '{t} <name>.htb'|sudo tee -a /etc/hosts. 이후 vhost 서브도메인 열거. ⚠️ HTB 는 '존재하지 않는 vhost 도 같은 랜딩'을 반환하는 와일드카드가 흔해, 보정 없이는(gobuster vhost 기본) 전부 거르거나 오탐한다 → 반드시 와일드카드 보정: ffuf 는 '-ac'(자동 보정), gobuster 는 '--exclude-length <랜딩크기>'(먼저 정상 vhost 응답 크기 확인 후). 발견 서브도메인(drive./portal. 등)도 /etc/hosts 추가 → 재열거.",
     "tags": ["web", "vhost", "dns"],
     "phase": "enum"
   },
