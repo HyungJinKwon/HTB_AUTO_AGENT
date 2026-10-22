@@ -259,6 +259,7 @@ class Orchestrator(FootholdMixin):
         self.flag_kind = flag_kind
         from .clues import ClueStore
         self.clues = ClueStore()   # [lab:clues] 교차단계 단서 누적(LLM 컨텍스트 되먹임)
+        self._phase_llm_rounds: dict[str, int] = {}   # [lab:tiering] 단계별 LLM 라운드 수(티어 상승)
         self.flag_prefixes = flag_prefixes
         self.platform_name = platform_name
         self.category = category
@@ -1234,8 +1235,13 @@ class Orchestrator(FootholdMixin):
             return 0
         context = self._suggest_context(report, host, prof, phase, focus)
         try:
-            from .llm.base import Tier, tier_for_phase
-            base_tier = tier_for_phase(phase)
+            from .llm.base import Tier
+            from .llm.tiering import tier_for
+            # [lab:tiering] 같은 단계가 라운드를 거듭할수록(= 저렴 모델이 못 풀고 있을수록) 티어를
+            # 한 단계씩 올린다. phase 기본값은 루트 tier_for_phase 그대로(privesc/lateral 은 STRONG).
+            round_idx = self._phase_llm_rounds.get(phase, 0)
+            base_tier = tier_for(phase, round_idx=round_idx)
+            self._phase_llm_rounds[phase] = round_idx + 1
             # B6 적응형 tier: 분석 확신도 '하' 면 처음부터 강력 모델로 상향
             if self._low_confidence(report) and base_tier != Tier.STRONG:
                 base_tier = Tier.STRONG
