@@ -2,6 +2,24 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.22] — 2026-10-22
+
+동료 lab `tiering.py` 선별 이식 — 라운드 기반 티어 상승 + 모델별 프롬프트 예산.
+
+### 추가(Added)
+- **`llm/tiering.py` 이식(선별, 동료 해커톤 lab)** — `tier_for(phase, round_idx, floor)`: 같은
+  단계가 LLM 라운드를 거듭할수록(= 저렴 모델이 못 풀고 있을수록) 티어를 한 단계씩 올린다.
+  **phase 기본값은 루트 `tier_for_phase` 그대로**(enum=CHEAP·access=STANDARD·privesc/lateral=
+  STRONG — 회귀 없음). `profile_for(model)`/`ModelProfile`: 모델명→능력 등급→프롬프트 토큰 예산
+  (`context.py` ContextBuilder 와 연동 가능). lab 의 HybridProvider 는 루트 HybridRouter 가 더
+  정교해 가져오지 않음.
+- **`tier_for` 배선**: 오케스트레이터가 단계별 LLM 라운드 수(`_phase_llm_rounds`)를 세어
+  `_llm_round` 의 base_tier 를 round 인식형으로 상향(기존 low_confidence/empty-result 승격과 중첩).
+
+### 검증
+- `test_tiering`(24): phase 기본값·라운드 상승·floor·모델 등급·로컬 파라미터수·창 예산·reasoning.
+  전체 스위트·ruff·mypy·gen_cli_docs 클린.
+
 ## [2.39.21] — 2026-10-22
 
 동료 lab 에서 `clues.py` 이식 + LLM 컨텍스트 되먹임 배선.
