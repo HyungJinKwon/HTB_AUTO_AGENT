@@ -2,6 +2,26 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.19] — 2026-10-22
+
+메일(IMAP/POP3) 발판 추가 — webmail 계정 자격으로 발판이 끊기던 갭(Enigma)을 메운다.
+
+### 추가(Added)
+- **`mail_recon.py`(신규) + `_mail_harvest_stage`**: 수확한 평문 자격이 **webmail 계정**일 때
+  (실측 Enigma: 온보딩 PDF 의 `kevin:Enigma2024!` 가 SSH 가 아니라 메일 계정) 메일 포트
+  (110/143/993/995)에 **로그인해 본문을 읽고** 그 안의 **다음 단계 자격·플래그**를 수확해
+  `world.creds` 로 되먹인다 → 이후 SSH 발판이 그 자격을 쓴다. 사용자명은 그대로 + (vhost 로
+  도메인 추정 시) `user@domain` 둘 다 시도. `_foothold_stage` 와 `_exploit_exec_stage`(SSH) 사이에 배선.
+
+### 안전(Safety)
+- 표준 라이브러리만(`imaplib`/`poplib`/`email`, 신규 의존성 없음). **읽기 전용** — 로그인→
+  본문 fetch→로그아웃, 메일 전송·삭제·플래그변경 없음. **옵트인**(exploit_exec/auto_poc)·**타겟 IP
+  한정**(바인딩 타겟의 메일 포트만). 네트워크 fetch 는 주입 가능(테스트는 실 통신 없음).
+
+### 검증
+- `test_mail_recon`(15): msg 파싱·엔드포인트 선택·주입 fetch 로그인→본문서 다음 자격 수확·
+  오케스트레이터 자격 되먹임·도메인 추정·게이트(옵트인/포트/자격). 전체 스위트·ruff·mypy·docs 클린.
+
 ## [2.39.18] — 2026-10-20
 
 PDF 수확이 무확장자 임시파일 때문에 여전히 0이던 버그 수정(Enigma 라이브 디버그로 특정).

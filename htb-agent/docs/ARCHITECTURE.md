@@ -194,6 +194,7 @@ PowerShell `IEX`·`DownloadString`·`-EncodedCommand`, 명령 치환(`$(…)`·�
 | | `privesc.py` | 권한상승 플레이북 자동 준비(--privesc + OS 식별 시 열거·점검·LPE후보 생성, 생성 전용·대상 셸 실행) |
 | | `crack.py` | 해시 크래킹 자동 준비(--crack + 출력/볼트에서 해시 수집·식별→john/hashcat 명령 생성, 생성 전용) |
 | **발판·익스(옵트인)** | `web_secrets.py` | 웹 노출 비밀/백업 파일 '읽기 전용' 열거 — 발판 전 HTTP 자격 수확 재료(vhost 인식, `--exploit-exec`/`--auto-poc` 전용) |
+| | `mail_recon.py` | **메일(IMAP/POP3) 발판**(옵트인) — 수확한 평문 자격으로 110/143/993/995 에 로그인(stdlib `imaplib`/`poplib`, **읽기 전용·전송 없음**)해 메일 본문에서 다음 단계 자격·플래그를 수확 → `world.creds` 되먹임(이후 SSH 발판이 사용). webmail 계정 발판(Enigma 온보딩 PDF 자격 등) 대응. 타겟 IP 한정·네트워크 fetch 주입 가능 |
 | | `nfs_recon.py` | **환경조작 — NFS export 수확**(`--priv-env`, 익스 체인보다 먼저) — 열린 export 를 **rootless**(`nfs-ls`/`nfs-cp`, sudo·마운트 없음)로 읽어 설정 자격·`/etc/passwd` 사용자·SSH 개인키·`user.txt`/`root.txt` 수확. **PDF 등 문서는 `pdftotext`(poppler)→pypdf→strings 로 텍스트 추출**해 그 안의 자격까지 수확(온보딩 PDF 등). 수확 키로 22 로그인해 플래그 직독. rootless 불가 시 `sudo -n mount -o ro` 폴백. 원격·트리에서 실행 없음(정적 읽기 only) |
 | | `exploit_fetch.py` | PoC 정적 분석·실행 '계획 생성'(② 기반, 생성 전용) — ⭐ 버전매칭 PoC 받기·실행계획 문자열 |
 | | `exploit_run.py` | 공개 PoC 실행 채널(3단계, 옵트인) — 고른 '한 줄 PoC 명령'을 기존 러너로 실행, 출력에서 자격·발판 URL 캡처(harvest_creds/harvest_foothold). **익스 코드는 담지 않음** |
