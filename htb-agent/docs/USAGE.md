@@ -498,22 +498,24 @@ assassin 10.129.1.5 --cred svc:Summer2024 --exploit-exec --autonomous
 공개 PoC(⭐ 1순위)를 자동 선택**해 실행 큐에 올린다(①~③단계). 생성 전용 경계는 유지되며, 실제
 네트워크 발사는 전부 3관문을 거친다.
 
-> ⚠️ **현재 구현 범위(정직한 상태)** — ⭐ PoC 자동 선택·발사 → 자격이 나오면 SSH 발판에 더해, 그 다음
-> 단계인 **웹 RCE 발판 세션 → 설정/DB 자격 수확 → 플래그 읽기**(`_foothold_stage`)와 **측면 이동 후보
-> 생성**(`lateral_candidates`)도 **옵트인(`--exploit-exec`) 뒤 실행 루프에 배선**돼 호출된다
-> (orchestrator `run()` 의 PHASE 3.9 직전). 다만 발판 채널의 실제 네트워크 구동부(소켓/HTTP)는
-> **RCE 실행 표면**이라, `requests` 같은 실행 의존이 없으면 **명령·후보 생성까지만 하고 조용히 안전하게
-> degrade** 한다(섣부른 발사 없음). 측면 이동은 끝까지 **생성 전용**(명령 문자열만, 발사 없음)이다.
+> ⚠️ **현재 구현 범위(정직한 상태)** — 발판 체인은 **이 리포에서 끝까지 돈다**(과거엔 네트워크
+> 구동부가 외부 배선 대기 상태였으나 지금은 모두 내장·배선 완료). ⭐ PoC 자동 선택·발사 →
+> 자격 수확 → **웹 RCE 발판 세션 / 리버스셸 수신·업그레이드 / SSH 발판** → 설정·DB 자격 수확 →
+> 플래그 읽기 → **권한상승 폐루프**(`_privesc_loop`)까지 옵트인(`--exploit-exec`) 뒤 실행 루프에서
+> 호출된다(orchestrator `run()`, PHASE 3.9 직전). 실제 네트워크 구동부는 `shell_transport.py`
+> (리버스셸 소켓·웹 HTTP)에 **내장**돼 있다. 단, 웹 HTTP 채널만 선택 의존 `requests` 가 필요해
+> 미설치면 **웹 발판만 조용히 안전하게 degrade**(리버스셸 수신·NFS·메일·SSH 는 표준 라이브러리·
+> `sshpass` 라 영향 없음). 측면 이동은 끝까지 **생성 전용**(명령 문자열만, 발사 없음)이다.
 
 | 항목 | 내용 |
 |---|---|
 | 켜는 법 | `assassin <t> --exploit-exec --auto-poc` (보통 `--autonomous --llm claude` 와 함께) |
-| 지금 도는 것 | ⭐ 버전매칭 PoC 자동 선택·발사 → (PoC 가 자격을 뱉으면) SSH 발판 → 플래그 읽기 |
+| 지금 도는 것 | ⭐ 버전매칭 PoC 자동 선택·발사 → 자격 수확 → 발판(웹 RCE / 리버스셸 수신 / SSH) → 설정·DB 자격 수확 → 플래그 읽기 → 권한상승 폐루프(`_privesc_loop`, `--auto-poc` 시). 환경조작(`--priv-env`)이 켜지면 익스 체인보다 먼저 NFS·메일 발판도 돈다(§10.4) |
 | 측면 이동(lateral) | 수확한 크리덴셜/NT 해시를 **열린 다른 서비스**(SSH/SMB/WinRM/RDP/MSSQL/FTP/MySQL/PostgreSQL)에 재사용·PtH 하는 후보를 자동 생성(`_prepare_lateral`). **생성 전용** — 명령 문자열만, 발사 없음(사용자가 권한 확인 자산에서 실행) |
 | 발판 성립 검증 | 발판에서 `id`/`uname` 신호가 나와야 **진짜 셸**로 인정. 로그인 페이지 HTML·빈 응답 등 **헛발판은 버림** → 성립 안 하면 조용히 발판 미확보(섣부른 단정 없음) |
-| 채널 | `_acquire_session` 이 (1) 웹 RCE(`cmd=` 엔드포인트) → 실패 시 (2) **리버스셸 수신**(`--catch-revshell`, 준비된 payload 콜백을 소켓 리스너로 수신) 순으로 발판을 시도. 모두 같은 `ShellSession` 인터페이스. 리버스셸 수신은 opt-in 이라 꺼두면 소켓 블로킹 없음 |
+| 채널 | `_acquire_session` 이 (0) revshell 모듈이면 PoC 발사 전에 선기동한 리스너 수신 → (1) 웹 RCE(`cmd=` 엔드포인트, 성립 시 opt-in 리버스셸 업그레이드) → (2) **리버스셸 수신**(`--catch-revshell`, 준비된 payload 콜백을 소켓 리스너로 수신) 순으로 발판을 시도. 모두 같은 `ShellSession` 인터페이스. 리버스셸 수신은 opt-in 이라 꺼두면 소켓 블로킹 없음 |
 | 승인 | `--autonomous` 와 함께면 무프롬프트, 없으면 각 명령 y/n. 권한 확인 대상 전용 |
-| 비고 | 발판 채널의 실제 네트워크 실행부(소켓/HTTP)는 **RCE 실행 표면**이라 운영 리포에서 연결한다(`shell_transport`/`_acquire_session`, 그리고 `_foothold_stage` 호출 배선). 미연결이면 발판 미확보로 안전하게 끝남 |
+| 비고 | 네트워크 실행부(`shell_transport.py` 소켓·HTTP)와 `_foothold_stage` 호출 배선은 **완료**. 리버스셸 수신은 표준 `socket` 만 쓰고, 웹 HTTP(`web_http_fn`)만 선택 의존 `requests` — 미설치면 웹 채널만 발판 미확보로 degrade(크래시 아님) |
 
 ```bash
 # 🚀 완전 자동 루트 시도(초보자용 한 줄): 정찰→버전→⭐PoC 자동선택→발판→플래그 + 결과물 저장
