@@ -2,6 +2,35 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.26] — 2026-10-22
+
+실측(HTB Enigma) 기반 교정 — vhost 리다이렉트 박스 해금 + 리버스셸 공전 제거.
+
+배경: Enigma 실측에서 NFS 수확(→`kevin:Enigma2024!`)·메일 로그인까지는 정상 작동했으나, 웹
+루트가 `302 → http://enigma.htb/` 로 리다이렉트하는데 에이전트가 **그 vhost 를 등록하지 못해**
+웹 열거 100+건이 전부 IP→302 벽에 막혔다(실제 앱 `enigma.htb` 에 한 번도 못 닿음). 원인은
+① vhost 발견이 '요약 화살표(→ http://host)' 형식만 보고 **raw `Location` 헤더를 못 읽음**(웹
+프로브가 `curl -s` 라 헤더 자체가 출력에 없었음) ② `_web_fingerprint_stage` 가 vhost 미등록 시
+바로 `return` 해 **리다이렉트로 vhost 를 발견할 기회조차 없었음**.
+
+### 수정(Fixed)
+- **vhost 발견 일반화(`_maybe_register_vhost`)**: 기존 화살표 형식에 더해 **raw `Location:` 헤더**
+  (`_LOCATION_HOST_RE`)와 **본문/PDF/배너에 박힌 bare `*.htb`/`*.local` 토큰**(`_HTB_VHOST_RE`)도
+  인식해 타겟 IP 로 등록. 안전 경계 불변 — `.htb`/`.local` 랩 vhost 만 자동 등록(외부 도메인은
+  스코프 확장 우회 차단 위해 거부+1회 안내, scope_guard 특수취급과 동일).
+- **`_web_fingerprint_stage` 리다이렉트 발견 프로브**: vhost 미등록이면 그냥 끝내지 않고 헤더
+  프로브(`curl -sI`)를 1회 쏴 그 출력의 302 `Location` 에서 vhost 를 자동 등록한 뒤 진행한다
+  (웹 리다이렉트 박스 해금 — `enigma.htb`/`connected.htb` 류 일반화). 발견 실패 시에만 다음 스윕 대기.
+- **리버스셸 standalone 수신 공전 제거(`foothold._acquire_reverse_shell`)**: 이 분기는 이번 실행에서
+  payload 를 쏘지 않은 경로(웹 RCE=branch①, revshell 모듈=prelisten 이 각각 처리)라 콜백이 올 수
+  없는데도 기본 120s 를 대기해 웹 RCE 없는 `--full-auto` 가 2분 공전했다. 짧은 타임아웃(기본 20s)
+  으로 캡해 발판 미확보로 빠르게 넘어간다(테스트는 주입 catcher 라 무영향).
+
+### 검증
+- `test_web_secrets`(+4): 헤더 프로브가 302 `Location` 에서 vhost 자동등록→그 vhost 로 핑거프린트
+  진행→제품 식별. `test_vhost_autoreg`(+4): `Location` 헤더·bare `.htb` 토큰 등록, 외부 도메인 미등록.
+  전체 152/3329 passed, ruff·mypy·gen_cli_docs 클린.
+
 ## [2.39.25] — 2026-10-22
 
 테스트 간헐 행(hang) 근본 원인 제거 — 오프라인 모드에서 recon 이 실제 nmap 을 쏘던 버그 수정.

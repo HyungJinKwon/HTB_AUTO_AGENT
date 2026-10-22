@@ -513,9 +513,18 @@ class FootholdMixin:
                 self.audit.event("foothold_skip", reason="revshell_transport_unavailable",
                                  detail=str(e))
                 return None
-        self.audit.event("revshell_listen", lhost=lhost, lport=int(lport))
+        # 이 분기(standalone 수신)는 '이번 실행에서 우리가 payload 를 쏘지 않은' 경로다
+        # (웹 RCE 는 branch①, revshell 채널 모듈은 prelisten 이 각각 처리). 즉 트리거가 없어
+        # 콜백이 올 가능성이 없으므로, 기본 120s 를 그대로 기다리면 순수 낭비다(웹 RCE 없는
+        # 박스의 --full-auto 에서 2분 공전). 짧게 캡해 발판 미확보로 빠르게 넘어간다(실측 교정).
+        to = getattr(self, "_revshell_catch_timeout", 20)
+        self.audit.event("revshell_listen", lhost=lhost, lport=int(lport), timeout=to)
         try:
-            session = catch(lhost, int(lport))   # 소켓 accept(블로킹·타임아웃) — RCE 실행 표면
+            # 실제 catcher 는 timeout 인자를 받는다. 2-인자 테스트 catcher 는 TypeError → 폴백.
+            try:
+                session = catch(lhost, int(lport), timeout=to)
+            except TypeError:
+                session = catch(lhost, int(lport))
         except OSError as e:                      # bind 실패·타임아웃·콜백 없음 → 발판 미확보
             self.audit.event("revshell_catch_error", error=f"{type(e).__name__}: {e}")
             return None

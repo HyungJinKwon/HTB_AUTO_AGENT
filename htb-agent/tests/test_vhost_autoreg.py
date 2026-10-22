@@ -42,6 +42,25 @@ with tempfile.TemporaryDirectory() as d:
     o._maybe_register_vhost(rep, out)
     check("중복 vhost 재등록 안 함", len(o.hosts_map) == 1)
 
+print("\n=== vhost 발견 일반화: raw Location 헤더 + bare .htb 토큰 ===")
+with tempfile.TemporaryDirectory() as d:
+    hosts = os.path.join(d, "hosts"); open(hosts, "w").close()
+    # ① raw HTTP 302 Location 헤더(curl -i/-I 출력) — 과거엔 '→ 화살표' 형식만 잡아 놓쳤다.
+    o1, g1 = orc(hosts)
+    rep1 = OrchestrationReport(target="10.129.245.100")
+    o1._maybe_register_vhost(rep1, "HTTP/1.1 302 Found\r\nLocation: http://enigma.htb/\r\n\r\n")
+    check("Location 헤더에서 vhost 등록", (o1.hosts_map or {}).get("enigma.htb") == "10.129.245.100")
+    # ② 본문/PDF/배너에 박힌 bare *.htb 토큰(예: 온보딩 PDF 의 mail001.enigma.htb)
+    o2, _ = orc(hosts)
+    rep2 = OrchestrationReport(target="10.129.245.100")
+    o2._maybe_register_vhost(rep2, "Your webmail server is mail001.enigma.htb — log in with your creds.")
+    check("bare .htb 토큰에서 vhost 등록", (o2.hosts_map or {}).get("mail001.enigma.htb") == "10.129.245.100")
+    # ③ 외부 도메인은 bare 토큰이어도 자동 등록 안 함(스코프 확장 우회 차단 — .htb/.local 만)
+    o3, _ = orc(hosts)
+    rep3 = OrchestrationReport(target="10.129.245.100")
+    o3._maybe_register_vhost(rep3, "contact us at support@evil-corp.com or cdn.cloudflare.com")
+    check("외부 도메인 bare 토큰은 미등록", not (o3.hosts_map or {}))
+
 print("\n=== 권한 없음(쓰기 불가) → 1회 안내만 ===")
 with tempfile.TemporaryDirectory() as d:
     # 존재하지 않는 디렉터리의 경로 → open/access 모두 실패(root 여도) → 안내 경로
