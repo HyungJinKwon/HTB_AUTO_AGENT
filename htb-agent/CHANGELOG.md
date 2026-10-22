@@ -2,6 +2,23 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.21] — 2026-10-22
+
+동료 lab 에서 `clues.py` 이식 + LLM 컨텍스트 되먹임 배선.
+
+### 추가(Added)
+- **`clues.py` 이식(동료 해커톤 lab `pokochy/htb-autonomous-agent-lab`)** — 교차단계 '단서'
+  (host/user/path/hash/software)를 도구 출력에서 정규식으로 누적하는 `ClueStore`. 플래그
+  형식(32hex)은 플래그 파일 맥락이면 제외(flag.py 담당). 외부 의존성 0.
+- **LLM 컨텍스트 되먹임 배선**: 오케스트레이터가 열거/LLM 출력에서 단서를 누적
+  (`self.clues`)하고 `_suggest_context` 가 `context_lines()` 를 LLM 후보생성 컨텍스트에 주입,
+  라우터 suggest 프롬프트가 '환경 단서' 섹션으로 렌더(신뢰불가 데이터 명시). MazeRunner 의
+  Contextual Amnesia(긴 교전에서 본 단서를 잊음) 완화.
+
+### 검증
+- `test_clues`(17): add 중복·상한, 종류별 harvest, 플래그맥락 hash 제외, context_lines,
+  라우터 suggest 프롬프트 렌더(가짜 provider 포착). 전체 스위트·ruff·mypy·gen_cli_docs 클린.
+
 ## [2.39.20] — 2026-10-22
 
 터미널 출력을 '직관적인 컴팩트 기본'으로 + 동료 lab 에서 유용 모듈 이식 시작.

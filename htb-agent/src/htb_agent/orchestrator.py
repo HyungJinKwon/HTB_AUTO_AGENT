@@ -257,6 +257,8 @@ class Orchestrator(FootholdMixin):
         self.audit = audit or NullAudit()
         self.phases = phases or PENTEST_PHASES
         self.flag_kind = flag_kind
+        from .clues import ClueStore
+        self.clues = ClueStore()   # [lab:clues] 교차단계 단서 누적(LLM 컨텍스트 되먹임)
         self.flag_prefixes = flag_prefixes
         self.platform_name = platform_name
         self.category = category
@@ -1322,6 +1324,11 @@ class Orchestrator(FootholdMixin):
         recs = self.kb.query(prof.os_class.value, host.open_ports, services, phase=phase)
         prior = [f"{f.command} => {f.output}"
                  for f in (report.enum_findings + report.llm_findings) if f.output]
+        # [lab:clues] 교차단계 '단서'(host/user/path/hash/software)를 도구 출력에서 누적해
+        # LLM 후보 생성 컨텍스트로 되먹인다(Contextual Amnesia 완화 — 본 걸 잊지 않게).
+        for f in (report.enum_findings + report.llm_findings):
+            if f.output:
+                self.clues.harvest(getattr(f, "raw_output", "") or f.output)
         return {
             "phase": _PHASE_LABEL.get(phase, phase),
             "profile": prof.summary(),
@@ -1340,6 +1347,7 @@ class Orchestrator(FootholdMixin):
             "notes": self.kb.relevant_notes(
                 self._note_terms(host, prof, phase, report), 3),
             "findings": prior[-10:],
+            "clues": self.clues.context_lines(),
             "failures": self._failure_context(report),
             # 플랫폼 인식 — LLM 프롬프트가 HTB/Jeopardy·카테고리에 맞게 조립된다
             "platform": self.platform_name,
