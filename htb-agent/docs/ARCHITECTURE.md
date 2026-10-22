@@ -203,6 +203,7 @@ PowerShell `IEX`·`DownloadString`·`-EncodedCommand`, 명령 치환(`$(…)`·�
 | | `foothold.py` | **발판·익스 실행 스테이지**(FootholdMixin, 옵트인) — PoC 실행→웹 RCE 발판 캡처→(opt-in)웹→리버스셸 업그레이드·revshell 채널 모듈 listener-first 수신→자격수확→플래그→권한상승 폐루프. SSH/웹/리버스셸 세션 무관. RCE 실행 표면(3관문 하) |
 | | `session_verify.py` | 발판 성립 검증(생성 전용) — '진짜 셸이 떴는지'를 출력으로 판정 |
 | | `shell_session.py` | 발판 셸 세션 추상화(B) — 채널 무관 공통 인터페이스(run/alive) |
+| | `tools/session.py` | **지속 PTY bash 러너**(lab 이식, `--shell-session` 옵트인·`pexpect` 선택 의존) — `Runner` 프로토콜 호환 드롭인. 작업디렉토리·env 유지, 파이프/리다이렉트, nc·ssh·gdb 대화형(`send_line`/`expect`), 긴 스캔 백그라운드(`start_background`), EOF 자동 respawn·타임아웃 Ctrl-C 복구. 검증은 앞단 가드(3관문)가 담당 |
 | | `shell_transport.py` | 발판 transport(리버스셸 소켓 / 웹RCE HTTP) — **사용자 커밋·RCE 실행 표면**(requests 선택 의존, 미설치 시 안전 degrade) |
 | | `cred_sources.py` | 발판 후 자격 수확(D) — 설정/DB 파일 위치 + 제품별 키 파싱 + 측면이동 후보 |
 | | `flag_read.py` | 플래그 읽기를 발판 셸 세션으로(E) — 채널(SSH·리버스셸·웹RCE) 무관 수집 |
