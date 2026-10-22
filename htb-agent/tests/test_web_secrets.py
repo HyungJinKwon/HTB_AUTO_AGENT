@@ -170,5 +170,43 @@ check("헤더 프로브가 302 Location 에서 vhost 자동 등록", (orcH.hosts
 check("등록 후 그 vhost 로 핑거프린트 진행", any("Host: enigma.htb" in f.command for f in repH.enum_findings))
 check("리다이렉트 vhost 앱에서 제품 결정적 식별", (orcH.world.web_product or "").lower() == "freepbx")
 
+print("\n=== _vhost_brute_stage (서브도메인 발견 — 예산 밖·도메인 정조준) ===")
+# vhost 등록 시: 타겟 IP 로 접속 + Host: FUZZ.<도메인> + ffuf -ac 로 서브도메인 브루트.
+# 발견 서브도메인(출력의 *.htb 토큰)은 _maybe_register_vhost 가 자동 등록 → 다음 스윕 열거.
+def vb_runner(c):
+    if c.startswith("ffuf") and "FUZZ.enigma.htb" in c:
+        return RunOutput(c, stdout="drive [Status: 200, Size: 1234]\ndrive.enigma.htb\n")
+    return RunOutput(c, stdout="")
+orcV = Orchestrator(guard(), FakeRunner(vb_runner), KnowledgeBase.load(), auto_approve_in_scope,
+                    flag_kind="boot2root", is_tool_available=lambda b: True,
+                    exploit_exec=True, auto_poc=True)
+orcV._start = orcV._clock(); orcV._deadline = None
+orcV.world = WorldModel(target=TARGET)
+orcV.hosts_map = {"enigma.htb": TARGET}          # 베이스 도메인 등록됨
+repV = OrchestrationReport(target=TARGET, flag_kind="boot2root")
+orcV._vhost_brute_stage(repV, mk_host())
+ffcmds = [f.command for f in repV.enum_findings if f.command.startswith("ffuf")]
+check("ffuf 서브도메인 브루트 1건 발사", len(ffcmds) == 1)
+check("IP 접속 + Host FUZZ.<도메인> 정조준(FUZZ.<IP> 아님)",
+      bool(ffcmds) and f"http://{TARGET}/" in ffcmds[0] and "Host: FUZZ.enigma.htb" in ffcmds[0]
+      and f"FUZZ.{TARGET}" not in ffcmds[0])
+check("와일드카드 자동 보정(-ac)", bool(ffcmds) and "-ac" in ffcmds[0])
+check("발견 서브도메인 자동 등록(drive.enigma.htb)",
+      (orcV.hosts_map or {}).get("drive.enigma.htb") == TARGET)
+# 도메인당 1회(dedup): 재호출해도 새 ffuf 없음
+n_before = len(ffcmds)
+orcV._vhost_brute_stage(repV, mk_host())
+check("도메인당 1회(dedup) — 재호출 시 새 브루트 없음",
+      len([f for f in repV.enum_findings if f.command.startswith("ffuf") and "FUZZ.enigma.htb" in f.command]) == n_before)
+# ffuf 미설치면 생략
+orcW = Orchestrator(guard(), FakeRunner(vb_runner), KnowledgeBase.load(), auto_approve_in_scope,
+                    flag_kind="boot2root", is_tool_available=lambda b: b != "ffuf",
+                    exploit_exec=True, auto_poc=True)
+orcW._start = orcW._clock(); orcW._deadline = None
+orcW.world = WorldModel(target=TARGET); orcW.hosts_map = {"enigma.htb": TARGET}
+repW2 = OrchestrationReport(target=TARGET, flag_kind="boot2root")
+orcW._vhost_brute_stage(repW2, mk_host())
+check("ffuf 미설치면 생략", not [f for f in repW2.enum_findings if f.command.startswith("ffuf")])
+
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

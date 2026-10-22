@@ -2,6 +2,36 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.28] — 2026-10-22
+
+실측(Enigma) 후속 — vhost 서브도메인 브루트를 전용 스테이지로 승격(예산 밖·도메인 정조준).
+
+배경: v2.39.26/27 로 vhost(enigma.htb) 자동등록·웹앱 도달·ffuf `-ac` 보정까진 됐으나, vhost
+브루트가 **KB 룰 경유(일반 enum)**라 실측에서 두 가지로 막혔다 — ① enum 상한에 밀려 매번
+'상한 초과 → 수동'(실행 자체 안 됨) ② `{t}`→타겟 IP 치환으로 `Host: FUZZ.<IP>`(무의미)로 조립.
+
+### 추가(Added)
+- **`_vhost_brute_stage` 전용 소비 스테이지**(scheduler `vhost_brute`): vhost 가 등록되면 그
+  **베이스 도메인**에 대해 **타겟 IP 접속 + `Host: FUZZ.<도메인>` + ffuf `-ac`** 로 서브도메인
+  브루트를 **`budgeted=False`(enum 상한 밖)** 로 1회 돌린다. 발견 서브도메인은 출력의 `*.htb`
+  토큰을 `_maybe_register_vhost` 가 자동 등록 → 다음 스윕에 그 앱 열거(완결 체인). ffuf 미설치
+  시 생략·도메인당 1회.
+
+### 수정(Fixed)
+- **scope_guard: ffuf/wfuzz vhost 퍼징(`FUZZ.<도메인>`) 인식**. `FUZZ.<도메인>` 의 부모 도메인이
+  in-scope(hosts_map 등록 vhost/바인딩 타겟)면 '서브도메인 퍼징'으로 보고 그 분류를 적용(허용).
+  부모가 범위 밖이면 종전대로 미해석→확인 필요로 거부(`FUZZ.evil.com`→`evil.com`→범위 밖, 우회
+  아님). FUZZ 가 아닌 미등록 호스트의 일반 경로는 불변. (이 처리 없이는 vhost 브루트가 스코프
+  게이트에서 '범위 밖'으로 거부돼 실행 자체가 안 됐다.)
+- **vhost 발견을 '원본' 출력에서**(`_process`): `_maybe_register_vhost` 에 요약(output) 대신
+  원본(raw_output)을 넘겨, 요약기가 ffuf/헤더 출력의 서브도메인·Location 줄을 트렁케이트로
+  날려도 등록되게 한다.
+
+### 검증
+- `test_web_secrets`(+6): vhost 브루트 발사·IP+Host FUZZ 정조준·`-ac`·발견 서브도메인 자동등록·
+  dedup·ffuf 미설치 생략. `test_scope_hardening`(+3): FUZZ 부모 in-scope 허용/외부 거부/일반 불변.
+  전체 스위트·ruff·mypy·gen_cli_docs 클린.
+
 ## [2.39.27] — 2026-10-22
 
 실측(Enigma) 후속 — vhost 서브도메인 브루트의 와일드카드 보정.

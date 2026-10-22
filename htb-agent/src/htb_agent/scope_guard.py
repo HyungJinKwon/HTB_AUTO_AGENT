@@ -403,6 +403,24 @@ class ScopeGuard:
                     seen_tok.add(host)
                     self._flag_encoded(result, host, dec)
                 continue
+            # ffuf/wfuzz vhost 퍼징: 'FUZZ.<도메인>' 은 <도메인> 의 '서브도메인 퍼징'이다. 부모
+            # 도메인이 in-scope(hosts_map 등록 vhost 또는 바인딩 타겟)면 그 분류를 그대로 적용한다
+            # — 서브도메인 열거는 in-scope 작업. 부모가 범위 밖이면 이 분기를 타지 않고 아래 일반
+            # 경로로 떨어져 '미해석 → 확인 필요'로 거부된다(FUZZ.evil.com → evil.com → 범위 밖,
+            # 우회 아님). FUZZ 는 ffuf 의 고정 키워드(명령에서 소문자화되어 'fuzz' 로 들어온다).
+            labels = host.split(".")
+            if len(labels) >= 3 and labels[0] == "fuzz":
+                parent = ".".join(labels[1:])
+                presolved = hosts_map.get(parent)
+                if presolved:
+                    cls = self.classify_ip(presolved)
+                    result.classified.append((host, cls, f"(vhost 퍼징 → {parent}→{presolved})"))
+                    if cls == IPClass.UNKNOWN:
+                        result.needs_confirmation.append(f"{host}({presolved})")
+                    continue
+                if self.bound_host is not None and parent == self.bound_host:
+                    result.classified.append((host, IPClass.TARGET, "(vhost 퍼징 → 바인딩 타겟)"))
+                    continue
             resolved = hosts_map.get(host.lower())
             if resolved:
                 cls = self.classify_ip(resolved)
