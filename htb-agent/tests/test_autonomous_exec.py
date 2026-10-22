@@ -71,15 +71,16 @@ check("파이프 명령이 비-셸에서 거부됨",
 
 
 print("\n=== LLM 파일 액션: 셸 러너(미강제)에선 수동 제안으로 ===")
-from htb_agent.tools.sandbox import ShellRunner
 ws = new_ws()
 prov2 = FakeProvider('[{"command":"python3 solve.py","hypothesis":"H1","rationale":"r",'
                      '"expected_signal":"flag","file":{"path":"solve.py","content":"print(1)\\n"}}]')
-sr = ShellRunner(workdir=ws.root)   # shell=True, contained=False
+# 능력 플래그만 'shell=True, contained=False' 로 광고하는 FakeRunner — 파일 액션 강등 분기만
+# 검증한다(실제 쓰기/실행은 아래 contained=True 블록이 커버). 과거엔 실 ShellRunner 를 써서
+# RECON 이 '진짜 nmap' 을 (이 샌드박스에서 도달 불가한) 타겟에 실행 → 네트워크에서 간헐 행(hang)
+# 을 유발했다. 가짜 nmap 출력(resp_web)으로 대체해 그 경로를 제거한다(행위·커버리지 불변).
+sr = FakeRunner(resp_web, shell=True, contained=False)
 orc = Orchestrator(guard(), sr, kb, auto_approve_in_scope, llm_router=LLMRouter(prov2),
                    workspace=ws, is_tool_available=ALL, max_sweeps=1, max_rounds=1)
-# 러너 교체: nmap 결과를 주도록 FakeRunner 로 포트만 세팅하기 어려우므로 ShellRunner 로 실제 echo
-# (여기선 파일 액션 분기만 검증 — 네트워크 없는 포트 결과는 아래 오프라인 테스트에서 다룸)
 rep = orc.run()
 # contained=False 이므로 solve.py 를 쓰지 않고 수동 제안에 남겨야 함
 denied = [m for m in rep.manual_suggestions if "solve.py" in m]

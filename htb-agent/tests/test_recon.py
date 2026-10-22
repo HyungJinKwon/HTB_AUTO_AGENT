@@ -63,5 +63,31 @@ check("6 옵션 추출", "-sV" in ex and "-oX" in ex)
 ex2 = explain_command("msfvenom LHOST=10.10.14.5 LPORT=443 -f elf")
 check("6 환경변수형 인자 표기", "LHOST=10.10.14.5" in ex2)
 
+print("\n=== 오프라인(ASSASSIN_NO_NET): 실 러너는 실제 스캔 생략(행 방지) ===")
+import os
+class _RealStub:
+    """real_exec=True 실 러너 모사 — run() 이 호출되면 기록(가드가 막으면 호출 0)."""
+    real_exec = True
+    def __init__(self): self.calls = []
+    def has_tool(self, b): return True
+    def run(self, command, timeout=120):
+        self.calls.append(command)
+        return FakeRunner(lambda c: UP).run(command)
+_old = os.environ.get("ASSASSIN_NO_NET")
+os.environ["ASSASSIN_NO_NET"] = "1"
+try:
+    rs = _RealStub()
+    rep = ReconExecutor(guard(), rs, auto_approve_in_scope).run_portscan()
+    check("NO_NET+실러너: 실제 nmap/소켓 미호출(행 방지)", rs.calls == [])
+    check("NO_NET+실러너: escalate(호스트 없음)", rep.status == "escalate" and rep.host is None)
+    check("NO_NET+실러너: 어떤 시도도 ran=False", all(not a.ran for a in rep.attempts))
+    # FakeRunner(real_exec=False)는 NO_NET 이어도 생략 안 함 — 가짜 결과 그대로(테스트 불변식 보존)
+    rf = FakeRunner(lambda c: UP)
+    repf = ReconExecutor(guard(), rf, auto_approve_in_scope).run_portscan()
+    check("NO_NET+가짜러너: 가드 비적용(가짜 결과로 성공)", repf.status == "success")
+finally:
+    if _old is None: os.environ.pop("ASSASSIN_NO_NET", None)
+    else: os.environ["ASSASSIN_NO_NET"] = _old
+
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

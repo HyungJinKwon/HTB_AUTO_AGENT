@@ -24,6 +24,7 @@ from typing import Callable
 from ..command_validator import ValidationReport, validate
 from ..observation.parsers import NmapHost, NmapResult, parse_nmap_xml
 from ..scope_guard import CommandScopeResult, ScopeGuard, ScopeViolation
+from ..util import network_blocked
 from .runner import Runner, RunOutput
 
 # (레이블, 명령 템플릿, 타임아웃초)
@@ -149,6 +150,21 @@ class ReconExecutor:
         # 호스트명 타겟(CTF)도 지원: IP 가 없으면 호스트명으로 스캔(nmap 가 해석)
         target = str(self.guard.bound_target or self.guard.bound_host)
         report = ReconReport(target=target, status="escalate")
+
+        # 오프라인/네트워크 차단(ASSASSIN_NO_NET): 실제 실행 러너에서 '진짜 nmap/소켓 스캔'을
+        # 내보내지 않는다. NO_NET 은 '실제 아웃바운드 없음'을 뜻하므로, 실 러너로 recon 을 돌리면
+        # 도달 불가 타겟에 대해 nmap 이 자신의 타임아웃까지(분 단위) 블록돼 테스트·오프라인 실행이
+        # 간헐적으로 멈춘다. 여기서 명시적으로 생략해 그 행(hang)을 구조적으로 제거한다. FakeRunner
+        # (real_exec=False)는 실제 네트워크를 쓰지 않으므로 이 가드의 대상이 아니다(가짜 결과 그대로).
+        if self.real_exec and network_blocked():
+            report.attempts.append(AttemptRecord(
+                label="오프라인(ASSASSIN_NO_NET) — 실제 스캔 생략",
+                command="[skipped: ASSASSIN_NO_NET]",
+                validated=True, scope_ok=True, approved=True, ran=False,
+                note="ASSASSIN_NO_NET=1 — 실제 네트워크 스캔(nmap/소켓) 생략(오프라인·테스트)"))
+            report.message = ("오프라인 모드(ASSASSIN_NO_NET) — 실제 포트스캔 미실행. "
+                              "실제 스캔이 필요하면 ASSASSIN_NO_NET 을 해제하라.")
+            return report
 
         # nmap 이 없으면 순수 파이썬 TCP-connect 폴백으로 포트를 발견한다(바인딩 타겟만).
         # 단, 실제 실행 러너일 때만 — FakeRunner(테스트)에선 실제 소켓 접속을 하지 않는다.
