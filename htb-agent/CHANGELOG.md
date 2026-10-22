@@ -2,6 +2,23 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.23] — 2026-10-22
+
+동료 lab `tools/session.py`(지속 PTY 셸 러너) 이식 — lab 유용 모듈 이식 완료.
+
+### 추가(Added)
+- **`tools/session.py` 이식(동료 해커톤 lab)** — `ShellSession`: `pexpect` 기반 지속 PTY bash
+  러너. `Runner` 프로토콜(`run(command, timeout)->RunOutput`) 호환 드롭인. 작업디렉토리·env
+  유지, 파이프/리다이렉트, nc·ssh·evil-winrm·gdb 대화형(`send_line`/`expect`/`sendintr`), 긴
+  스캔 백그라운드(`start_background`/`bg_output`/`bg_kill`), EOF 자동 respawn·타임아웃 Ctrl-C 복구.
+  `shell=True`/`contained=False` 광고. 검증은 앞단 가드(3관문)가 담당(이 러너는 검증 안 함).
+- **`--shell-session` 옵트인 + `[shell]` extra(`pexpect>=4.8`)**: 샌드박스 미지정 시 로컬 실행기를
+  ShellSession 으로. pexpect 미설치/생성 실패면 경고 후 기본 SubprocessRunner 로 폴백(기본 동작 보존).
+
+### 검증
+- `test_session`(14): 가짜 pexpect 주입으로 run() 마커 프로토콜(stdout·rc·타임아웃·Ctrl-C 복구),
+  pexpect 미설치 degrade(SessionError), 순수 헬퍼·클래스 속성. 전체 스위트·ruff·mypy·gen_cli_docs 클린.
+
 ## [2.39.22] — 2026-10-22
 
 동료 lab `tiering.py` 선별 이식 — 라운드 기반 티어 상승 + 모델별 프롬프트 예산.

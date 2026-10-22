@@ -173,6 +173,7 @@ cd htb-agent && python3 tests/run_all.py     # 전체 스위트(끝에 '총 N �
 | `--exploit-modules` `FILE` | 사용자 익스 모듈 매니페스트(JSON). 코드 수정 없이 CVE 모듈(핑거프린트·취약버전·PoC 출처·실행템플릿·웹셸 파서)을 추가해 다른 CVE/머신에 적용 |
 | `--sandbox` | 명령을 '어디서' 실행할지: none=로컬 셸 비경유(기본, 파이프 불가) · shell=로컬 bash(파이프 O, 네트워크 강제 X) · docker=Kali 컨테이너+egress 방화벽 · vm=SSH 로 접속한 가상머신/공격호스트. 스크립트 작성·동적 실행 자동은 egress 강제된 docker 또는 'vm --vm-confine' 에서만 |
 | `--sandbox-image` `IMAGE` | docker 샌드박스 이미지(기본 assassin-sandbox:latest — scripts/build_sandbox.sh) |
+| `--shell-session` | 로컬 명령 실행기를 '지속 PTY bash 세션'(pexpect)으로 — 작업디렉토리·env 유지, 파이프/리다이렉트, nc·ssh·gdb 등 대화형, 긴 스캔 백그라운드. 샌드박스 미지정 시에만 적용(docker/vm 우선). pexpect 필요(pip install .[shell]). 기본 OFF |
 | `--vm-ssh` `USER@HOST` | --sandbox vm: 명령을 실행할 VM 의 SSH 접속 대상(예: kali@192.168.56.10) |
 | `--vm-ssh-key` `KEYFILE` | --sandbox vm: SSH 개인키 파일(미지정 시 ssh 기본·에이전트 사용) |
 | `--vm-ssh-port` `PORT` | --sandbox vm: SSH 포트(기본 22) |

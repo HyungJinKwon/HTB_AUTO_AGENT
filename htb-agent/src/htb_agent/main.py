@@ -224,6 +224,10 @@ def build_parser(full: bool = False) -> argparse.ArgumentParser:
                         "egress 강제된 docker 또는 'vm --vm-confine' 에서만")
     g_mode.add_argument("--sandbox-image", default=None, metavar="IMAGE",
                    help="docker 샌드박스 이미지(기본 assassin-sandbox:latest — scripts/build_sandbox.sh)")
+    g_mode.add_argument("--shell-session", action="store_true", dest="shell_session",
+                   help="로컬 명령 실행기를 '지속 PTY bash 세션'(pexpect)으로 — 작업디렉토리·env 유지, "
+                        "파이프/리다이렉트, nc·ssh·gdb 등 대화형, 긴 스캔 백그라운드. 샌드박스 미지정 시에만 "
+                        "적용(docker/vm 우선). pexpect 필요(pip install .[shell]). 기본 OFF")
     g_mode.add_argument("--vm-ssh", default=None, metavar="USER@HOST",
                    help="--sandbox vm: 명령을 실행할 VM 의 SSH 접속 대상(예: kali@192.168.56.10)")
     g_mode.add_argument("--vm-ssh-key", default=None, metavar="KEYFILE",
@@ -925,6 +929,16 @@ def _run_target(args, cfg, knowledge_dir, runner) -> int:
         runner = sandbox
         state = ("egress 강제 " + ", ".join(cidrs)) if sandbox.contained else "네트워크 강제 없음"
         print(ui.kv("실행기", ui.ok(f"vm {vm_ssh} · {state}"), 10))
+    # [lab:session] 지속 PTY 셸 러너(--shell-session) — 샌드박스 미선택 시에만. pexpect 없거나
+    # 생성 실패면 경고 후 기본 SubprocessRunner 로 폴백(기본 동작 보존).
+    if runner is None and getattr(args, "shell_session", False):
+        try:
+            from .tools.session import ShellSession
+            runner = ShellSession()
+            print(ui.kv("실행기", ui.ok("지속 PTY bash 세션(pexpect) — 작업디렉토리·env 유지"), 10))
+        except Exception as e:  # noqa: BLE001 — SessionError(pexpect 미설치)·spawn 실패 모두 폴백
+            print(ui.mark_warn(f"--shell-session 비활성(기본 실행기로 폴백): {e} "
+                               "— 설치: pip install .[shell]"))
     if args.autonomous and not getattr(runner, "contained", False):
         print(ui.mark_warn("완전자율인데 egress 강제 샌드박스가 없음 — 스크립트 작성·동적 실행은 "
                            "수동 제안으로 남습니다(권장: --sandbox docker, 또는 --sandbox vm --vm-confine)"))
