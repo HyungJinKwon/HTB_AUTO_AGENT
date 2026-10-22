@@ -410,9 +410,45 @@ def _view_manual(report, ui) -> list[str]:
     return out
 
 
-def render_summary(report) -> str:
-    """터미널 요약 — 얇은 스파인이 섹션 렌더러(_view_*)를 선언 순서대로 이어 붙인다.
-    REPETITION 분석(_rr)은 스파인에서 1회 계산해 REPETITION·NEXT OPTIONS 두 섹션에 공유한다."""
+def _folded_summary(report, ui) -> list[str]:
+    """비-verbose 기본 화면: 무거운 '준비·참고' 섹션을 '한 줄 요약 + 건수'로 접는다.
+    전체 상세는 --verbose(또는 항상 보존되는 --html/--json). 빈 섹션은 행을 안 만든다."""
+    def _n(attr):
+        return len(getattr(report, attr, None) or [])
+    rows = []
+    allf = report.enum_findings + report.llm_findings
+    if allf:
+        rows.append(ui.kv("단계 진행", f"실행 {sum(1 for f in allf if f.ran)} · 수집 {len(allf)}건", 11))
+    if report.blockers:
+        rows.append(ui.kv("막힌 지점", f"{len(report.blockers)}건 (사람 확인용)", 11))
+    if _n("vuln_matches") or _n("discovered_cve"):
+        rows.append(ui.kv("취약점", f"{_n('vuln_matches')} 매칭 · 자동발견 CVE {_n('discovered_cve')}", 11))
+    if _n("enriched"):
+        rows.append(ui.kv("CVE 레퍼런스", f"{_n('enriched')}건 (NVD/GitHub)", 11))
+    if _n("revshells"):
+        lh = getattr(report, "revshell_lhost", "") or "?"
+        lp = getattr(report, "revshell_lport", 0) or 0
+        rows.append(ui.kv("리버스쉘 준비", f"{_n('revshells')}종 (LHOST {lh}:{lp})", 11))
+    if _n("cloud_candidates"):
+        rows.append(ui.kv("AWS/S3 후보", f"{_n('cloud_candidates')}", 11))
+    if _n("privesc_steps"):
+        rows.append(ui.kv("권한상승 준비", f"{_n('privesc_steps')} 체크", 11))
+    if _n("crack_jobs"):
+        rows.append(ui.kv("해시 크래킹", f"{_n('crack_jobs')} 작업", 11))
+    if _n("lateral_candidates"):
+        rows.append(ui.kv("측면 이동", f"{_n('lateral_candidates')} 후보", 11))
+    if _n("manual_suggestions"):
+        rows.append(ui.kv("수동 제안", f"{_n('manual_suggestions')}건", 11))
+    if not rows:
+        return []
+    return ["\n" + ui.panel("접힌 섹션  (전체: --verbose · 대시보드: --html)", rows, style="navy")]
+
+
+def render_summary(report, verbose: bool = False) -> str:
+    """터미널 요약 — 얇은 스파인이 섹션 렌더러(_view_*)를 이어 붙인다.
+    기본(verbose=False)은 핵심(RECON·PROFILE·STATE·플래그·다음행동)만 보이고 무거운 섹션은
+    '접힌 섹션' 한 줄 요약으로 접는다. --verbose 면 모든 섹션을 전개(과거 동작). 전체 상세는
+    --html/--json 에 항상 보존. REPETITION 분석(_rr)은 1회 계산해 공유."""
     from . import repetition as _rep
     from . import ui
     st = ui.ok if report.status == "done" else ui.accent2
@@ -423,24 +459,30 @@ def render_summary(report) -> str:
     lines += _view_recon(report, ui)
     lines += _view_profile(report, ui)
     lines += _view_state(report, ui)
-    lines += _view_plan(report, ui)
-    lines += _view_analysis(report, ui)
-    lines += _view_learn(report, ui)
-    lines += _view_phases(report, ui)
-    lines += _view_blockers(report, ui)
     _rr = _rep.analyze(report.enum_findings + report.llm_findings, report.blockers)
-    lines += _view_repetition(report, ui, _rr)
-    lines += _view_provenance(report, ui)
-    lines += _view_next_options(report, ui, _rr)
-    lines += _view_vuln(report, ui)
-    lines += _view_enriched(report, ui)
-    lines += _view_flags(report, ui)
-    lines += _view_revshell(report, ui)
-    lines += _view_cloud(report, ui)
-    lines += _view_privesc(report, ui)
-    lines += _view_crack(report, ui)
-    lines += _view_lateral(report, ui)
-    lines += _view_manual(report, ui)
+    if verbose:
+        lines += _view_plan(report, ui)
+        lines += _view_analysis(report, ui)
+        lines += _view_learn(report, ui)
+        lines += _view_phases(report, ui)
+        lines += _view_blockers(report, ui)
+        lines += _view_repetition(report, ui, _rr)
+        lines += _view_provenance(report, ui)
+        lines += _view_next_options(report, ui, _rr)
+        lines += _view_vuln(report, ui)
+        lines += _view_enriched(report, ui)
+        lines += _view_flags(report, ui)
+        lines += _view_revshell(report, ui)
+        lines += _view_cloud(report, ui)
+        lines += _view_privesc(report, ui)
+        lines += _view_crack(report, ui)
+        lines += _view_lateral(report, ui)
+        lines += _view_manual(report, ui)
+    else:
+        # 컴팩트 기본 — 핵심만: 플래그(있으면) + 다음 행동 + 접힌 섹션 요약
+        lines += _view_flags(report, ui)
+        lines += _view_next_options(report, ui, _rr)
+        lines += _folded_summary(report, ui)
     solved = render_solved(report)
     if solved:
         lines.append("\n" + solved)

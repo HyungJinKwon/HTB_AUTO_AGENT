@@ -177,9 +177,9 @@ class OrchestrationReport:
     def root_flag(self) -> str | None:
         return next((f.value for f in self.flags if f.kind == "root"), None)
 
-    def summary(self) -> str:
+    def summary(self, verbose: bool = False) -> str:
         from . import report_view
-        return report_view.render_summary(self)
+        return report_view.render_summary(self, verbose=verbose)
 
     def glance(self) -> str:
         """맨 끝 '한눈에 보기' — report_view.render_glance 로 위임(렌더링은 report_view)."""

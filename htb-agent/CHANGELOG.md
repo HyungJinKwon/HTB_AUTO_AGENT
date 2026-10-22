@@ -2,6 +2,28 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.20] — 2026-10-22
+
+터미널 출력을 '직관적인 컴팩트 기본'으로 + 동료 lab 에서 유용 모듈 이식 시작.
+
+### 변경(Changed)
+- **터미널 요약 컴팩트 기본화 + `-v`/`--verbose`**: `render_summary` 가 17개 섹션을 무조건 전부
+  찍어 핵심(포트·OS·플래그·다음행동)이 수백 줄 더미에 묻히던 문제 개선. 기본은 **핵심만**
+  (RECON·PROFILE·STATE·FLAGS·NEXT OPTIONS·한눈에보기) 보이고, 무거운 '준비·참고' 섹션
+  (단계 명령·CVE 레퍼런스·리버스쉘·AWS/S3·privesc·수동제안 등)은 **'접힌 섹션' 한 줄 요약+건수**
+  로 접는다. `-v`/`--verbose` 면 모든 섹션 전개(과거 동작). **전체 상세는 `--html`/`--json` 에
+  항상 보존**(손실 없음). 대략 수백 줄 → 수십 줄.
+
+### 추가(Added)
+- **`llm/context.py` 이식(동료 해커톤 lab `pokochy/htb-autonomous-agent-lab`)** — LLM 프롬프트
+  토큰예산·우선순위 트리밍(`est_tokens` CJK 가중 보수 추정 + `ContextBuilder` target/ceiling/fixed
+  예산, 구역 생존·렌더순서 분리). 외부 의존성 0. (후속: 라우터 프롬프트 배선 예정.)
+
+### 검증
+- `test_report_view_sections`(+8): 컴팩트 접힘·건수 노출·verbose 전개·길이 축소. 기존 요약
+  섹션 검증 테스트 10종은 상세 확인분을 `verbose=True` 로 보존. `test_llm_context`(15).
+  전체 스위트·ruff·mypy·gen_cli_docs 클린.
+
 ## [2.39.19] — 2026-10-22
 
 메일(IMAP/POP3) 발판 추가 — webmail 계정 자격으로 발판이 끊기던 갭(Enigma)을 메운다.

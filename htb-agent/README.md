@@ -221,4 +221,5 @@ cd htb-agent && python3 tests/run_all.py     # 전체 스위트(끝에 '총 N �
 | `--writeup-format` | 라이트업 형식: htb(기본, htb-ctf-writeup-v5) / tistory(13섹션) |
 | `--json` | 결과를 기계판독 JSON 으로 내보내기(경로 생략 시 &lt;state-dir&gt;/report_&lt;타겟&gt;.json) |
 | `--html` | 결과를 HTML 대시보드로 내보내기(블루/네이비, 경로 생략 시 &lt;state-dir&gt;/report_&lt;타겟&gt;.html) |
+| `--verbose` | 터미널 요약을 '전체'로 — 기본은 핵심(포트·OS·플래그·다음행동)만 보이고 무거운 섹션(단계 명령·CVE·리버스쉘·AWS·privesc·수동제안)은 '접힌 섹션' 한 줄 요약으로 접힌다. 이 플래그면 모든 섹션 전개(상세는 --html/--json 에도 항상 저장됨) |
 <!-- CLI-OPTIONS:END -->

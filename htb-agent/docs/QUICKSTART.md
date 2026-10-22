@@ -45,6 +45,7 @@ assassin --setup-llm                # (선택) Claude·로컬 LLM 연결 마법�
 | CTF/Dreamhack 문제 | `assassin chall.host:1337 --platform ctf --category web` |
 | 중단한 곳부터 이어서 | 같은 명령 + `--resume` (Ctrl+C 로 멈춰도 저장됨) |
 | 자격증명을 넣어 자동으로 채우기 | `--cred 사용자:비밀번호` |
+| 터미널 요약 전체 보기 | `-v`/`--verbose` (기본은 핵심만·무거운 섹션은 접힘 · 전체 상세는 `--html`/`--json`) |
 
 > **완전 자동 루트 한 줄의 플래그 뜻** — `--full-auto`(한 플래그 번들: `--autonomous` +
 > `--exploit-exec` + `--auto-poc` + `--catch-revshell` + `--fetch-pocs` + `--priv-env`(환경조작), 가능하면 egress

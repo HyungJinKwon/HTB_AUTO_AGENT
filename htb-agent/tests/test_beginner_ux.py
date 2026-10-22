@@ -108,7 +108,7 @@ check("변형 숨김 + 꼬리표 제거", c == ["curl -s http://x/a", "gobuster 
                                "smbclient -L //x/ -N"])
 rp = OrchestrationReport(target="10.129.1.5")
 rp.manual_suggestions = [f"tool{i} 10.129.1.5   # (상한 초과 — 수동)" for i in range(12)]
-sm = rp.summary()
+sm = rp.summary(verbose=True)
 check("묶음당 6개만 + '외 N개' 안내", "tool5" in sm and "tool6 " not in sm and "외 6개" in sm)
 
 print("\n=== 다음 선택지: 같은 문구 반복 대신 종류별 한 줄 ===")

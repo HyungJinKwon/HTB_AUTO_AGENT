@@ -159,7 +159,7 @@ check("비고에 신호 대조 표시", any("H1 신호 불일치" in (f.note or 
 check("화면: 지금 집중·재계획 요청 안내", "지금 집중" in out and "재계획 요청" in out)
 check("표시용 분석에 기계용 JSON 없음", "가설기록" not in rep.analysis)
 check("가설 확인은 목표 판정에 쓰이지 않음", rep.goal_reached is False and not rep.flags)
-check("요약에 PLAN(가설 보드)", "PLAN" in rep.summary() and "H2" in rep.summary())
+check("요약에 PLAN(가설 보드)", "PLAN" in rep.summary(verbose=True) and "H2" in rep.summary(verbose=True))
 
 print("\n=== 산출물: JSON·HTML·라이트업·재생·벤치 ===")
 from htb_agent import bench as B  # noqa: E402

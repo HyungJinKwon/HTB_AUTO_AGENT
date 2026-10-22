@@ -60,7 +60,7 @@ rep = Orchestrator(guard(), r, KnowledgeBase.load(), auto_approve_in_scope,
                    vuln_kb=VulnKB.load(), is_tool_available=lambda b: True).run()
 check("스크립트 출력서 CVE 추출", "CVE-2011-2523" in rep.detected_cve)
 check("버전 매핑으로 취약점 매칭", any("CVE-2011-2523" in vm.cve for vm in rep.vuln_matches))
-check("요약에 VULN 섹션", "VULN" in rep.summary() and "CVE-2011-2523" in rep.summary())
+check("요약에 VULN 섹션", "VULN" in rep.summary(verbose=True) and "CVE-2011-2523" in rep.summary(verbose=True))
 
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

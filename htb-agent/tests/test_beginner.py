@@ -113,7 +113,7 @@ check("상한 초과 묶음 + --max-enum 안내", "--max-enum" in gr["상한 초
 check("무거운 점검 묶음", "무거운 점검(직접 실행 권장)" in gr)
 check("기타로 빠짐(누락 없음)", sum(len(v[1]) for v in gr.values()) == len(items))
 rp = OrchestrationReport(target=T); rp.manual_suggestions = items
-sm = rp.summary()
+sm = rp.summary(verbose=True)
 check("요약 화면에 종류별 제목·안내", "바로 적용하는 법" in sm and "→ --cred" in sm)
 
 print("\n=== 초보자 안내 보강(검토 후속) ===")

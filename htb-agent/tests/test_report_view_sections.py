@@ -51,7 +51,7 @@ def rich_report():
 
 
 print("=== render_summary: 모든 섹션 렌더(크래시 없음) ===")
-out = report_view.render_summary(rich_report())
+out = report_view.render_summary(rich_report(), verbose=True)
 for name, marker in [("RECON", "RECON"), ("PROFILE", "PROFILE"), ("STATE", "STATE"),
                      ("PLAN", "PLAN"), ("ANALYSIS", "ANALYSIS"), ("LEARN", "LEARN"),
                      ("PROVENANCE", "PROVENANCE"), ("VULN", "VULN"), ("FLAG", "플래그 (FLAG)"),
@@ -68,7 +68,7 @@ check("헤딩이 선언 순서대로 등장", all(a < b for a, b in zip(position
 
 print("\n=== 빈 리포트는 헤더만(섹션 없음·크래시 없음) ===")
 empty = OrchestrationReport(target="t")
-eout = report_view.render_summary(empty)
+eout = report_view.render_summary(empty, verbose=True)
 check("ASSASSIN 헤더 존재", "ASSASSIN" in eout)
 check("빈 리포트엔 VULN 섹션 없음", "VULN  (탐지" not in eout)
 
@@ -76,6 +76,18 @@ print("\n=== 섹션 렌더러는 해당 없으면 빈 목록 ===")
 from htb_agent import ui  # noqa: E402
 check("_view_vuln 빈 → []", report_view._view_vuln(empty, ui) == [])
 check("_view_lateral 빈 → []", report_view._view_lateral(empty, ui) == [])
+
+print("\n=== 컴팩트 기본(verbose=False): 무거운 섹션 접힘 + '접힌 섹션' 요약 ===")
+compact = report_view.render_summary(rich_report(), verbose=False)
+check("접힌 섹션 요약 블록 존재", "접힌 섹션" in compact)
+check("핵심(RECON·STATE) 은 보임", "RECON" in compact and "월드 모델" in compact)
+check("무거운 섹션 헤딩은 접힘(리버스쉘 상세 숨김)", "리버스쉘 (자동 준비" not in compact)
+check("VULN 상세 섹션 접힘", "VULN  (탐지" not in compact)
+check("수동 제안 상세 섹션 접힘", "수동 제안 — 종류별" not in compact)
+check("접힌 요약에 건수 노출(리버스쉘/수동 제안)",
+      "리버스쉘 준비" in compact and "수동 제안" in compact)
+check("컴팩트가 verbose 보다 짧음", len(compact) < len(out))
+check("한눈에 보기는 컴팩트에도 유지", "한눈에 보기" in compact)
 
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
