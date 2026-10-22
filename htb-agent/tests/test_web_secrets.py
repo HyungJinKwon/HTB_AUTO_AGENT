@@ -137,7 +137,8 @@ check("버전도 식별(16.0.40.7)", orcF.world.web_version == "16.0.40.7")
 n = len(repF.enum_findings)
 orcF._web_fingerprint_stage(repF, mk_host())
 check("제품 식별 후엔 핑거프린트 생략", len(repF.enum_findings) == n)
-# vhost 미등록이면 생략(리다이렉트 관측 전)
+# vhost 미등록 → 헤더 프로브(-sI/-I)로 리다이렉트 Location 을 1회 탐색. Location 이 없으면
+# vhost 미등록 → 전체 핑거프린트(Host 헤더)로 진행하지 않는다(탐색 프로브 1건만).
 orcG = Orchestrator(guard(), FakeRunner(fp_runner), KnowledgeBase.load(), auto_approve_in_scope,
                     flag_kind="boot2root", is_tool_available=lambda b: True,
                     exploit_exec=True, auto_poc=True)
@@ -145,7 +146,29 @@ orcG._start = orcG._clock(); orcG._deadline = None
 orcG.world = WorldModel(target=TARGET)
 repG = OrchestrationReport(target=TARGET, flag_kind="boot2root")
 orcG._web_fingerprint_stage(repG, mk_host())
-check("vhost 미등록이면 핑거프린트 생략", not repG.enum_findings)
+disc = [f for f in repG.enum_findings if "-sI" in f.command or "-I " in f.command]
+check("vhost 미등록 → 헤더 프로브로 리다이렉트 1회 탐색", len(disc) == 1)
+check("Location 없으면 Host 헤더 핑거프린트 미진행",
+      not [f for f in repG.enum_findings if "Host:" in f.command])
+
+# vhost 미등록이어도, 루트가 '다른 호스트'로 302 하면(Location 헤더) 헤더 프로브가 그걸 잡아
+# vhost 를 자동 등록하고 그 자리에서 핑거프린트까지 진행한다(웹 리다이렉트 박스 해금).
+def redir_runner(c):
+    if "-sI" in c or "-I " in c:   # 헤더 프로브 → 다른 vhost 로 302
+        return RunOutput(c, stdout="HTTP/1.1 302 Found\r\nLocation: http://enigma.htb/\r\n\r\n")
+    if "config.php" in c or "Host: enigma.htb" in c:
+        return RunOutput(c, stdout=FP_PAGE)
+    return RunOutput(c, stdout="302 Found")
+orcH = Orchestrator(guard(), FakeRunner(redir_runner), KnowledgeBase.load(), auto_approve_in_scope,
+                    flag_kind="boot2root", is_tool_available=lambda b: True,
+                    exploit_exec=True, auto_poc=True)
+orcH._start = orcH._clock(); orcH._deadline = None
+orcH.world = WorldModel(target=TARGET)          # vhost 미등록으로 시작
+repH = OrchestrationReport(target=TARGET, flag_kind="boot2root")
+orcH._web_fingerprint_stage(repH, mk_host())
+check("헤더 프로브가 302 Location 에서 vhost 자동 등록", (orcH.hosts_map or {}).get("enigma.htb") == TARGET)
+check("등록 후 그 vhost 로 핑거프린트 진행", any("Host: enigma.htb" in f.command for f in repH.enum_findings))
+check("리다이렉트 vhost 앱에서 제품 결정적 식별", (orcH.world.web_product or "").lower() == "freepbx")
 
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

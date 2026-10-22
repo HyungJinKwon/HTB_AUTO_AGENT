@@ -79,6 +79,12 @@ _FIXED_POINT_CAP = 10
 
 # 리다이렉트 출력(요약)에서 vhost 추출: "→ http://connected.htb/" → connected.htb
 _REDIRECT_HOST_RE = re.compile(r"→\s*https?://([A-Za-z0-9.-]+?\.[A-Za-z]{2,})(?:[:/]|\s|$)")
+# raw HTTP 리다이렉트 헤더에서 vhost 추출: "Location: http://enigma.htb/" → enigma.htb
+# (웹 프로브가 -i/-I 로 헤더를 내면 302 Location 으로 vhost 를 자동 발견 — 요약 화살표 없이도).
+_LOCATION_HOST_RE = re.compile(r"(?im)^\s*location:\s*https?://([A-Za-z0-9.-]+?\.[A-Za-z]{2,})(?:[:/]|\s|$)")
+# 임의 도구 출력(NFS PDF·배너·본문)에 박힌 HTB 랩 vhost 토큰: "mail001.enigma.htb" 등.
+# .htb/.local 로 끝나는 호스트명만 — scope_guard 의 랩 vhost 특수취급과 동일(외부 도메인 비대상).
+_HTB_VHOST_RE = re.compile(r"\b((?:[A-Za-z0-9-]+\.)+(?:htb|local))\b", re.I)
 
 
 @dataclass
@@ -1662,8 +1668,21 @@ class Orchestrator(FootholdMixin):
         bases = self._web_bases(host)
         tgt = self.world.target
         vhosts = [h for h, ip in (self.hosts_map or {}).items() if ip == tgt]
-        if not bases or not vhosts:
-            return                      # vhost 미등록이면(아직 리다이렉트 관측 전) 다음 스윕에
+        if not bases:
+            return
+        if not vhosts:
+            # vhost 미등록 — 요약/본문에 아직 vhost 가 안 떴어도, 루트가 '다른 호스트'로 302
+            # 리다이렉트하는 (connected.htb·enigma.htb 류) 박스는 흔하다. 헤더 프로브(-sI)를 1회
+            # 쏘면 그 출력이 _process → _maybe_register_vhost 를 거쳐 Location 헤더에서 vhost 를
+            # 자동 등록한다(과거엔 여기서 return 해 vhost 리다이렉트 박스의 웹앱에 영영 못 닿았다).
+            dkey = "vhost-discover|" + ",".join(sorted(bases))
+            if dkey not in self._web_fp_probed:
+                self._web_fp_probed.add(dkey)
+                probe = f'curl -sI -k --max-time 10 {bases[0]}/'
+                self._attempt(report, report.enum_findings, probe, phase=phase, budgeted=False)
+                vhosts = [h for h, ip in (self.hosts_map or {}).items() if ip == tgt]
+            if not vhosts:
+                return                  # 리다이렉트 없음/외부 도메인 → 다음 스윕에
         from .web_secrets import _HOST_SAFE
         key = ",".join(sorted(bases)) + "|" + ",".join(sorted(vhosts))
         if key in self._web_fp_probed:
@@ -2316,9 +2335,20 @@ class Orchestrator(FootholdMixin):
         그 밖의 외부 도메인은 '등록하지 않고' 1회 수동 안내만 남긴다."""
         if not text or self.guard.bound_target is None:
             return
+        if not hasattr(self, "_vhost_seen"):
+            self._vhost_seen = set()   # run() 밖(스테이지 직접 호출)에서도 안전
         ip = str(self.guard.bound_target)
-        for m in _REDIRECT_HOST_RE.finditer(text):
-            host = m.group(1).lower().rstrip(".")
+        # 후보 수집: ① 요약 화살표(→ http://host) ② raw Location 헤더(웹 프로브 -i/-I 출력)
+        # ③ 본문/PDF/배너에 박힌 bare *.htb/*.local 토큰. ②가 핵심 — 과거엔 화살표 요약 형식만
+        # 봐서, curl 이 내는 '진짜 302 Location' 으로는 vhost 를 못 잡았다(웹 리다이렉트 박스 미해금).
+        # ③은 .htb/.local 만 받아(scope_guard 랩 vhost 특수취급과 동일) 외부 도메인 노이즈를 배제.
+        cands: list[str] = []
+        for rx in (_REDIRECT_HOST_RE, _LOCATION_HOST_RE, _HTB_VHOST_RE):
+            for m in rx.finditer(text):
+                h = m.group(1).lower().rstrip(".")
+                if h and h not in cands:
+                    cands.append(h)
+        for host in cands:
             if (not host or host in self._vhost_seen or not re.search(r"[a-z]", host)
                     or (self.hosts_map or {}).get(host)):
                 continue
