@@ -132,5 +132,18 @@ check(f"KB 제안 {total}건 중 신규 사유 0건", not bad)
 for cmd, nc in bad[:5]:
     print("     ↳", cmd[:90], nc)
 
+print("\n=== vhost 퍼징(FUZZ.<도메인>) — 부모 도메인 스코프로 판정 ===")
+# ffuf/wfuzz vhost 브루트는 'Host: FUZZ.<도메인>' 이 필수. 부모가 in-scope(hosts_map 등록
+# vhost)면 서브도메인 퍼징은 in-scope 로 허용되어야 한다(과거엔 FUZZ.<도메인> 이 미해석 →
+# 자동승인 거부 → vhost 브루트가 아예 안 돌았다).
+ok_fuzz = auto('ffuf -w w.txt -u http://10.129.1.5/ -H "Host: FUZZ.machine.htb" -ac')
+check("FUZZ.<in-scope 도메인> 은 자동허용(서브도메인 퍼징)", ok_fuzz)
+# 보안: 부모가 범위 밖이면 FUZZ 라도 허용 금지(대상 통제 리다이렉트/헤더로 스코프 우회 차단).
+bad_fuzz = auto('ffuf -w w.txt -u http://10.129.1.5/ -H "Host: FUZZ.evil.com" -ac')
+check("FUZZ.<외부 도메인> 은 여전히 거부(우회 아님)", not bad_fuzz)
+# 보안: FUZZ 가 아닌 미등록 서브도메인은 종전대로 확인 필요(일반 경로 불변 — FUZZ 만 특례)
+check("비-FUZZ 미등록 서브도메인은 종전대로 확인 필요",
+      not auto("curl -s http://other.machine.htb/"))
+
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

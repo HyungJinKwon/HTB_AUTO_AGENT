@@ -309,6 +309,7 @@ class Orchestrator(FootholdMixin):
         self._version_probed: set[str] = set()       # 제품별 버전 노출 프로브 1회 가드
         self._web_secret_probed: set[str] = set()     # 웹 노출 비밀/백업 열거 1회 가드(베이스별)
         self._web_fp_probed: set[str] = set()          # vhost 결정적 핑거프린트 1회 가드
+        self._vhost_brute_probed: set[str] = set()     # 도메인별 서브도메인 브루트 1회 가드
         self.poc_commands = poc_commands or []
         # 내장 익스 모듈(공개 PoC 오케스트레이션) — 사용자 선조달 PoC 디렉터리(선택) + 활성 모듈 핸들.
         self.poc_dir = poc_dir
@@ -1573,6 +1574,15 @@ class Orchestrator(FootholdMixin):
                 ready=lambda: _opt_in() and not _prod() and bool(_bases()) and bool(_vhosts()),
                 key=lambda: (len(self.hosts_map or {}), tuple(_bases())),
             ),
+            # 소비자⓪: vhost 가 등록되면 그 '베이스 도메인'에 서브도메인(vhost) 브루트를 돌려
+            # 'shared drive' 류 서브도메인 앱을 발견한다. 발견분은 _maybe_register_vhost 가 자동
+            # 등록(출력의 *.htb 토큰) → 다음 스윕 열거. '발견' 단계라 enum 상한 밖(budgeted=False).
+            Stage(
+                name="vhost_brute",
+                run=lambda: self._vhost_brute_stage(report, host),
+                ready=lambda: _opt_in() and bool(_vhosts()),
+                key=lambda: _vhosts(),
+            ),
             # 소비자①: 제품은 잡혔으나 버전 미상이면 버전 노출 경로를 무해 GET(제품당 1회).
             Stage(
                 name="version_probe",
@@ -1700,6 +1710,41 @@ class Orchestrator(FootholdMixin):
                 self._attempt(report, report.enum_findings, cmd, phase=phase, budgeted=False)
         # 새 관측을 즉시 반영 → 이번 스윕의 뒤 단계(web_secret·lookup)가 제품을 바로 활용.
         self._run_vuln(report, host, tgt)
+
+    def _vhost_brute_stage(self, report: OrchestrationReport,
+                           host: NmapHost | None = None, phase: str = "access") -> None:
+        """등록된 vhost '베이스 도메인'에 서브도메인(vhost) 브루트를 돌려 숨은 앱(포털·shared
+        drive 등)을 발견한다. 발견한 서브도메인은 출력의 *.htb 토큰을 _maybe_register_vhost 가
+        자동 등록 → 다음 스윕에서 그 서브도메인 앱을 열거(완결 체인).
+
+        핵심 설계:
+          · **ffuf 자동 와일드카드 보정(-ac)** — HTB 는 '존재하지 않는 vhost 도 같은 랜딩'이 흔해
+            보정 없이는 전부 거르거나 오탐한다. 무보정 gobuster vhost 가 실측(Enigma)에서 실패한 지점.
+          · **타겟 IP 로 접속 + Host 헤더로 FUZZ.<도메인>** — /etc/hosts 해석에 의존하지 않고 동작
+            (과거 KB 룰은 {t}→IP 치환으로 'FUZZ.<IP>' 라는 무의미한 브루트를 만들었다 — 그 버그 교정).
+          · **enum 상한 밖(budgeted=False)** — '발견' 단계라 저가치 열거 폭에 밀려 미실행되면 안 된다
+            (실측에서 vhost 브루트가 매번 '상한 초과 → 수동' 으로 잘려 실행 자체가 안 됐다).
+        opt-in(--exploit-exec/--auto-poc) 전용·도메인당 1회·ffuf 미설치면 생략."""
+        if host is None or self.world is None:
+            return
+        if not (self.exploit_exec or self.auto_poc):
+            return
+        if not self.is_tool_available("ffuf"):
+            return
+        import re as _re
+        ip = str(self.guard.bound_target or self.world.target)
+        # 베이스 도메인(X.htb — 점 1개)만. 이미 발견된 서브도메인(a.b.htb)은 재브루트하지 않는다.
+        vhosts = [h for h, hip in (self.hosts_map or {}).items()
+                  if hip == self.world.target and h.count(".") == 1 and _re.search(r"[a-z]", h)]
+        wl = "/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt"
+        for vh in sorted(vhosts):
+            if vh in self._vhost_brute_probed:
+                continue
+            self._vhost_brute_probed.add(vh)
+            if self._goal_reached(report) or self._time_up():
+                break
+            cmd = (f'ffuf -w {wl} -u http://{ip}/ -H "Host: FUZZ.{vh}" -ac -t 50 -s')
+            self._attempt(report, report.enum_findings, cmd, phase=phase, budgeted=False)
 
     def _web_secret_stage(self, report: OrchestrationReport,
                           host: NmapHost | None = None, phase: str = "access") -> None:
@@ -2269,7 +2314,9 @@ class Orchestrator(FootholdMixin):
         self._harvest_creds(out.stdout, cmd, finding)
         # vhost 자동 등록 — 리다이렉트(→ http://connected.htb/)에서 발견한 호스트명을
         # '타겟 IP' 로 스코프 해석맵에 자동 등록(이후 그 vhost 명령이 범위 안으로 인식됨).
-        self._maybe_register_vhost(report, finding.output)
+        # vhost 발견은 '요약'이 아니라 '원본'에서 — 요약기(summarize_tool_output)가 ffuf/헤더
+        # 출력의 서브도메인·Location 줄을 트렁케이트로 날릴 수 있다(발판 URL 캡처와 동일 원칙).
+        self._maybe_register_vhost(report, getattr(finding, "raw_output", "") or finding.output)
         # [T1-a] 출력구동 Results Verifier — 실행 후 출력을 보고 '한 끗 빠진' 명령을 교정해
         # 1회 재시도(생성 전용 — 교정본도 3관문 재통과). 교정분은 corrective=True 라 재귀 안 함.
         if not corrective:
