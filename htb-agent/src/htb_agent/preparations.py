@@ -84,8 +84,8 @@ def prepare_privesc(report: "OrchestrationReport", prof: "ProfileResult | None",
 def privesc_analyze(report: "OrchestrationReport", audit) -> None:
     """③ 폐루프 후보 선정 — findings 에 privesc 열거 출력(sudo -l·SUID·getcap)이 있으면 파싱해
     구체적 상승 벡터를 랭킹하고 수동 제안으로 surface 한다. 생성 전용(실행 아님). 벡터의
-    '실제 실행 → root 확인 → world 권한레벨 전이 → 재열거'(폐루프 발사)는 사용자 리포의 실행
-    스테이지(target_shell) 몫 — 여기선 후보·계획만 만든다."""
+    '실제 실행 → root 확인 → world 권한레벨 전이 → 재열거'(폐루프 발사)는 내장 실행 스테이지
+    (`foothold._privesc_loop`/`_exploit_exec_stage`, 옵트인·3관문 하) 몫 — 여기선 후보·계획만 만든다."""
     corpus = "\n".join(f.output for f in (report.enum_findings + report.llm_findings)
                        if f.output)
     if not corpus.strip():

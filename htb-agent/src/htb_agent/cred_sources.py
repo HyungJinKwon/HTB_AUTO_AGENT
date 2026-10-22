@@ -7,8 +7,9 @@
   2. `parse_config_creds(text)` — 읽어 온 설정 본문에서 자격 추출(일반 harvest + 제품 키).
   3. `lateral_candidates(creds, users, target)` — 자격×유저로 su/ssh 재사용 후보 명령 생성.
 
-안전 경계(불변): 명령/자격 **문자열 생성·파싱만** 한다. `cat` 실행도 su/ssh 실행도 하지
-않는다(발판 셸에서의 실제 실행은 사용자 리포의 ShellSession 발사 — RCE 실행 표면).
+안전 경계(불변): 이 모듈은 명령/자격 **문자열 생성·파싱만** 한다. `cat` 실행도 su/ssh 실행도
+하지 않는다. 발판 셸에서의 실제 실행은 `foothold._foothold_stage` 가 확보한 `ShellSession`
+(`shell_transport` 소켓/HTTP, 옵트인·3관문 하)에서 일어난다 — RCE 실행 표면.
 """
 from __future__ import annotations
 

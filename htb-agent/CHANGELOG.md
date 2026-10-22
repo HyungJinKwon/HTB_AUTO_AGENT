@@ -2,6 +2,30 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.24] — 2026-10-22
+
+전체 파이프라인 코드·문서 정밀 검토 — 계약 불일치·죽은 배선 전수 점검(0건) 후, 발판 체인
+내장·배선 완료를 반영하지 못하고 남아 있던 **stale 문서·주석을 현재 상태로 정정**한다(정직성 §3).
+코어 동작·테스트는 불변(문서/주석 한정).
+
+### 수정(Fixed) — 문서 정직성
+- **`docs/USAGE.md` §10.3 "현재 구현 범위"**: 발판 채널의 네트워크 실행부를 "운영 리포에서 연결
+  (미연결이면 발판 미확보)"로 서술하던 블록이 `shell_transport.py`(소켓·HTTP) 내장과
+  `run()`→`_foothold_stage` 배선 완료 이후에도 남아 §10.4·실제 코드와 모순됐다. 현재 상태로 재작성
+  — 발판 체인(웹 RCE·리버스셸 수신/업그레이드·SSH·NFS·메일·권한상승 폐루프)은 **이 리포에서
+  끝까지 돈다**. 유일한 degrade 는 웹 HTTP 채널의 선택 의존 `requests` 미설치(리버스셸 수신·NFS·
+  메일·SSH 는 표준 라이브러리·`sshpass` 라 영향 없음).
+- **소스 주석 4건 정정**(`cred_sources`·`shell_session`·`privesc_analyze`·`preparations`): "실제
+  실행은 **사용자 리포의** ShellSession/실행 스테이지 몫"이라던 과거 프레이밍을, 실행이 내장
+  (`foothold._foothold_stage`/`_privesc_loop`/`_exploit_exec_stage`, `shell_transport`, 옵트인·3관문
+  하)으로 들어온 현 구조에 맞게 바로잡음. 각 모듈의 '생성 전용' 자체 경계 서술은 불변(정확).
+
+### 비고(미배선 — 정직한 상태)
+- lab 이식 `llm/context.py`(ContextBuilder 토큰예산)와 `llm/tiering.py` 의 `profile_for`/
+  `ModelProfile` 은 여전히 **라우터 프롬프트 미배선**(CHANGELOG 2.39.20/22 에 "배선 예정/연동
+  가능"으로 기재된 그대로). `tools/session.py` 의 백그라운드 잡 API(`start_background`/`bg_*`)도
+  파이프라인 미호출(러너 API 로만 존재). 배선은 LLM 입력 변경이라 실측 검증이 필요한 별도 작업.
+
 ## [2.39.23] — 2026-10-22
 
 동료 lab `tools/session.py`(지속 PTY 셸 러너) 이식 — lab 유용 모듈 이식 완료.
