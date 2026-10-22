@@ -2,6 +2,26 @@
 
 형식: 추가(Added) · 변경(Changed) · 수정(Fixed) · 안전(Safety). 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [2.39.25] — 2026-10-22
+
+테스트 간헐 행(hang) 근본 원인 제거 — 오프라인 모드에서 recon 이 실제 nmap 을 쏘던 버그 수정.
+
+### 수정(Fixed)
+- **`recon.run_portscan`: `ASSASSIN_NO_NET`(오프라인) + 실행 러너(`real_exec`)면 실제 포트스캔
+  생략**. 과거엔 NO_NET 가드가 아웃바운드 fetcher(enrich/poc_fetch)에만 걸려 있어, 실 러너
+  (`ShellRunner`/`SubprocessRunner`)로 `orc.run()` 을 도는 테스트(`test_autonomous_exec`·
+  `test_livebench` 등)가 **도달 불가 타겟에 진짜 nmap 을 실행** → nmap 자체 타임아웃(분 단위)까지
+  블록돼 전체 스위트가 간헐적으로 멈췄다(faulthandler 로 `recon.py:199` 확인). NO_NET 은 '실제
+  아웃바운드 없음'을 뜻하므로 여기서 명시적으로 생략해 행을 구조적으로 제거한다. 실 구동은 NO_NET
+  을 켜지 않으므로 무영향, `--offline` 의도와도 일치. `FakeRunner`(`real_exec=False`)는 대상 아님.
+- **`test_autonomous_exec`**: '미강제 러너 파일액션 강등' 블록이 실 `ShellRunner` 를 써 recon 이
+  진짜 nmap 을 쏘던 것을 `FakeRunner(shell=True, contained=False)` 로 교체(능력 플래그·커버리지
+  보존, 네트워크 제거). `test_orchestrator` 의 예외 시뮬 러너에 `real_exec=False` 명시.
+
+### 검증
+- `test_recon`(+4): NO_NET+실러너 → 실제 스캔 미호출·escalate·ran=False, 가짜러너는 가드 비적용.
+- 전체 스위트 152/3322 — 과거 간헐 행 재현 스위트들이 45~60s → 0~4s 로 단축. ruff·mypy·gen_cli_docs 클린.
+
 ## [2.39.24] — 2026-10-22
 
 전체 파이프라인 코드·문서 정밀 검토 — 계약 불일치·죽은 배선 전수 점검(0건) 후, 발판 체인

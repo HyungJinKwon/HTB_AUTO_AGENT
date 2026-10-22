@@ -225,6 +225,7 @@ check("병렬 크리덴셜 수확", any("u:Pw1" in c for c in repp.world.creds))
 print("\n=== 안정화: 러너 예외가 라운드를 깨지 않음(순차/병렬) ===")
 class RaisingRunner:
     """nmap 은 정상 XML, 그 외(enum)는 예외를 던지는 러너 — 견고성 검증용."""
+    real_exec = False   # 테스트 더블(실제 네트워크 없음) — recon 의 NO_NET 가드 대상 아님(가짜 XML 사용)
     def __init__(self, xml):
         self.xml = xml; self.calls = []
     def run(self, command, timeout=120):
