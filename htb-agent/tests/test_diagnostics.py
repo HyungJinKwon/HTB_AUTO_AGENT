@@ -80,8 +80,8 @@ rep = Orchestrator(guard(), FakeRunner(responder), KnowledgeBase.load(),
 check("done 유지", rep.status == "done")
 check("blockers 에 대상 거부(403) 기록",
       any(d.category == "http-403" and d.is_target for _, d in rep.blockers))
-check("리포트 요약에 BLOCKERS 섹션", "BLOCKERS" in rep.summary())
-check("요약에 대상/환경 구분 문구", "경로 실패 아님" in rep.summary() or "대상 응답" in rep.summary())
+check("리포트 요약에 BLOCKERS 섹션", "BLOCKERS" in rep.summary(verbose=True))
+check("요약에 대상/환경 구분 문구", "경로 실패 아님" in rep.summary(verbose=True) or "대상 응답" in rep.summary(verbose=True))
 
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

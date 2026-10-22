@@ -90,7 +90,7 @@ check("플래그 포착", any(f.value == "HTB{curl_exploit_flag}" for f in rep.f
 check("출처 기록됨", len(rep.flag_provenance) >= 1)
 check("curl 유래 → exploit-derived",
       any(p.verdict == "exploit-derived" for p in rep.flag_provenance))
-check("리포트에 PROVENANCE 섹션", "PROVENANCE" in rep.summary())
+check("리포트에 PROVENANCE 섹션", "PROVENANCE" in rep.summary(verbose=True))
 
 print(f"\n결과: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

@@ -51,7 +51,7 @@ _COMMON_DESTS = {
     "help", "help_all", "version", "doctor", "setup_llm", "llm_test",
     "platform", "category", "attacker_ips", "creds", "cred_file",
     "full_auto", "auto", "manual", "dry_run", "resume",
-    "llm", "writeup", "json_out", "html_out",
+    "llm", "writeup", "json_out", "html_out", "verbose",
 }
 
 
@@ -347,6 +347,10 @@ def build_parser(full: bool = False) -> argparse.ArgumentParser:
                    help="결과를 기계판독 JSON 으로 내보내기(경로 생략 시 <state-dir>/report_<타겟>.json)")
     g_out.add_argument("--html", nargs="?", const="__auto__", default=None, dest="html_out",
                    help="결과를 HTML 대시보드로 내보내기(블루/네이비, 경로 생략 시 <state-dir>/report_<타겟>.html)")
+    g_out.add_argument("-v", "--verbose", action="store_true", dest="verbose",
+                   help="터미널 요약을 '전체'로 — 기본은 핵심(포트·OS·플래그·다음행동)만 보이고 무거운 "
+                        "섹션(단계 명령·CVE·리버스쉘·AWS·privesc·수동제안)은 '접힌 섹션' 한 줄 요약으로 "
+                        "접힌다. 이 플래그면 모든 섹션 전개(상세는 --html/--json 에도 항상 저장됨)")
     # 기본 -h 는 '자주 쓰는' 옵션만 — 나머지는 help 를 숨긴다(옵션 자체·파싱은 그대로, --help-all 에서 표시).
     if not full:
         for a in p._actions:
@@ -1006,7 +1010,7 @@ def _run_target(args, cfg, knowledge_dir, runner) -> int:
             sandbox.stop()
     if not args.no_save:
         variant_stats.save(vstats_path)   # 학습 결과 영속화(다음 실행에 반영)
-    print("\n" + report.summary())
+    print("\n" + report.summary(verbose=getattr(args, "verbose", False)))
     if llm_router is not None and llm_router.calls:
         print("\n" + llm_router.cost_summary())
 

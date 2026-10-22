@@ -38,7 +38,7 @@ rep = Orchestrator(guard(), runner(), KnowledgeBase.load(), auto_approve_in_scop
                    is_tool_available=ALL).run()
 check("enum 실행 결과 존재", any(f.ran for f in rep.enum_findings))
 check("enum 결과는 phase=enum", all(f.phase == "enum" for f in rep.enum_findings))
-check("요약에 '열거' 단계 섹션", "단계: 열거" in rep.summary())
+check("요약에 '열거' 단계 섹션", "단계: 열거" in rep.summary(verbose=True))
 
 print("\n=== 크리덴셜 확보 시 access 단계 진행(순서대로) ===")
 v = CredentialVault.from_cli(["administrator:Passw0rd"])
